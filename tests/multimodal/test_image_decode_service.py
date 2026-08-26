@@ -362,6 +362,313 @@ def test_admission_backlog_is_bounded_and_recovers_after_cancellation():
         service.shutdown()
 
 
+@pytest.mark.asyncio
+async def test_async_admission_parks_beyond_bounded_decode_tiers_in_fifo_order():
+    first_started = threading.Event()
+    release_first = threading.Event()
+    calls: list[list[bytes]] = []
+
+    def load(items: list[bytes]):
+        calls.append(items)
+        if items == [b"a"]:
+            first_started.set()
+            assert release_first.wait(timeout=2)
+        return [_result(item) for item in items]
+
+    config = ImageDecodeServiceConfig(
+        decoders=1,
+        batch_size=1,
+        pipeline_depth=1,
+        coalesce_timeout_ms=0,
+        max_pending_items=1,
+        max_pending_encoded_bytes=1,
+    )
+    service = NvImageCodecDecodeService(config)
+    image_io = _FakeImageIO(load, batch_size=1, coalesce_timeout_ms=0)
+    tasks = [
+        asyncio.create_task(service.submit_async(image_io, [item]))
+        for item in (b"a", b"b", b"c")
+    ]
+    assert await asyncio.to_thread(first_started.wait, 2)
+
+    for _ in range(2000):
+        with service._cond:
+            parked = len(service._async_admission_waiters) == 1
+            bounded = service._owned_items == service._waiting_items == 1
+        if parked and bounded:
+            break
+        await asyncio.sleep(0.001)
+    assert parked and bounded
+    assert not tasks[2].done()
+
+    release_first.set()
+    results = await asyncio.wait_for(asyncio.gather(*tasks), timeout=2)
+
+    assert calls == [[b"a"], [b"b"], [b"c"]]
+    assert [result[0].original_bytes for result in results] == [b"a", b"b", b"c"]
+    with service._cond:
+        assert service._owned_items == service._waiting_items == 0
+        assert not service._async_admission_waiters
+        assert service._async_admission_handoff is None
+    for result in results:
+        result[0].media.close()
+    service.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_async_queued_cancellation_releases_fifo_position():
+    first_started = threading.Event()
+    release_first = threading.Event()
+    calls: list[list[bytes]] = []
+
+    def load(items: list[bytes]):
+        calls.append(items)
+        if items == [b"a"]:
+            first_started.set()
+            assert release_first.wait(timeout=2)
+        return [_result(item) for item in items]
+
+    config = ImageDecodeServiceConfig(
+        decoders=1,
+        batch_size=1,
+        pipeline_depth=1,
+        coalesce_timeout_ms=0,
+        max_pending_items=1,
+        max_pending_encoded_bytes=1,
+    )
+    service = NvImageCodecDecodeService(config)
+    image_io = _FakeImageIO(load, batch_size=1, coalesce_timeout_ms=0)
+    tasks = [
+        asyncio.create_task(service.submit_async(image_io, [item]))
+        for item in (b"a", b"b", b"c", b"d")
+    ]
+    assert await asyncio.to_thread(first_started.wait, 2)
+
+    for _ in range(2000):
+        with service._cond:
+            parked = len(service._async_admission_waiters) == 2
+        if parked:
+            break
+        await asyncio.sleep(0.001)
+    assert parked
+
+    tasks[2].cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await tasks[2]
+    release_first.set()
+    results = await asyncio.wait_for(
+        asyncio.gather(tasks[0], tasks[1], tasks[3]), timeout=2
+    )
+
+    assert calls == [[b"a"], [b"b"], [b"d"]]
+    with service._cond:
+        assert service._owned_items == service._waiting_items == 0
+        assert not service._async_admission_waiters
+        assert service._async_admission_handoff is None
+    for result in results:
+        result[0].media.close()
+    service.shutdown()
+
+
+def test_cancelling_async_handoff_atomically_wakes_next_ticket():
+    config = ImageDecodeServiceConfig(
+        decoders=1,
+        batch_size=1,
+        pipeline_depth=1,
+        coalesce_timeout_ms=0,
+        max_pending_items=1,
+        max_pending_encoded_bytes=1,
+    )
+    service = NvImageCodecDecodeService(config)
+    image_io = _FakeImageIO(
+        lambda items: [_result(item) for item in items],
+        batch_size=1,
+        coalesce_timeout_ms=0,
+    )
+    first = service._begin_async_admission(image_io, (b"a",))
+    second = service._begin_async_admission(image_io, (b"b",))
+
+    assert first.state == "handoff"
+    assert second.state == "queued"
+    service._cancel_async_admission(first)
+
+    assert first.state == "released"
+    assert second.state == "handoff"
+    assert second.ready.result(timeout=0) is None
+    with service._cond:
+        assert service._waiting_items == service._waiting_bytes == 1
+    service._cancel_async_admission(second)
+    service.shutdown()
+
+
+def test_cancelling_parked_request_wakes_next_before_fetch():
+    config = ImageDecodeServiceConfig(
+        decoders=1,
+        batch_size=1,
+        pipeline_depth=1,
+        coalesce_timeout_ms=0,
+        max_pending_items=1,
+        max_pending_encoded_bytes=1,
+    )
+    service = NvImageCodecDecodeService(config)
+    first = service._begin_async_request(1)
+    second = service._begin_async_request(1)
+    cancelled = service._begin_async_request(1)
+    following = service._begin_async_request(1)
+
+    assert first.state == second.state == "held"
+    assert cancelled.state == following.state == "queued"
+    service._cancel_async_request(cancelled)
+    service._release_async_request(first)
+
+    assert cancelled.state == "released"
+    assert following.state == "held"
+    assert following.ready.result(timeout=0) is None
+    with service._cond:
+        assert service._async_request_items == 2
+        assert service._async_request_holders == {second, following}
+    service._release_async_request(second)
+    service._release_async_request(following)
+    service.shutdown()
+
+
+def test_shutdown_releases_queued_and_handoff_async_admission():
+    config = ImageDecodeServiceConfig(
+        decoders=1,
+        batch_size=1,
+        pipeline_depth=1,
+        coalesce_timeout_ms=0,
+        max_pending_items=1,
+        max_pending_encoded_bytes=1,
+    )
+    service = NvImageCodecDecodeService(config)
+    image_io = _FakeImageIO(
+        lambda items: [_result(item) for item in items],
+        batch_size=1,
+        coalesce_timeout_ms=0,
+    )
+    handoff = service._begin_async_admission(image_io, (b"a",))
+    queued = service._begin_async_admission(image_io, (b"b",))
+    request_holders = [service._begin_async_request(1) for _ in range(2)]
+    request_waiter = service._begin_async_request(1)
+
+    service.shutdown()
+
+    assert handoff.state == queued.state == "released"
+    assert all(ticket.state == "released" for ticket in request_holders)
+    assert request_waiter.state == "released"
+    with pytest.raises(RuntimeError, match="shut down"):
+        queued.ready.result(timeout=0)
+    with pytest.raises(RuntimeError, match="shut down"):
+        request_waiter.ready.result(timeout=0)
+    with pytest.raises(RuntimeError, match="shut down"):
+        service._validate_async_request(request_holders[0])
+    with pytest.raises(RuntimeError, match="shut down"):
+        service._consume_async_admission(handoff, image_io, (b"a",))
+    with service._cond:
+        assert service._waiting_items == service._waiting_bytes == 0
+        assert not service._async_admission_waiters
+        assert service._async_admission_handoff is None
+        assert service._async_request_items == 0
+        assert not service._async_request_waiters
+        assert not service._async_request_holders
+
+
+def test_async_request_gate_rejects_nonpositive_item_count():
+    config = ImageDecodeServiceConfig(
+        decoders=1,
+        batch_size=1,
+        pipeline_depth=1,
+        coalesce_timeout_ms=0,
+        max_pending_items=1,
+        max_pending_encoded_bytes=1,
+    )
+    service = NvImageCodecDecodeService(config)
+
+    with pytest.raises(ValueError, match="must be positive"):
+        service._begin_async_request(0)
+    with pytest.raises(ValueError, match="must be positive"):
+        service._begin_async_request(-1)
+
+    service.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_async_request_larger_than_one_admission_tier_is_rejected():
+    config = ImageDecodeServiceConfig(
+        decoders=1,
+        batch_size=1,
+        pipeline_depth=1,
+        coalesce_timeout_ms=0,
+        max_pending_items=1,
+        max_pending_encoded_bytes=1,
+    )
+    service = NvImageCodecDecodeService(config)
+    image_io = _FakeImageIO(
+        lambda items: [_result(item) for item in items],
+        batch_size=1,
+        coalesce_timeout_ms=0,
+    )
+
+    with pytest.raises(NvImageCodecQueueFullError, match="exceeds one"):
+        await service.submit_async(image_io, [b"too large"])
+
+    assert not service.started
+    service.shutdown()
+    with pytest.raises(RuntimeError, match="shutting down"):
+        await service.submit_async(image_io, [b"too large"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("burst_size", [128, 256])
+async def test_async_burst_larger_than_both_decode_tiers_completes(burst_size: int):
+    release = threading.Event()
+    two_claims_started = threading.Event()
+    lock = threading.Lock()
+    active = 0
+
+    def load(items: list[bytes]):
+        nonlocal active
+        with lock:
+            active += 1
+            if active == 2:
+                two_claims_started.set()
+        assert release.wait(timeout=2)
+        with lock:
+            active -= 1
+        return [_result(item) for item in items]
+
+    image_io = _FakeImageIO(load, decoders=2, pipeline_depth=4)
+    service = get_nvimagecodec_decode_service(image_io)
+    bounded_items = 2 * service.config.max_pending_items
+    encoded = [b"\xff\xd8" + index.to_bytes(2, "little") for index in range(burst_size)]
+    tasks = [
+        asyncio.create_task(load_images_with_service_async(image_io, [item]))
+        for item in encoded
+    ]
+    assert await asyncio.to_thread(two_claims_started.wait, 2)
+
+    for _ in range(2000):
+        with service._cond:
+            parked = len(service._async_admission_waiters)
+        if parked == burst_size - bounded_items:
+            break
+        await asyncio.sleep(0.001)
+    assert parked == burst_size - bounded_items
+
+    release.set()
+    results = await asyncio.wait_for(asyncio.gather(*tasks), timeout=5)
+
+    assert [result[0].original_bytes for result in results] == encoded
+    assert service.snapshot_stats().submitted_images == burst_size
+    with service._cond:
+        assert service._owned_items == service._waiting_items == 0
+        assert not service._async_admission_waiters
+        assert service._async_admission_handoff is None
+    for result in results:
+        result[0].media.close()
+
+
 def test_jobs_larger_than_either_admission_tier_are_rejected():
     started = threading.Event()
     release = threading.Event()

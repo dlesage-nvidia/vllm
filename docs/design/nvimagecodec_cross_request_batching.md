@@ -39,8 +39,8 @@ keeping pixels GPU-resident for downstream preprocessing remains separate work.
   coalesces, or decodes. Raw URL, file, and cache I/O may still use that pool.
 - Leave the default Pillow path no slower than the parent commit for multi-image
   requests.
-- Bound queueing latency, pending encoded bytes, decoder concurrency, and GPU
-  memory use.
+- Bound decode-queue entries, pending encoded bytes owned by the service,
+  decoder concurrency, and GPU memory use.
 - Make the achieved native batch widths and queue delay observable.
 - Overlap native decode and device-to-host copies with Pillow materialization
   without weakening GPU-memory accounting or positional fallback.
@@ -414,9 +414,14 @@ The first implementation can revise the multiplier only with memory and overload
 measurements. Submission must never wait on a `threading.Condition` on the
 event-loop thread. The service therefore has a second FIFO admission backlog,
 with the same item and byte caps, and promotes it as capacity becomes available.
-Submitting beyond both bounded tiers raises a typed overload error. The caller
-waits only on its result future; neither the synchronous nor asynchronous path
-bypasses decoder accounting or occupies the shared media executor.
+The asynchronous connector first limits active fetch/decode work to the two
+tiers' combined item capacity. Excess requests park on lightweight FIFO tickets
+before URL, file, or base64 fetching begins. If exact encoded-byte pressure
+still fills both tiers, the already-admitted caller parks on a byte-free FIFO
+ticket; the next ticket atomically reserves exact item and byte capacity before
+waking. Synchronous callers remain fail-fast with a typed overload error so
+shared media-executor threads cannot block on admission. Neither path bypasses
+decoder accounting or occupies the shared media executor while waiting.
 
 ### Results, Ordering, and Errors
 
@@ -493,8 +498,11 @@ restartable. Reconfiguration within a live generation remains an error.
   keep their original order.
 - A typed isolatable failure performs at most one inline singleton attempt per
   item; configuration, capacity, CUDA, and generic failures are not retried.
-- Global queue and encoded-byte bounds apply async admission without blocking
-  the event loop, cap admission waiters, and recover after completion.
+- Service-owned queue entries and encoded bytes remain bounded during async
+  admission without blocking the event loop. The connector separately caps the
+  number of images allowed to fetch or decode; excess online requests park
+  before fetching. Exact-byte FIFO tickets handle residual pressure, and both
+  layers recover after completion or cancellation.
 - Cancellation races at enqueue, claim, and result publication either skip work
   or close an undeliverable `MediaWithBytes.media` exactly once.
 - Startup configuration cannot be overridden by request kwargs or reconfigured

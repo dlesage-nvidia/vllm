@@ -11,10 +11,11 @@ import os
 import threading
 import time
 from collections import Counter, deque
+from collections.abc import AsyncIterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from functools import partial
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from vllm.logger import init_logger
 from vllm.multimodal.image_decoders.nvimagecodec import (
@@ -126,6 +127,32 @@ class _DecodeJob:
         return sum(map(len, self.encoded_images))
 
 
+@dataclass(eq=False)
+class _AsyncAdmissionTicket:
+    """A byte-free FIFO placeholder for an asynchronous submission."""
+
+    item_count: int
+    encoded_bytes: int
+    ready: Future[None]
+    sequence: int
+    deadline: float
+    spec: ImageDecodeSpec | None
+    kind: Literal["coalesced", "direct"]
+    enqueued_at: float
+    state: Literal["queued", "handoff", "consumed", "released"] = "queued"
+    error: BaseException | None = None
+
+
+@dataclass(eq=False)
+class _AsyncRequestTicket:
+    """A lightweight request parked before its encoded images are fetched."""
+
+    item_count: int
+    ready: Future[None]
+    state: Literal["queued", "held", "released"] = "queued"
+    error: BaseException | None = None
+
+
 @dataclass(frozen=True)
 class _Claim:
     jobs: tuple[_DecodeJob, ...]
@@ -147,6 +174,14 @@ def _dispose_future_result(
     except BaseException:
         return
     _close_loaded_images(items)
+
+
+def _drain_asyncio_future(future: asyncio.Future[Any]) -> None:
+    """Consume an exception that raced cancellation of an asyncio shield."""
+    if not future.done():
+        future.add_done_callback(_drain_asyncio_future)
+    elif not future.cancelled():
+        future.exception()
 
 
 def _indexed_error(error: BaseException) -> tuple[int, BaseException] | None:
@@ -190,6 +225,11 @@ class NvImageCodecDecodeService:
         self._batch_queues: dict[ImageDecodeSpec, deque[_DecodeJob]] = {}
         self._direct_queue: deque[_DecodeJob] = deque()
         self._admission_waiters: deque[_DecodeJob] = deque()
+        self._async_admission_waiters: deque[_AsyncAdmissionTicket] = deque()
+        self._async_admission_handoff: _AsyncAdmissionTicket | None = None
+        self._async_request_waiters: deque[_AsyncRequestTicket] = deque()
+        self._async_request_holders: set[_AsyncRequestTicket] = set()
+        self._async_request_items = 0
         self._owned_items = 0
         self._owned_bytes = 0
         self._waiting_items = 0
@@ -232,6 +272,76 @@ class NvImageCodecDecodeService:
         self._started = True
         self._dispatcher.start()
 
+    def _grant_async_requests_locked(self) -> None:
+        if self._closing:
+            return
+        max_items = 2 * self.config.max_pending_items
+        while self._async_request_waiters:
+            ticket = self._async_request_waiters[0]
+            if ticket.state != "queued" or ticket.ready.cancelled():
+                self._async_request_waiters.popleft()
+                ticket.state = "released"
+                continue
+            if self._async_request_items + ticket.item_count > max_items:
+                return
+            self._async_request_waiters.popleft()
+            self._async_request_items += ticket.item_count
+            self._async_request_holders.add(ticket)
+            ticket.state = "held"
+            ticket.ready.set_result(None)
+
+    def _begin_async_request(self, item_count: int) -> _AsyncRequestTicket:
+        self._check_pid()
+        with self._cond:
+            if self._closing:
+                raise RuntimeError("nvImageCodec decode service is shutting down")
+            if item_count <= 0:
+                raise ValueError("nvImageCodec request item count must be positive")
+            if item_count > self.config.max_pending_items:
+                raise NvImageCodecQueueFullError(
+                    "nvImageCodec request exceeds one admission tier"
+                )
+            ticket = _AsyncRequestTicket(item_count=item_count, ready=Future())
+            self._async_request_waiters.append(ticket)
+            self._grant_async_requests_locked()
+            return ticket
+
+    def _validate_async_request(self, ticket: _AsyncRequestTicket) -> None:
+        self._check_pid()
+        with self._cond:
+            if ticket.state == "held" and not self._closing:
+                return
+            if ticket.error is not None:
+                raise ticket.error
+            raise RuntimeError("nvImageCodec async request ticket is not valid")
+
+    def _release_async_request_locked(self, ticket: _AsyncRequestTicket) -> None:
+        if ticket.state != "held":
+            return
+        assert ticket in self._async_request_holders
+        self._async_request_holders.remove(ticket)
+        self._async_request_items -= ticket.item_count
+        ticket.state = "released"
+
+    def _cancel_async_request(self, ticket: _AsyncRequestTicket) -> None:
+        # Never acquire a lock inherited from a parent process.
+        if self.owner_pid != os.getpid():
+            return
+        with self._cond:
+            if ticket.state == "queued":
+                ticket.state = "released"
+                ticket.ready.cancel()
+            else:
+                self._release_async_request_locked(ticket)
+            self._grant_async_requests_locked()
+
+    def _release_async_request(self, ticket: _AsyncRequestTicket) -> None:
+        if self.owner_pid != os.getpid():
+            return
+        with self._cond:
+            self._release_async_request_locked(ticket)
+            self._grant_async_requests_locked()
+
     def _can_own_locked(self, job: _DecodeJob) -> bool:
         items_fit = self._owned_items + job.item_count <= self.config.max_pending_items
         bytes_fit = (
@@ -241,12 +351,12 @@ class NvImageCodecDecodeService:
         return items_fit and bytes_fit
 
     def _can_wait_locked(self, job: _DecodeJob) -> bool:
-        items_fit = (
-            self._waiting_items + job.item_count <= self.config.max_pending_items
-        )
+        return self._can_wait_dimensions_locked(job.item_count, job.encoded_bytes)
+
+    def _can_wait_dimensions_locked(self, item_count: int, encoded_bytes: int) -> bool:
+        items_fit = self._waiting_items + item_count <= self.config.max_pending_items
         bytes_fit = (
-            self._waiting_bytes + job.encoded_bytes
-            <= self.config.max_pending_encoded_bytes
+            self._waiting_bytes + encoded_bytes <= self.config.max_pending_encoded_bytes
         )
         return items_fit and bytes_fit
 
@@ -266,6 +376,11 @@ class NvImageCodecDecodeService:
         self._waiting_items += job.item_count
         self._waiting_bytes += job.encoded_bytes
 
+    def _enqueue_reserved_waiter_locked(self, job: _DecodeJob) -> None:
+        """Consume a handoff whose waiting-tier counters are already held."""
+        self._admission_waiters.append(job)
+        job.accounting = "waiting"
+
     def _release_accounting_locked(self, job: _DecodeJob) -> None:
         if job.accounting == "owned":
             self._owned_items -= job.item_count
@@ -283,7 +398,7 @@ class NvImageCodecDecodeService:
         if future.cancelled():
             with self._cond:
                 self._release_accounting_locked(job)
-                self._promote_waiters_locked()
+                self._advance_admission_locked()
                 self._cond.notify_all()
 
     def submit(
@@ -310,6 +425,7 @@ class NvImageCodecDecodeService:
             if self._closing:
                 raise RuntimeError("nvImageCodec decode service is shutting down")
             self._ensure_started_locked()
+            self._advance_admission_locked()
             self._sequence += 1
             job = _DecodeJob(
                 image_io=image_io,
@@ -322,6 +438,10 @@ class NvImageCodecDecodeService:
                 accounting="released",
                 enqueued_at=now,
             )
+            if self._async_admission_waiters or self._async_admission_handoff:
+                raise NvImageCodecQueueFullError(
+                    "nvImageCodec async admission backlog has older work"
+                )
             if self._can_own_locked(job):
                 self._enqueue_owned_locked(job)
             elif self._can_wait_locked(job):
@@ -336,6 +456,180 @@ class NvImageCodecDecodeService:
             future.add_done_callback(partial(self._notify_if_cancelled, job))
             self._cond.notify()
         return future
+
+    def _begin_async_admission(
+        self,
+        image_io: ImageMediaIO,
+        encoded_images: tuple[bytes, ...],
+    ) -> _AsyncAdmissionTicket:
+        self._check_pid()
+        item_count = len(encoded_images)
+        encoded_bytes = sum(map(len, encoded_images))
+        spec = _decode_spec(image_io)
+        coalesce = (
+            item_count == 1
+            and self.config.batch_size > 1
+            and _is_jpeg(encoded_images[0])
+            and spec is not None
+        )
+        now = time.monotonic()
+        with self._cond:
+            if self._closing:
+                raise RuntimeError("nvImageCodec decode service is shutting down")
+            if (
+                item_count > self.config.max_pending_items
+                or encoded_bytes > self.config.max_pending_encoded_bytes
+            ):
+                raise NvImageCodecQueueFullError(
+                    "nvImageCodec request exceeds one admission tier"
+                )
+            self._ensure_started_locked()
+            self._sequence += 1
+            ticket = _AsyncAdmissionTicket(
+                item_count=item_count,
+                encoded_bytes=encoded_bytes,
+                ready=Future(),
+                sequence=self._sequence,
+                deadline=now + self.config.coalesce_timeout_ms / 1000,
+                spec=spec if coalesce else None,
+                kind="coalesced" if coalesce else "direct",
+                enqueued_at=now,
+            )
+            self._async_admission_waiters.append(ticket)
+            self._advance_admission_locked()
+            self._cond.notify_all()
+            return ticket
+
+    def _grant_async_admission_locked(self) -> None:
+        if self._closing or self._async_admission_handoff is not None:
+            return
+        while self._async_admission_waiters:
+            ticket = self._async_admission_waiters[0]
+            if ticket.state != "queued" or ticket.ready.cancelled():
+                self._async_admission_waiters.popleft()
+                ticket.state = "released"
+                continue
+            if not self._can_wait_dimensions_locked(
+                ticket.item_count, ticket.encoded_bytes
+            ):
+                return
+            self._async_admission_waiters.popleft()
+            self._waiting_items += ticket.item_count
+            self._waiting_bytes += ticket.encoded_bytes
+            ticket.state = "handoff"
+            self._async_admission_handoff = ticket
+            ticket.ready.set_result(None)
+            return
+
+    def _release_async_handoff_locked(self, ticket: _AsyncAdmissionTicket) -> None:
+        if ticket.state != "handoff":
+            return
+        assert self._async_admission_handoff is ticket
+        self._waiting_items -= ticket.item_count
+        self._waiting_bytes -= ticket.encoded_bytes
+        self._async_admission_handoff = None
+        ticket.state = "released"
+
+    def _cancel_async_admission(self, ticket: _AsyncAdmissionTicket) -> None:
+        # Never acquire a lock inherited from a parent process.
+        if self.owner_pid != os.getpid():
+            return
+        with self._cond:
+            if ticket.state == "queued":
+                ticket.state = "released"
+                ticket.ready.cancel()
+            elif ticket.state == "handoff":
+                self._release_async_handoff_locked(ticket)
+            self._advance_admission_locked()
+            self._cond.notify_all()
+
+    def _consume_async_admission(
+        self,
+        ticket: _AsyncAdmissionTicket,
+        image_io: ImageMediaIO,
+        encoded_images: tuple[bytes, ...],
+    ) -> Future[list[MediaWithBytes[Image.Image]]]:
+        self._check_pid()
+        future: Future[list[MediaWithBytes[Image.Image]]] = Future()
+        with self._cond:
+            if ticket.state != "handoff":
+                if ticket.error is not None:
+                    raise ticket.error
+                raise RuntimeError("nvImageCodec async admission ticket is not valid")
+            if self._closing:
+                self._release_async_handoff_locked(ticket)
+                raise RuntimeError("nvImageCodec decode service is shutting down")
+            if (
+                len(encoded_images) != ticket.item_count
+                or sum(map(len, encoded_images)) != ticket.encoded_bytes
+            ):
+                self._release_async_handoff_locked(ticket)
+                self._advance_admission_locked()
+                self._cond.notify_all()
+                raise RuntimeError("nvImageCodec async admission payload changed")
+
+            job = _DecodeJob(
+                image_io=image_io,
+                encoded_images=encoded_images,
+                future=future,
+                sequence=ticket.sequence,
+                deadline=ticket.deadline,
+                spec=ticket.spec,
+                kind=ticket.kind,
+                accounting="waiting",
+                enqueued_at=ticket.enqueued_at,
+            )
+            assert self._async_admission_handoff is ticket
+            self._async_admission_handoff = None
+            ticket.state = "consumed"
+            self._enqueue_reserved_waiter_locked(job)
+            self._submitted_images += ticket.item_count
+            if ticket.kind == "direct":
+                self._direct_jobs += 1
+            future.add_done_callback(partial(self._notify_if_cancelled, job))
+            self._advance_admission_locked()
+            self._cond.notify_all()
+            return future
+
+    async def submit_async(
+        self,
+        image_io: ImageMediaIO,
+        encoded_images: list[bytes] | tuple[bytes, ...],
+    ) -> list[MediaWithBytes[Image.Image]]:
+        self._check_pid()
+        data = tuple(encoded_images)
+        if not data:
+            return []
+
+        ticket = self._begin_async_admission(image_io, data)
+        ready_wrapped: asyncio.Future[None] | None = None
+        ready_shield: asyncio.Future[None] | None = None
+        try:
+            if ticket.ready.done():
+                ticket.ready.result()
+            else:
+                ready_wrapped = asyncio.wrap_future(ticket.ready)
+                ready_shield = asyncio.shield(ready_wrapped)
+                await ready_shield
+        except asyncio.CancelledError:
+            if ready_shield is not None:
+                _drain_asyncio_future(ready_shield)
+            if ready_wrapped is not None:
+                _drain_asyncio_future(ready_wrapped)
+            self._cancel_async_admission(ticket)
+            raise
+
+        future = self._consume_async_admission(ticket, image_io, data)
+        wrapped = asyncio.wrap_future(future)
+        result_shield = asyncio.shield(wrapped)
+        try:
+            return await result_shield
+        except asyncio.CancelledError:
+            _drain_asyncio_future(result_shield)
+            _drain_asyncio_future(wrapped)
+            if not future.cancel():
+                future.add_done_callback(_dispose_future_result)
+            raise
 
     def _prune_cancelled_locked(self) -> None:
         waiting: deque[_DecodeJob] = deque()
@@ -384,6 +678,10 @@ class NvImageCodecDecodeService:
             job.accounting = "released"
             self._enqueue_owned_locked(job)
 
+    def _advance_admission_locked(self) -> None:
+        self._promote_waiters_locked()
+        self._grant_async_admission_locked()
+
     def _ready_batch_candidates_locked(
         self, now: float
     ) -> list[tuple[int, ImageDecodeSpec]]:
@@ -428,7 +726,7 @@ class NvImageCodecDecodeService:
             else:
                 self._release_accounting_locked(job)
         if not claimed:
-            self._promote_waiters_locked()
+            self._advance_admission_locked()
             return None
         self._in_flight += 1
         self._queue_wait_seconds += sum(now - job.enqueued_at for job in claimed)
@@ -440,7 +738,7 @@ class NvImageCodecDecodeService:
         while True:
             with self._cond:
                 self._prune_cancelled_locked()
-                self._promote_waiters_locked()
+                self._advance_admission_locked()
                 if self._closing:
                     return
                 now = time.monotonic()
@@ -473,7 +771,7 @@ class NvImageCodecDecodeService:
     def _release_before_publish(self, job: _DecodeJob) -> None:
         with self._cond:
             self._release_accounting_locked(job)
-            self._promote_waiters_locked()
+            self._advance_admission_locked()
             self._cond.notify_all()
 
     def _set_exception(self, job: _DecodeJob, error: BaseException) -> None:
@@ -547,7 +845,7 @@ class NvImageCodecDecodeService:
             for job in claim.jobs:
                 self._release_accounting_locked(job)
             self._in_flight -= 1
-            self._promote_waiters_locked()
+            self._advance_admission_locked()
             self._cond.notify_all()
 
     def snapshot_stats(self) -> ImageDecodeServiceStats:
@@ -572,6 +870,25 @@ class NvImageCodecDecodeService:
                 )
             self._closing = True
             shutdown_error = RuntimeError("nvImageCodec decode service shut down")
+            while self._async_request_waiters:
+                request_ticket = self._async_request_waiters.popleft()
+                request_ticket.state = "released"
+                request_ticket.error = shutdown_error
+                if not request_ticket.ready.done():
+                    request_ticket.ready.set_exception(shutdown_error)
+            for request_ticket in tuple(self._async_request_holders):
+                self._release_async_request_locked(request_ticket)
+                request_ticket.error = shutdown_error
+            while self._async_admission_waiters:
+                admission_ticket = self._async_admission_waiters.popleft()
+                admission_ticket.state = "released"
+                admission_ticket.error = shutdown_error
+                if not admission_ticket.ready.done():
+                    admission_ticket.ready.set_exception(shutdown_error)
+            handoff = self._async_admission_handoff
+            if handoff is not None:
+                self._release_async_handoff_locked(handoff)
+                handoff.error = shutdown_error
             queued = list(self._direct_queue) + list(self._admission_waiters)
             for queue in self._batch_queues.values():
                 queued.extend(queue)
@@ -662,14 +979,43 @@ async def load_images_with_service_async(
     encoded_images: list[bytes] | tuple[bytes, ...],
 ) -> list[MediaWithBytes[Image.Image]]:
     service = get_nvimagecodec_decode_service(image_io)
-    future = service.submit(image_io, encoded_images)
-    wrapped = asyncio.wrap_future(future)
+    return await service.submit_async(image_io, encoded_images)
+
+
+@contextlib.asynccontextmanager
+async def reserve_image_decode_request_async(
+    image_io: ImageMediaIO,
+    item_count: int,
+) -> AsyncIterator[None]:
+    """Park excess online requests before fetching their encoded images."""
+    if item_count == 0:
+        yield
+        return
+
+    service = get_nvimagecodec_decode_service(image_io)
+    ticket = service._begin_async_request(item_count)
+    ready_wrapped: asyncio.Future[None] | None = None
+    ready_shield: asyncio.Future[None] | None = None
     try:
-        return await asyncio.shield(wrapped)
+        if ticket.ready.done():
+            ticket.ready.result()
+        else:
+            ready_wrapped = asyncio.wrap_future(ticket.ready)
+            ready_shield = asyncio.shield(ready_wrapped)
+            await ready_shield
     except asyncio.CancelledError:
-        if not future.cancel():
-            future.add_done_callback(_dispose_future_result)
+        if ready_shield is not None:
+            _drain_asyncio_future(ready_shield)
+        if ready_wrapped is not None:
+            _drain_asyncio_future(ready_wrapped)
+        service._cancel_async_request(ticket)
         raise
+
+    service._validate_async_request(ticket)
+    try:
+        yield
+    finally:
+        service._release_async_request(ticket)
 
 
 def get_nvimagecodec_decode_service_stats() -> ImageDecodeServiceStats:
@@ -748,6 +1094,7 @@ __all__ = [
     "get_nvimagecodec_decode_service_stats",
     "load_images_with_service",
     "load_images_with_service_async",
+    "reserve_image_decode_request_async",
     "release_nvimagecodec_decode_service_lease",
     "shutdown_nvimagecodec_decode_service",
     "validate_nvimagecodec_coalesce_timeout_ms",

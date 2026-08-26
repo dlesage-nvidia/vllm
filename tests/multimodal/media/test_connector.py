@@ -159,6 +159,60 @@ async def test_nvimagecodec_coalesces_singletons_across_requests(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_nvimagecodec_parks_excess_requests_before_fetch(monkeypatch):
+    shutdown_nvimagecodec_decode_service()
+    fetch_started = asyncio.Event()
+    release_fetch = asyncio.Event()
+    fetched: list[str] = []
+
+    async def load_from_url_async(image_url, media_io, *, fetch_timeout):
+        fetched.append(image_url)
+        if len(fetched) == 8:
+            fetch_started.set()
+        await release_fetch.wait()
+        return image_url.encode()
+
+    def load_bytes_many(self, items):
+        return [MediaWithBytes(Image.new("RGB", (1, 1)), item) for item in items]
+
+    monkeypatch.setattr(ImageMediaIO, "load_bytes_many", load_bytes_many)
+    connector = MediaConnector(
+        media_io_kwargs={
+            "image": {
+                "backend": "nvimagecodec",
+                "decoders": 1,
+                "batch_size": 1,
+                "pipeline_depth": 1,
+            }
+        }
+    )
+    monkeypatch.setattr(connector, "load_from_url_async", load_from_url_async)
+    image_urls = [f"image-{index}" for index in range(9)]
+    tasks = [
+        asyncio.create_task(connector.fetch_image_async(url)) for url in image_urls
+    ]
+
+    try:
+        await asyncio.wait_for(fetch_started.wait(), timeout=2)
+        await asyncio.sleep(0)
+        assert fetched == image_urls[:8]
+
+        release_fetch.set()
+        images = await asyncio.wait_for(asyncio.gather(*tasks), timeout=2)
+
+        assert fetched == image_urls
+        assert [image.original_bytes for image in images] == [
+            url.encode() for url in image_urls
+        ]
+        for image in images:
+            image.media.close()
+    finally:
+        release_fetch.set()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        shutdown_nvimagecodec_decode_service()
+
+
+@pytest.mark.asyncio
 async def test_fetch_images_async_pillow_decodes_items_concurrently(monkeypatch):
     connector = MediaConnector(media_io_kwargs={"image": {"backend": "pillow"}})
     both_started = asyncio.Event()

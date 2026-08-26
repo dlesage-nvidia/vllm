@@ -41,6 +41,7 @@ from .image import ImageEmbeddingMediaIO, ImageMediaIO, _ImageBatchItemError
 from .image_decode_service import (
     load_images_with_service,
     load_images_with_service_async,
+    reserve_image_decode_request_async,
 )
 from .video import VideoMediaIO
 
@@ -633,31 +634,32 @@ class MediaConnector:
         image_urls: Sequence[str],
         image_io: ImageMediaIO,
     ) -> list[MediaWithBytes[Image.Image]]:
-        bytes_io = _BytesMediaIO(image_io)
-        results = await asyncio.gather(
-            *(
-                self.load_from_url_async(
-                    image_url,
-                    bytes_io,
-                    fetch_timeout=envs.VLLM_IMAGE_FETCH_TIMEOUT,
-                )
-                for image_url in image_urls
-            ),
-            return_exceptions=True,
-        )
-        for index, result in enumerate(results):
-            if isinstance(result, BaseException):
-                raise MediaBatchError(index, result)
+        async with reserve_image_decode_request_async(image_io, len(image_urls)):
+            bytes_io = _BytesMediaIO(image_io)
+            results = await asyncio.gather(
+                *(
+                    self.load_from_url_async(
+                        image_url,
+                        bytes_io,
+                        fetch_timeout=envs.VLLM_IMAGE_FETCH_TIMEOUT,
+                    )
+                    for image_url in image_urls
+                ),
+                return_exceptions=True,
+            )
+            for index, result in enumerate(results):
+                if isinstance(result, BaseException):
+                    raise MediaBatchError(index, result)
 
-        encoded_images = [cast(bytes, result) for result in results]
-        try:
-            return await load_images_with_service_async(image_io, encoded_images)
-        except _ImageBatchItemError as e:
-            raise MediaBatchError(e.index, e.error) from None
-        except Exception as e:
-            if len(encoded_images) == 1:
-                raise MediaBatchError(0, e) from None
-            raise
+            encoded_images = [cast(bytes, result) for result in results]
+            try:
+                return await load_images_with_service_async(image_io, encoded_images)
+            except _ImageBatchItemError as e:
+                raise MediaBatchError(e.index, e.error) from None
+            except Exception as e:
+                if len(encoded_images) == 1:
+                    raise MediaBatchError(0, e) from None
+                raise
 
     def fetch_images(
         self,
