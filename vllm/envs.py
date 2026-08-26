@@ -83,6 +83,7 @@ if TYPE_CHECKING:
     VLLM_MAX_AUDIO_DECODE_BYTES: int = 268_435_456
     VLLM_MAX_AUDIO_PREPROCESS_WORKERS: int = max(1, min(os.cpu_count() or 1, 2))
     VLLM_MAX_IMAGE_PIXELS: int = 178_956_970
+    VLLM_IMAGE_LOADER_BACKEND: str = "pillow"
     VLLM_VIDEO_LOADER_BACKEND: str = "opencv"
     VLLM_MEDIA_CONNECTOR: str = "http"
     VLLM_MM_HASHER_ALGORITHM: str = "blake3"
@@ -1024,6 +1025,13 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # built-in 2x decompression-bomb threshold (~179M pixels, ~680 MB RGB).
     "VLLM_MAX_IMAGE_PIXELS": lambda: int(
         os.getenv("VLLM_MAX_IMAGE_PIXELS", "178956970")
+    ),
+    # Backend for Image IO.
+    # - "pillow": Default CPU decoder.
+    # - "nvimagecodec": NVIDIA GPU-accelerated and CPU-plugin image decoder
+    #   with Pillow fallback for unsupported image variants and modes.
+    "VLLM_IMAGE_LOADER_BACKEND": lambda: os.getenv(
+        "VLLM_IMAGE_LOADER_BACKEND", "pillow"
     ),
     # Backend for Video IO — selects the frame-sampling algorithm.
     # - "opencv": uniform sampling.
@@ -2309,6 +2317,7 @@ def compile_factors() -> dict[str, object]:
         "VLLM_MAX_AUDIO_DECODE_BYTES",
         "VLLM_MAX_AUDIO_PREPROCESS_WORKERS",
         "VLLM_MAX_IMAGE_PIXELS",
+        "VLLM_IMAGE_LOADER_BACKEND",
         "VLLM_VIDEO_LOADER_BACKEND",
         "VLLM_MEDIA_CONNECTOR",
         "VLLM_OBJECT_STORAGE_SHM_BUFFER_NAME",

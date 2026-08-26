@@ -25,6 +25,7 @@
 ARG CUDA_VERSION=13.0.3
 ARG PYTHON_VERSION=3.12
 ARG UBUNTU_VERSION=24.04
+ARG NVIMAGECODEC_VERSION=0.9.0.20
 # DeepEPv2 requires NCCL >= 2.30.4 (GIN backend).
 # This version is used for CUDA 12+ builds to keep the DeepEP build and
 # runtime NCCL versions compatible.
@@ -868,6 +869,7 @@ FROM vllm-runtime-base AS test-deps
 
 ARG PYTHON_VERSION
 ARG TARGETPLATFORM
+ARG NVIMAGECODEC_VERSION
 
 ARG PIP_INDEX_URL UV_INDEX_URL
 ARG PIP_EXTRA_INDEX_URL UV_EXTRA_INDEX_URL
@@ -917,6 +919,10 @@ RUN --mount=type=cache,target=/opt/uv/cache \
             && uv pip install --system -r requirements/dev.txt \
             --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.'); \
         fi \
+        && if [ "$TARGETPLATFORM" = "linux/amd64" ]; then \
+            uv pip install --system \
+            "nvidia-nvimgcodec-cu${CUDA_MAJOR}[all]==${NVIMAGECODEC_VERSION}"; \
+        fi; \
     fi
 
 # image to run unit testing suite

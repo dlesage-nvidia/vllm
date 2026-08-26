@@ -14,6 +14,7 @@ import numpy.typing as npt
 from PIL import Image
 
 from vllm.inputs import MultiModalPlaceholders
+from vllm.multimodal.image_decoders import PILLOW_IMAGE_BACKEND
 from vllm.utils.import_utils import LazyLoader
 
 from .inputs import (
@@ -359,7 +360,15 @@ def fetch_image(
         This method has direct access to local files and is only intended
         to be called by user code. Never call this from the online server!
     """
-    media_io_kwargs = None if not image_io_kwargs else {"image": image_io_kwargs}
+    image_io_kwargs = dict(image_io_kwargs or {})
+    requested_backend = image_io_kwargs.get("backend")
+    if requested_backend not in (None, PILLOW_IMAGE_BACKEND):
+        raise ValueError(
+            "The standalone fetch_image helper only supports the Pillow image "
+            "backend; nvImageCodec requires renderer-owned GPU memory."
+        )
+    image_io_kwargs["backend"] = PILLOW_IMAGE_BACKEND
+    media_io_kwargs = {"image": image_io_kwargs}
     media_connector = MediaConnector(
         media_io_kwargs=media_io_kwargs,
         allowed_local_media_path="/",

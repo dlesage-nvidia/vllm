@@ -169,6 +169,9 @@ def reserve_mm_ipc_gpu_memory(
       reservation scales with its configured ``hw_decoders`` value, and the
       entire decoder reservation scales with ``api_process_count`` because
       these resources are not shared between processes.
+    * For the nvImageCodec backend, a separate fixed upper bound for retained
+      image decoder state and its CUDA context. This reservation scales with
+      the configured image ``decoders`` value and ``api_process_count``.
 
     Args:
         available_kv_cache_memory_bytes: KV-cache capacity before reserving
@@ -188,6 +191,12 @@ def reserve_mm_ipc_gpu_memory(
         return available_kv_cache_memory_bytes
 
     from vllm import envs
+    from vllm.multimodal.image_decoders import (
+        NVIMAGECODEC_CUDA_CONTEXT_BYTES,
+        NVIMAGECODEC_DEFAULT_DECODERS,
+        get_nvimagecodec_decoder_gpu_memory_bytes,
+        validate_nvimagecodec_decoders,
+    )
     from vllm.multimodal.video_decoders import (
         PYNVVIDEOCODEC_DEFAULT_HW_DECODERS,
         PYNVVIDEOCODEC_VIDEO_BACKEND,
@@ -219,21 +228,45 @@ def reserve_mm_ipc_gpu_memory(
         if uses_pynvvideocodec
         else 1
     )
-    per_server_decoder_bytes = (
+    per_server_video_decoder_bytes = (
         PYNVVIDEOCODEC_DECODER_GPU_MEMORY_BYTES * hw_decoders
         + PYNVVIDEOCODEC_CUDA_CONTEXT_BYTES
     )
-    decoder_reserved_bytes = (
-        num_api_servers * per_server_decoder_bytes
+    video_decoder_reserved_bytes = (
+        num_api_servers * per_server_video_decoder_bytes
         if mm_config.use_gpu_video_backend()
         else 0
     )
+
+    image_kwargs = mm_config.media_io_kwargs.get("image", {})
+    uses_gpu_image = mm_config.use_gpu_image_backend()
+    image_decoders = (
+        validate_nvimagecodec_decoders(
+            image_kwargs.get("decoders", NVIMAGECODEC_DEFAULT_DECODERS)
+        )
+        if uses_gpu_image
+        else 0
+    )
+    per_server_image_decoder_bytes = (
+        get_nvimagecodec_decoder_gpu_memory_bytes() * image_decoders
+        + NVIMAGECODEC_CUDA_CONTEXT_BYTES
+        if uses_gpu_image
+        else 0
+    )
+    image_decoder_reserved_bytes = num_api_servers * per_server_image_decoder_bytes
+    decoder_reserved_bytes = video_decoder_reserved_bytes + image_decoder_reserved_bytes
+    per_server_decoder_bytes = decoder_reserved_bytes // num_api_servers
     reserved_bytes = raw_frame_reserved_bytes + decoder_reserved_bytes
     if reserved_bytes <= 0:
         return available_kv_cache_memory_bytes
 
     remaining = available_kv_cache_memory_bytes - reserved_bytes
     if remaining <= 0:
+        reservation_hint = (
+            "the configured decoder counts, use CPU media backends, or increase "
+            if uses_gpu_image
+            else "hw_decoders, use a different video backend, or increase "
+        )
         raise ValueError(
             f"frontend multimodal GPU decoding reserves "
             f"{format_gib(reserved_bytes)} GiB "
@@ -241,8 +274,7 @@ def reserve_mm_ipc_gpu_memory(
             f"{format_gib(decoder_reserved_bytes)} GiB decoder cache budget), "
             f"but only {format_gib(available_kv_cache_memory_bytes)} GiB is "
             "available for the KV cache. Reduce mm_ipc_gpu_memory_gb or "
-            "hw_decoders, use a different video backend, or increase "
-            "gpu_memory_utilization."
+            f"{reservation_hint}gpu_memory_utilization."
         )
     logger.info_once(
         "Reserving %s GiB of GPU memory for frontend multimodal decoding "

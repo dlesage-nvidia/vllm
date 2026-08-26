@@ -6,6 +6,7 @@ import time
 
 import pytest
 
+import vllm.multimodal.gpu_ipc_memory as gpu_ipc_memory
 from vllm.config.multimodal import MultiModalConfig
 from vllm.multimodal.gpu_ipc_memory import (
     MultiModalGPUMemoryPool,
@@ -13,6 +14,14 @@ from vllm.multimodal.gpu_ipc_memory import (
     maybe_init_mm_gpu_ipc_pool,
     reserve_mm_ipc_gpu_memory,
     set_mm_gpu_ipc_pool,
+)
+from vllm.multimodal.image_decoders import (
+    NVIMAGECODEC_CUDA_CONTEXT_BYTES,
+    NVIMAGECODEC_DECODER_WORKSPACE_BYTES,
+    NVIMAGECODEC_IMAGE_BACKEND,
+    NVIMAGECODEC_MAX_CHANNELS,
+    NVIMAGECODEC_MAX_PIXELS,
+    get_nvimagecodec_decoder_gpu_memory_bytes,
 )
 from vllm.multimodal.video_decoders import PYNVVIDEOCODEC_VIDEO_BACKEND
 from vllm.multimodal.video_decoders.pynvvideocodec import (
@@ -27,6 +36,8 @@ def _mm_config(
     mm_ipc_gpu_memory_gb: float = 0,
     video_backend: str | None = None,
     hw_decoders: int | None = None,
+    image_backend: str | None = None,
+    image_decoders: int | None = None,
 ) -> MultiModalConfig:
     video_kwargs: dict[str, object] = (
         {} if video_backend is None else {"video_backend": video_backend}
@@ -34,9 +45,21 @@ def _mm_config(
     if hw_decoders is not None:
         video_kwargs["hw_decoders"] = hw_decoders
 
+    image_kwargs: dict[str, object] = (
+        {} if image_backend is None else {"backend": image_backend}
+    )
+    if image_decoders is not None:
+        image_kwargs["decoders"] = image_decoders
+
+    media_io_kwargs = {}
+    if video_kwargs:
+        media_io_kwargs["video"] = video_kwargs
+    if image_kwargs:
+        media_io_kwargs["image"] = image_kwargs
+
     return MultiModalConfig(
         mm_ipc_gpu_memory_gb=mm_ipc_gpu_memory_gb,
-        media_io_kwargs={"video": video_kwargs} if video_kwargs else {},
+        media_io_kwargs=media_io_kwargs,
     )
 
 
@@ -47,6 +70,16 @@ def _pynvvideocodec_decoder_budget(
     return api_process_count * (
         PYNVVIDEOCODEC_DECODER_GPU_MEMORY_BYTES * hw_decoders
         + PYNVVIDEOCODEC_CUDA_CONTEXT_BYTES
+    )
+
+
+def _nvimagecodec_decoder_budget(
+    api_process_count: int = 1,
+    image_decoders: int = 2,
+) -> int:
+    return api_process_count * (
+        get_nvimagecodec_decoder_gpu_memory_bytes() * image_decoders
+        + NVIMAGECODEC_CUDA_CONTEXT_BYTES
     )
 
 
@@ -245,4 +278,137 @@ def test_reserve_mm_ipc_gpu_memory_uses_configured_hw_decoders(
 
     assert reserve_mm_ipc_gpu_memory(available_bytes, mm_config) == (
         available_bytes - _pynvvideocodec_decoder_budget(hw_decoders=3)
+    )
+
+
+def test_reserve_mm_ipc_gpu_memory_includes_nvimagecodec_decoder_budget(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("VLLM_IMAGE_LOADER_BACKEND", "pillow")
+    available_bytes = 8 * GiB_bytes
+    mm_config = _mm_config(
+        mm_ipc_gpu_memory_gb=0.25,
+        image_backend=NVIMAGECODEC_IMAGE_BACKEND,
+    )
+
+    assert reserve_mm_ipc_gpu_memory(available_bytes, mm_config) == (
+        available_bytes - int(0.25 * GiB_bytes) - _nvimagecodec_decoder_budget()
+    )
+
+
+def test_reserve_mm_ipc_gpu_memory_uses_configured_image_decoders(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("VLLM_IMAGE_LOADER_BACKEND", "pillow")
+    available_bytes = 8 * GiB_bytes
+    mm_config = _mm_config(
+        mm_ipc_gpu_memory_gb=0.25,
+        image_backend=NVIMAGECODEC_IMAGE_BACKEND,
+        image_decoders=3,
+    )
+
+    assert reserve_mm_ipc_gpu_memory(available_bytes, mm_config) == (
+        available_bytes
+        - int(0.25 * GiB_bytes)
+        - _nvimagecodec_decoder_budget(image_decoders=3)
+    )
+
+
+def test_nvimagecodec_decoder_budget_scales_with_api_processes(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("VLLM_IMAGE_LOADER_BACKEND", "pillow")
+    available_bytes = 16 * GiB_bytes
+    mm_config = _mm_config(
+        mm_ipc_gpu_memory_gb=0.25,
+        image_backend=NVIMAGECODEC_IMAGE_BACKEND,
+    )
+
+    assert reserve_mm_ipc_gpu_memory(
+        available_bytes, mm_config, api_process_count=3
+    ) == (
+        available_bytes
+        - int(0.25 * GiB_bytes)
+        - _nvimagecodec_decoder_budget(api_process_count=3)
+    )
+
+
+def test_nvimagecodec_reservation_uses_lower_global_pixel_limit(monkeypatch):
+    import vllm.envs as envs
+
+    monkeypatch.setattr(envs, "VLLM_MAX_IMAGE_PIXELS", 100)
+
+    assert get_nvimagecodec_decoder_gpu_memory_bytes() == (
+        NVIMAGECODEC_DECODER_WORKSPACE_BYTES + 100 * NVIMAGECODEC_MAX_CHANNELS
+    )
+
+
+@pytest.mark.parametrize("configured_limit", [0, NVIMAGECODEC_MAX_PIXELS + 1])
+def test_nvimagecodec_reservation_caps_unbounded_global_pixel_limit(
+    monkeypatch, configured_limit: int
+):
+    import vllm.envs as envs
+
+    monkeypatch.setattr(envs, "VLLM_MAX_IMAGE_PIXELS", configured_limit)
+
+    assert get_nvimagecodec_decoder_gpu_memory_bytes() == (
+        NVIMAGECODEC_DECODER_WORKSPACE_BYTES
+        + NVIMAGECODEC_MAX_PIXELS * NVIMAGECODEC_MAX_CHANNELS
+    )
+
+
+def test_pillow_reservation_allows_unlimited_image_pixels(monkeypatch):
+    import vllm.envs as envs
+
+    monkeypatch.setenv("VLLM_IMAGE_LOADER_BACKEND", "pillow")
+    monkeypatch.setattr(envs, "VLLM_MAX_IMAGE_PIXELS", 0)
+    available_bytes = 2 * GiB_bytes
+    mm_config = _mm_config(mm_ipc_gpu_memory_gb=0.25)
+
+    assert reserve_mm_ipc_gpu_memory(available_bytes, mm_config) == (
+        available_bytes - int(0.25 * GiB_bytes)
+    )
+
+
+def test_raw_frame_only_log_reports_zero_decoder_budget_per_server(monkeypatch):
+    monkeypatch.setenv("VLLM_IMAGE_LOADER_BACKEND", "pillow")
+    monkeypatch.setenv("VLLM_VIDEO_LOADER_BACKEND", "opencv")
+    log_calls = []
+
+    def record_info_once(message, *args):
+        log_calls.append((message, args))
+
+    monkeypatch.setattr(gpu_ipc_memory.logger, "info_once", record_info_once)
+
+    reserve_mm_ipc_gpu_memory(
+        2 * GiB_bytes,
+        _mm_config(mm_ipc_gpu_memory_gb=0.25),
+        api_process_count=2,
+    )
+
+    assert len(log_calls) == 1
+    _, args = log_calls[0]
+    assert args[2] == args[4] == "0.0"
+
+
+def test_gpu_image_and_video_backends_reserve_both_context_estimates(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("VLLM_IMAGE_LOADER_BACKEND", "pillow")
+    monkeypatch.setenv("VLLM_VIDEO_LOADER_BACKEND", "opencv")
+    available_bytes = 8 * GiB_bytes
+    mm_config = _mm_config(
+        mm_ipc_gpu_memory_gb=0.25,
+        video_backend=PYNVVIDEOCODEC_VIDEO_BACKEND,
+        image_backend=NVIMAGECODEC_IMAGE_BACKEND,
+    )
+    decoder_bytes = (
+        2 * PYNVVIDEOCODEC_DECODER_GPU_MEMORY_BYTES
+        + 2 * get_nvimagecodec_decoder_gpu_memory_bytes()
+        + PYNVVIDEOCODEC_CUDA_CONTEXT_BYTES
+        + NVIMAGECODEC_CUDA_CONTEXT_BYTES
+    )
+
+    assert reserve_mm_ipc_gpu_memory(available_bytes, mm_config) == (
+        available_bytes - int(0.25 * GiB_bytes) - decoder_bytes
     )

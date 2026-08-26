@@ -14,6 +14,7 @@ from vllm.multimodal.inputs import (
 from vllm.multimodal.utils import (
     argsort_mm_positions,
     encode_image_url,
+    fetch_image,
     group_and_batch_mm_items,
 )
 
@@ -237,6 +238,34 @@ def test_encode_image_url_uncommon_format_has_valid_mimetype():
     url = encode_image_url(Image.new("RGB", (2, 2)), format="TGA")
     mimetype = url.removeprefix("data:").split(";", 1)[0]
     assert mimetype == "image/tga"
+
+
+def test_fetch_image_does_not_inherit_nvimagecodec_backend(monkeypatch):
+    image_url = encode_image_url(Image.new("RGB", (2, 2), color="red"))
+    monkeypatch.setenv("VLLM_IMAGE_LOADER_BACKEND", "nvimagecodec")
+
+    def fail_nvimagecodec_decode(*args, **kwargs):
+        pytest.fail("standalone fetch_image must not use nvImageCodec from the env")
+
+    monkeypatch.setattr(
+        "vllm.multimodal.media.image.decode_images_nvimagecodec",
+        fail_nvimagecodec_decode,
+    )
+
+    image = fetch_image(image_url)
+
+    assert image.mode == "RGB"
+    assert image.size == (2, 2)
+
+
+def test_fetch_image_rejects_explicit_nvimagecodec_before_connector(monkeypatch):
+    def fail_connector(*args, **kwargs):
+        pytest.fail("fetch_image must reject before constructing a connector")
+
+    monkeypatch.setattr("vllm.multimodal.utils.MediaConnector", fail_connector)
+
+    with pytest.raises(ValueError, match="only supports the Pillow image backend"):
+        fetch_image("unused", {"backend": "nvimagecodec"})
 
 
 def test_group_and_batch_mm_items_split_by_shared_data():

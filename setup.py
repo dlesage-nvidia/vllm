@@ -33,6 +33,7 @@ def load_module_from_path(module_name, path):
 
 ROOT_DIR = Path(__file__).parent
 logger = logging.getLogger(__name__)
+NVIMAGECODEC_VERSION = "0.9.0.20"
 
 PRECOMPILED_RUST_FRONTEND_PATH = ROOT_DIR / "vllm" / "vllm-rs"
 # setuptools-rust installs PyO3 artifacts as `<module>.<ext-suffix>`, where the
@@ -1352,6 +1353,28 @@ def get_requirements() -> list[str]:
     return requirements
 
 
+def get_nvimagecodec_requirements() -> list[str]:
+    """Return the opt-in nvImageCodec extra for supported wheel targets."""
+    if not _is_cuda():
+        return []
+
+    import platform
+
+    # A generic aarch64 wheel cannot distinguish SBSA from Tegra, which use
+    # different nvImageCodec distributions. Arm users install the appropriate
+    # NVIDIA package explicitly as documented in multimodal_inputs.md.
+    if platform.machine() not in ("x86_64", "AMD64"):
+        return []
+
+    cuda_version = torch.version.cuda
+    if cuda_version is None:
+        return []
+    cuda_major = cuda_version.split(".", 1)[0]
+    if cuda_major not in ("12", "13"):
+        return []
+    return [f"nvidia-nvimgcodec-cu{cuda_major}[all]=={NVIMAGECODEC_VERSION}"]
+
+
 ext_modules = []
 
 if _is_cuda() or _is_hip():
@@ -1526,6 +1549,7 @@ setup(
             "mistral_common[audio]",
         ],  # Required for audio processing
         "video": [],  # Kept for backwards compatibility
+        "nvimagecodec": get_nvimagecodec_requirements(),
         # NVIDIA DeepStream (NVDEC) GPU video-decode backend. Linux x86-64
         # only; also needs system GStreamer + libv4l (see docs).
         "deepstream": ["nvidia-deepstream-videodecode-cu13>=9.0.2"],

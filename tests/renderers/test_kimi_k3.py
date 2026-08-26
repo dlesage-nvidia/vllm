@@ -5,7 +5,9 @@ from typing import Any
 
 import pytest
 
+import vllm.renderers.kimi_k3 as kimi_k3_module
 from vllm.exceptions import VLLMValidationError
+from vllm.multimodal.media.connector import merge_media_io_kwargs
 from vllm.renderers import ChatParams
 from vllm.renderers.kimi_k3 import KimiK3Renderer, _merge_k3_media_io_kwargs
 from vllm.renderers.registry import RENDERER_REGISTRY
@@ -54,6 +56,11 @@ class MockParallelConfig:
 
 
 @dataclass
+class MockMultiModalConfig:
+    media_io_kwargs: dict[str, dict[str, Any]]
+
+
+@dataclass
 class MockVllmConfig:
     model_config: MockModelConfig
     parallel_config: MockParallelConfig
@@ -84,6 +91,86 @@ def test_k3_media_io_defaults_preserve_original_mode():
     assert _merge_k3_media_io_kwargs(
         {"image": {"rgba_background_color": (0, 0, 0)}}
     ) == {"image": {"image_mode": None, "rgba_background_color": (0, 0, 0)}}
+
+
+def test_k3_media_io_defaults_preserve_authorized_startup_settings(monkeypatch):
+    monkeypatch.setenv("VLLM_IMAGE_LOADER_BACKEND", "pillow")
+    startup_kwargs = {
+        "image": {
+            "backend": "nvimagecodec",
+            "decoders": 4,
+            "batch_size": 5,
+        }
+    }
+    authorized_kwargs = merge_media_io_kwargs(
+        startup_kwargs,
+        {"image": {"rgba_background_color": (0, 0, 0)}},
+    )
+
+    assert _merge_k3_media_io_kwargs(authorized_kwargs) == {
+        "image": {
+            "image_mode": None,
+            "backend": "nvimagecodec",
+            "decoders": 4,
+            "batch_size": 5,
+            "rgba_background_color": (0, 0, 0),
+        }
+    }
+
+
+def test_k3_media_io_defaults_preserve_offline_settings():
+    assert _merge_k3_media_io_kwargs(
+        None,
+        default_media_io_kwargs={
+            "image": {
+                "backend": "nvimagecodec",
+                "decoders": 3,
+                "batch_size": 7,
+            }
+        },
+    ) == {
+        "image": {
+            "image_mode": None,
+            "backend": "nvimagecodec",
+            "decoders": 3,
+            "batch_size": 7,
+        }
+    }
+
+
+def test_render_messages_inherits_offline_media_io_settings(monkeypatch):
+    captured_kwargs = None
+
+    def fake_parse_chat_messages(*args, **kwargs):
+        nonlocal captured_kwargs
+        captured_kwargs = kwargs["media_io_kwargs"]
+        return ([{"role": "user", "content": "hi"}], None, None)
+
+    monkeypatch.setattr(kimi_k3_module, "parse_chat_messages", fake_parse_chat_messages)
+    renderer = _make_renderer(StubTokenizer([1, 2, 3]))
+    renderer.model_config.multimodal_config = MockMultiModalConfig(
+        {
+            "image": {
+                "backend": "nvimagecodec",
+                "decoders": 4,
+                "batch_size": 5,
+            }
+        }
+    )
+
+    renderer.render_messages(
+        [{"role": "user", "content": "hi"}],
+        ChatParams(),
+    )
+
+    assert captured_kwargs == {
+        "image": {
+            "image_mode": None,
+            "backend": "nvimagecodec",
+            "decoders": 4,
+            "batch_size": 5,
+        }
+    }
 
 
 def test_apply_chat_template_forces_tokenize_and_pins_return_dict():
@@ -260,6 +347,39 @@ def test_render_messages_returns_token_prompt():
     assert conversation[0]["role"] == "user"
 
 
+def test_render_messages_passes_authorized_media_io_settings(monkeypatch):
+    captured_kwargs = None
+
+    def fake_parse_chat_messages(*args, **kwargs):
+        nonlocal captured_kwargs
+        captured_kwargs = kwargs["media_io_kwargs"]
+        return ([{"role": "user", "content": "hi"}], None, None)
+
+    monkeypatch.setattr(kimi_k3_module, "parse_chat_messages", fake_parse_chat_messages)
+    renderer = _make_renderer(StubTokenizer([1, 2, 3]))
+    media_io_kwargs = {
+        "image": {
+            "backend": "nvimagecodec",
+            "decoders": 4,
+            "batch_size": 5,
+        }
+    }
+
+    renderer.render_messages(
+        [{"role": "user", "content": "hi"}],
+        ChatParams(media_io_kwargs=media_io_kwargs),
+    )
+
+    assert captured_kwargs == {
+        "image": {
+            "image_mode": None,
+            "backend": "nvimagecodec",
+            "decoders": 4,
+            "batch_size": 5,
+        }
+    }
+
+
 def test_render_messages_derives_private_xtml_tool_attrs():
     tokenizer = StubTokenizer([1, 2, 3])
     renderer = _make_renderer(tokenizer)
@@ -351,3 +471,81 @@ async def test_render_messages_async_returns_token_prompt():
 
     assert prompt == {"prompt_token_ids": [4, 5]}
     assert conversation[0]["role"] == "user"
+
+
+@pytest.mark.asyncio
+async def test_render_messages_async_passes_authorized_media_io_settings(monkeypatch):
+    captured_kwargs = None
+
+    async def fake_parse_chat_messages_async(*args, **kwargs):
+        nonlocal captured_kwargs
+        captured_kwargs = kwargs["media_io_kwargs"]
+        return ([{"role": "user", "content": "hi"}], None, None)
+
+    monkeypatch.setattr(
+        kimi_k3_module,
+        "parse_chat_messages_async",
+        fake_parse_chat_messages_async,
+    )
+    renderer = _make_renderer(StubTokenizer([4, 5]))
+    media_io_kwargs = {
+        "image": {
+            "backend": "nvimagecodec",
+            "decoders": 4,
+            "batch_size": 5,
+        }
+    }
+
+    await renderer.render_messages_async(
+        [{"role": "user", "content": "hi"}],
+        ChatParams(media_io_kwargs=media_io_kwargs),
+    )
+
+    assert captured_kwargs == {
+        "image": {
+            "image_mode": None,
+            "backend": "nvimagecodec",
+            "decoders": 4,
+            "batch_size": 5,
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_render_messages_async_inherits_offline_media_io_settings(monkeypatch):
+    captured_kwargs = None
+
+    async def fake_parse_chat_messages_async(*args, **kwargs):
+        nonlocal captured_kwargs
+        captured_kwargs = kwargs["media_io_kwargs"]
+        return ([{"role": "user", "content": "hi"}], None, None)
+
+    monkeypatch.setattr(
+        kimi_k3_module,
+        "parse_chat_messages_async",
+        fake_parse_chat_messages_async,
+    )
+    renderer = _make_renderer(StubTokenizer([4, 5]))
+    renderer.model_config.multimodal_config = MockMultiModalConfig(
+        {
+            "image": {
+                "backend": "nvimagecodec",
+                "decoders": 4,
+                "batch_size": 5,
+            }
+        }
+    )
+
+    await renderer.render_messages_async(
+        [{"role": "user", "content": "hi"}],
+        ChatParams(),
+    )
+
+    assert captured_kwargs == {
+        "image": {
+            "image_mode": None,
+            "backend": "nvimagecodec",
+            "decoders": 4,
+            "batch_size": 5,
+        }
+    }

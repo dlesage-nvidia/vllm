@@ -10,6 +10,9 @@
     "UBUNTU_VERSION": {
       "default": "24.04"
     },
+    "NVIMAGECODEC_VERSION": {
+      "default": "0.9.0.20"
+    },
     "NCCL_VERSION": {
       "default": "2.30.7"
     },

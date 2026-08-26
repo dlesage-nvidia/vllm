@@ -10,7 +10,6 @@ from vllm.entrypoints.chat_utils import (
     parse_chat_messages_async,
 )
 from vllm.exceptions import VLLMValidationError
-from vllm.multimodal.media.connector import merge_media_io_kwargs
 from vllm.tokenizers.hf import HfTokenizer
 from vllm.utils.async_utils import make_async
 
@@ -28,8 +27,20 @@ _K3_THINKING_EFFORTS = ("low", "high", "max")
 
 def _merge_k3_media_io_kwargs(
     media_io_kwargs: dict[str, dict[str, Any]] | None,
+    *,
+    default_media_io_kwargs: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, dict[str, Any]] | None:
-    return merge_media_io_kwargs(_K3_MEDIA_IO_DEFAULTS, media_io_kwargs)
+    # Online request overrides were already authorized by ChatParams.with_defaults.
+    # Reapplying the trust-boundary merge would strip startup-only image settings.
+    merged: dict[str, dict[str, Any]] = {}
+    for source in (
+        _K3_MEDIA_IO_DEFAULTS,
+        default_media_io_kwargs or {},
+        media_io_kwargs or {},
+    ):
+        for modality, kwargs in source.items():
+            merged[modality] = merged.get(modality, {}) | dict(kwargs)
+    return merged
 
 
 def _dump_k3_template_value(value: Any) -> Any:
@@ -172,6 +183,19 @@ class KimiK3Renderer(BaseRenderer[HfTokenizer]):
         kwargs["tokenize"] = True
         return self.get_tokenizer().apply_chat_template(conversation, **kwargs)
 
+    def _get_media_io_kwargs(
+        self, params: ChatParams
+    ) -> dict[str, dict[str, Any]] | None:
+        multimodal_config = self.model_config.multimodal_config
+        return _merge_k3_media_io_kwargs(
+            params.media_io_kwargs,
+            default_media_io_kwargs=(
+                multimodal_config.media_io_kwargs
+                if multimodal_config is not None
+                else None
+            ),
+        )
+
     def render_messages(
         self,
         messages: list[ChatCompletionMessageParam],
@@ -181,7 +205,7 @@ class KimiK3Renderer(BaseRenderer[HfTokenizer]):
             messages,
             self.model_config,
             content_format="string",
-            media_io_kwargs=_merge_k3_media_io_kwargs(params.media_io_kwargs),
+            media_io_kwargs=self._get_media_io_kwargs(params),
             mm_processor_kwargs=params.mm_processor_kwargs,
         )
 
@@ -205,7 +229,7 @@ class KimiK3Renderer(BaseRenderer[HfTokenizer]):
             messages,
             self.model_config,
             content_format="string",
-            media_io_kwargs=_merge_k3_media_io_kwargs(params.media_io_kwargs),
+            media_io_kwargs=self._get_media_io_kwargs(params),
             mm_processor_kwargs=params.mm_processor_kwargs,
         )
 

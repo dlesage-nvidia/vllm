@@ -5,6 +5,19 @@ import contextlib
 
 from PIL import Image, ImageOps
 
+import vllm.envs as envs
+
+
+def check_image_pixel_limit(width: int, height: int) -> None:
+    """Reject an encoded image before an oversized raster is allocated."""
+    max_pixels = envs.VLLM_MAX_IMAGE_PIXELS
+    if max_pixels > 0 and width * height > max_pixels:
+        raise ValueError(
+            f"Image dimensions {width}x{height} ({width * height} pixels) exceed "
+            f"the maximum of {max_pixels} pixels. Set VLLM_MAX_IMAGE_PIXELS to "
+            "increase this limit."
+        )
+
 
 def rescale_image_size(
     image: Image.Image, size_factor: float, transpose: int = -1

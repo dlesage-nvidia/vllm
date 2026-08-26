@@ -66,6 +66,64 @@ def test_use_gpu_video_backend_from_media_io_kwargs(backend_arg: str):
     assert config.use_gpu_video_backend()
 
 
+def test_use_gpu_image_backend_from_media_io_kwargs():
+    config = MultiModalConfig(
+        mm_ipc_gpu_memory_gb=1,
+        media_io_kwargs={"image": {"backend": "nvimagecodec"}},
+    )
+
+    assert config.use_gpu_image_backend()
+
+
+def test_use_gpu_image_backend_from_environment(monkeypatch):
+    monkeypatch.setenv("VLLM_IMAGE_LOADER_BACKEND", "nvimagecodec")
+    config = MultiModalConfig(mm_ipc_gpu_memory_gb=1)
+
+    assert config.use_gpu_image_backend()
+
+
+def test_custom_image_backend_remains_connector_owned():
+    config = MultiModalConfig(media_io_kwargs={"image": {"backend": "custom"}})
+
+    assert not config.use_gpu_image_backend()
+
+
+def test_nvimagecodec_requires_positive_gpu_memory_budget():
+    with pytest.raises(ValueError, match="mm_ipc_gpu_memory_gb"):
+        MultiModalConfig(
+            media_io_kwargs={"image": {"backend": "nvimagecodec"}},
+        )
+
+
+@pytest.mark.parametrize("decoders", [True, 0, -1, 1.5, "2"])
+def test_nvimagecodec_rejects_invalid_decoder_count(decoders: object):
+    with pytest.raises(ValueError, match="decoders"):
+        MultiModalConfig(
+            mm_ipc_gpu_memory_gb=1,
+            media_io_kwargs={
+                "image": {"backend": "nvimagecodec", "decoders": decoders}
+            },
+        )
+
+
+@pytest.mark.parametrize("batch_size", [True, 0, -1, 1.5, "5", 65])
+def test_nvimagecodec_rejects_invalid_batch_size(batch_size: object):
+    with pytest.raises(ValueError, match="batch_size"):
+        MultiModalConfig(
+            mm_ipc_gpu_memory_gb=1,
+            media_io_kwargs={
+                "image": {"backend": "nvimagecodec", "batch_size": batch_size}
+            },
+        )
+
+
+def test_nvimagecodec_non_rgb_mode_still_requires_reserved_gpu_memory():
+    with pytest.raises(ValueError, match="mm_ipc_gpu_memory_gb"):
+        MultiModalConfig(
+            media_io_kwargs={"image": {"backend": "nvimagecodec", "image_mode": None}},
+        )
+
+
 def test_mm_encoder_fp8_scale_path_requires_fp8():
     with pytest.raises(ValueError, match="mm_encoder_attn_dtype"):
         MultiModalConfig(mm_encoder_fp8_scale_path="/tmp/scales.json")

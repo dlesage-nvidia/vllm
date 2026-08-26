@@ -256,7 +256,7 @@ class MultiModalConfig:
     mm_ipc_gpu_memory_gb: float = Field(default=0, ge=0)
     """Amount of GPU memory (in GiB) sequestered on the engine's device for
     GPU-side multimodal work in the API-server (frontend) process, such as
-    hardware video decoding.
+    hardware image and video decoding.
 
     This budget is carved out of the engine's KV-cache memory so the headroom
     physically exists, and frontend GPU decode paths acquire from a blocking
@@ -347,6 +347,27 @@ class MultiModalConfig:
             if not save_parent.is_dir():
                 raise FileNotFoundError(
                     f"Parent directory for FP8 scale save path not found: {save_parent}"
+                )
+
+        from vllm.multimodal.image_decoders import (
+            NVIMAGECODEC_DEFAULT_BATCH_SIZE,
+            NVIMAGECODEC_DEFAULT_DECODERS,
+            validate_nvimagecodec_batch_size,
+            validate_nvimagecodec_decoders,
+        )
+
+        if self.use_gpu_image_backend():
+            image_kwargs = self.media_io_kwargs.get("image", {})
+            validate_nvimagecodec_decoders(
+                image_kwargs.get("decoders", NVIMAGECODEC_DEFAULT_DECODERS)
+            )
+            validate_nvimagecodec_batch_size(
+                image_kwargs.get("batch_size", NVIMAGECODEC_DEFAULT_BATCH_SIZE)
+            )
+            if self.mm_ipc_gpu_memory_gb <= 0:
+                raise ValueError(
+                    "The nvImageCodec image backend requires a positive "
+                    "mm_ipc_gpu_memory_gb value."
                 )
         return self
 
@@ -530,6 +551,15 @@ class MultiModalConfig:
             codec_backend is not None
             and VIDEO_LOADER_REGISTRY.backend_requires_gpu(codec_backend)
         )
+
+    def use_gpu_image_backend(self) -> bool:
+        """Return whether nvImageCodec is enabled for image inputs."""
+        from vllm.multimodal.image_decoders import NVIMAGECODEC_IMAGE_BACKEND
+
+        image_kwargs = self.media_io_kwargs.get("image", {})
+        backend = image_kwargs.get("backend")
+        backend = envs.VLLM_IMAGE_LOADER_BACKEND if backend is None else backend
+        return backend == NVIMAGECODEC_IMAGE_BACKEND
 
     def is_multimodal_pruning_enabled(self):
         return self.get_video_pruning_spec() is not None

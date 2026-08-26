@@ -212,3 +212,22 @@ def test_hash_media_io_noop_config_preserves_hash():
     assert hasher.hash_kwargs("blake3", image=loaded) == hasher.hash_kwargs(
         "blake3", image=plain
     )
+
+
+def test_hash_separates_pillow_and_nvimagecodec(monkeypatch):
+    image = Image.new("RGB", (8, 8), (0, 128, 255))
+    buf = BytesIO()
+    image.save(buf, format="JPEG")
+    data = buf.getvalue()
+
+    pillow = ImageMediaIO(backend="pillow").load_bytes(data)
+    monkeypatch.setattr(
+        "vllm.multimodal.media.image.decode_images_nvimagecodec",
+        lambda *args, **kwargs: [pillow.media.copy()],
+    )
+    nvimagecodec = ImageMediaIO(backend="nvimagecodec").load_bytes(data)
+
+    hasher = MultiModalHasher
+    assert hasher.hash_kwargs("blake3", image=pillow) != hasher.hash_kwargs(
+        "blake3", image=nvimagecodec
+    )

@@ -779,6 +779,94 @@ Full example: [examples/generate/multimodal/openai_chat_completion_client_for_mu
     export VLLM_IMAGE_FETCH_TIMEOUT=<timeout>
     ```
 
+#### GPU Image Decoding with nvImageCodec
+
+By default, vLLM decodes images on the CPU with Pillow. On NVIDIA GPUs, the
+`nvimagecodec` backend submits supported images to
+[nvImageCodec](https://docs.nvidia.com/cuda/nvimagecodec/)'s native batch API.
+It wires all still-image codec families distributed with nvImageCodec:
+
+| Format | Preferred nvImageCodec backend |
+| --- | --- |
+| JPEG | nvJPEG hardware or CUDA decoder |
+| JPEG 2000 and HTJ2K | nvJPEG 2000 CUDA decoder |
+| TIFF | nvTIFF CUDA decoder |
+| BMP, PNG, PNM, and WebP | Native or OpenCV CPU plugin |
+
+GPU plugins are tried for GPU-capable formats and nvImageCodec's CPU plugins
+provide the fallback. Pillow remains the final fallback for unsupported image
+variants, animations, precision above 8 bits, alpha TIFF images, and output
+modes that cannot be represented as RGB or RGBA. This preserves vLLM's
+existing image-mode, alpha-compositing, EXIF-orientation, and first-frame
+behavior.
+
+nvImageCodec is an optional dependency. On x86-64, install the extra that
+matches the CUDA major used by the vLLM wheel:
+
+```bash
+uv pip install 'vllm[nvimagecodec]'
+```
+
+Generic Arm wheels do not install an nvImageCodec distribution automatically,
+because the same Python wheel tag covers two incompatible NVIDIA package
+families. Install `nvidia-nvimgcodec-cu12[all]` or
+`nvidia-nvimgcodec-cu13[all]` on an SBSA system, and
+`nvidia-nvimgcodec-tegra-cu12[all]` on a supported Tegra system. Follow the
+[nvImageCodec installation guide](https://docs.nvidia.com/cuda/nvimagecodec/installation.html)
+for the platform and CUDA versions supported by each package.
+
+!!! warning
+    Configure [CUDA Multi-Process Service
+    (MPS)](https://docs.nvidia.com/deploy/mps/quick-start.html) before using
+    this backend. Image decoding runs in the API server process while model
+    serving runs in the engine process, so multiple CUDA processes share the
+    same GPU.
+
+Select the backend and reserve VRAM for frontend decoding:
+
+```bash
+vllm serve Qwen/Qwen3-VL-30B-A3B-Instruct \
+  --media-io-kwargs \
+    '{"image": {"backend": "nvimagecodec", "decoders": 2, "batch_size": 5}}' \
+  --mm-ipc-gpu-memory-gb 1
+```
+
+You can also select the backend with
+`VLLM_IMAGE_LOADER_BACKEND=nvimagecodec`. A positive
+`--mm-ipc-gpu-memory-gb` value is required. vLLM subtracts this budget from
+the engine's KV-cache headroom and uses it as a byte-counting semaphore for
+decoded GPU images. Choose a budget large enough for the largest concurrent
+native GPU batch, including three bytes per RGB pixel or four bytes per RGBA
+pixel. With multiple API server processes, vLLM divides the budget evenly
+among them. CPU-plugin batches do not acquire this decoded-raster GPU budget,
+but the positive reservation is still required because one backend instance
+can receive both CPU- and GPU-capable formats. A single image whose decoded
+raster exceeds its process-local budget is rejected as a configuration error;
+it does not silently switch to Pillow.
+
+The fixed per-decoder KV-cache reservation also scales with
+`VLLM_MAX_IMAGE_PIXELS`, because nvImageCodec retains temporary buffers at
+their high-water mark. The default limit allows roughly a 512 MiB RGB or
+683 MiB RGBA raster; set a lower positive limit when your workload accepts
+smaller images to avoid reserving memory for sizes it will never decode. The
+GPU path is calibrated up to the default pixel limit and does not expand if
+you raise or disable the global limit. Pillow's own decompression-bomb limit
+still applies to fallback decoding.
+
+Native batches are split before they exceed the configured `batch_size`, the
+available decoded-raster GPU budget, or 64 MiB of encoded input. An individual
+input larger than 64 MiB falls back to Pillow. These bounds limit the
+compressed-stream and output storage retained in each decoder slot.
+
+The `decoders` setting is the maximum number of concurrent decoder slots
+retained by each API server process. It must be a positive integer, defaults
+to `2`, and cannot be overridden per request because vLLM reserves its GPU
+memory at startup. `batch_size` controls how many images vLLM submits in one
+native call. It defaults to `5`, must be between `1` and `64`, and is likewise
+fixed at startup. Before the existing multimodal preprocessing path runs, each
+decoded image passes through one pageable host RGB or RGBA buffer. The buffer is released
+after the image is copied into Pillow-owned memory.
+
 ### Video Inputs
 
 Instead of `image_url`, you can pass a video file via `video_url`. Here is a simple example using [LLaVA-OneVision](https://huggingface.co/llava-hf/llava-onevision-qwen2-0.5b-ov-hf).
