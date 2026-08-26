@@ -33,6 +33,7 @@ FULL_CONFIGURATIONS = (
     (2, 4),
 )
 MATRICES = {
+    "decoder-count": ((1, 1), (2, 1)),
     "budget-2": ((1, 2), (2, 1)),
     "primary": ((1, 2), (1, 4), (2, 1)),
     "fixed-budget": ((1, 2), (2, 1), (1, 4), (2, 2)),
