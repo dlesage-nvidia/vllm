@@ -117,6 +117,35 @@ def test_nvimagecodec_rejects_invalid_batch_size(batch_size: object):
         )
 
 
+@pytest.mark.parametrize("timeout_ms", [True, -1, 1.5j, "0.5", 1001])
+def test_nvimagecodec_rejects_invalid_coalesce_timeout(timeout_ms: object):
+    with pytest.raises(ValueError, match="coalesce_timeout_ms"):
+        MultiModalConfig(
+            mm_ipc_gpu_memory_gb=1,
+            media_io_kwargs={
+                "image": {
+                    "backend": "nvimagecodec",
+                    "coalesce_timeout_ms": timeout_ms,
+                }
+            },
+        )
+
+
+@pytest.mark.parametrize("timeout_ms", [0, 0.1, 1, 1000])
+def test_nvimagecodec_accepts_valid_coalesce_timeout(timeout_ms: float):
+    config = MultiModalConfig(
+        mm_ipc_gpu_memory_gb=1,
+        media_io_kwargs={
+            "image": {
+                "backend": "nvimagecodec",
+                "coalesce_timeout_ms": timeout_ms,
+            }
+        },
+    )
+
+    assert config.media_io_kwargs["image"]["coalesce_timeout_ms"] == timeout_ms
+
+
 def test_nvimagecodec_non_rgb_mode_still_requires_reserved_gpu_memory():
     with pytest.raises(ValueError, match="mm_ipc_gpu_memory_gb"):
         MultiModalConfig(

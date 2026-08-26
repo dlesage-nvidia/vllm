@@ -90,6 +90,7 @@ async def lifespan(app: FastAPI):
             if task is not None:
                 task.cancel()
             for attr_name in (
+                "online_renderer",
                 "openai_serving_transcription",
                 "openai_serving_translation",
             ):

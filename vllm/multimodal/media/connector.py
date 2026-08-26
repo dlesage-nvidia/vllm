@@ -38,6 +38,10 @@ from vllm.utils.registry import ExtensionManager
 from .audio import AudioEmbeddingMediaIO, AudioMediaIO
 from .base import MediaIO, MediaWithBytes
 from .image import ImageEmbeddingMediaIO, ImageMediaIO, _ImageBatchItemError
+from .image_decode_service import (
+    load_images_with_service,
+    load_images_with_service_async,
+)
 from .video import VideoMediaIO
 
 logger = init_logger(__name__)
@@ -542,6 +546,14 @@ class MediaConnector:
             **({"image_mode": image_mode} | self.media_io_kwargs.get("image", {}))
         )
 
+        if image_io.backend == NVIMAGECODEC_IMAGE_BACKEND:
+            try:
+                return MediaConnector._fetch_images_nvimagecodec(
+                    self, [image_url], image_io
+                )[0]
+            except MediaBatchError as e:
+                raise e.error from None
+
         try:
             return self.load_from_url(
                 image_url,
@@ -568,6 +580,15 @@ class MediaConnector:
         image_io = ImageMediaIO(
             **({"image_mode": image_mode} | self.media_io_kwargs.get("image", {}))
         )
+
+        if image_io.backend == NVIMAGECODEC_IMAGE_BACKEND:
+            try:
+                images = await MediaConnector._fetch_images_nvimagecodec_async(
+                    self, [image_url], image_io
+                )
+                return images[0]
+            except MediaBatchError as e:
+                raise e.error from None
 
         try:
             return await self.load_from_url_async(
@@ -599,7 +620,7 @@ class MediaConnector:
                 raise MediaBatchError(index, e) from e
 
         try:
-            return image_io.load_bytes_many(encoded_images)
+            return load_images_with_service(image_io, encoded_images)
         except _ImageBatchItemError as e:
             raise MediaBatchError(e.index, e.error) from None
         except Exception as e:
@@ -629,11 +650,8 @@ class MediaConnector:
                 raise MediaBatchError(index, result)
 
         encoded_images = [cast(bytes, result) for result in results]
-        loop = asyncio.get_running_loop()
         try:
-            return await loop.run_in_executor(
-                global_thread_pool, image_io.load_bytes_many, encoded_images
-            )
+            return await load_images_with_service_async(image_io, encoded_images)
         except _ImageBatchItemError as e:
             raise MediaBatchError(e.index, e.error) from None
         except Exception as e:

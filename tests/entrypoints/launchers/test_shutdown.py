@@ -9,13 +9,17 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import httpx
 import openai
 import psutil
 import pytest
 
+import vllm.entrypoints.launchers.utils.server_utils as server_utils
 from tests.utils import RemoteOpenAIServer
+from vllm.renderers.online_renderer import OnlineRenderer
 from vllm.utils.network_utils import get_open_port
 
 MODEL_NAME = "hmellor/tiny-random-LlamaForCausalLM"
@@ -28,6 +32,22 @@ _CHILD_CLEANUP_TIMEOUT = 10
 _INFLIGHT_REQUEST_START_TIMEOUT = 5
 _INFLIGHT_REQUEST_POLL_INTERVAL = 0.1
 _ABORT_CLIENT_TIMEOUT = 3
+
+
+@pytest.mark.asyncio
+async def test_lifespan_shuts_down_render_only_renderer(monkeypatch):
+    base_renderer = Mock()
+    online_renderer = object.__new__(OnlineRenderer)
+    online_renderer.renderer = base_renderer
+    app = SimpleNamespace(
+        state=SimpleNamespace(log_stats=False, online_renderer=online_renderer)
+    )
+    monkeypatch.setattr(server_utils, "freeze_gc_heap", lambda: None)
+
+    async with server_utils.lifespan(app):
+        pass
+
+    base_renderer.shutdown.assert_called_once_with()
 
 
 def _get_child_pids(parent_pid: int) -> list[int]:

@@ -2,11 +2,13 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import random
 from typing import TYPE_CHECKING
+from unittest.mock import Mock
 
 import pytest
 
 from vllm import LLM
 from vllm.sampling_params import SamplingParams, StructuredOutputsParams
+from vllm.v1.engine.llm_engine import LLMEngine
 from vllm.v1.metrics.reader import Counter, Gauge, Histogram, Metric, Vector
 
 if TYPE_CHECKING:
@@ -16,6 +18,39 @@ else:
 
 MODEL = "facebook/opt-125m"
 DTYPE = "half"
+
+
+def test_llm_engine_destructor_shuts_down_renderer():
+    engine = object.__new__(LLMEngine)
+    renderer = Mock()
+    engine.renderer = renderer
+    engine.dp_group = None
+
+    engine.__del__()
+
+    renderer.shutdown.assert_called_once_with()
+    engine.renderer = None
+
+
+def test_llm_engine_destructor_cleans_dp_group_after_renderer_failure(monkeypatch):
+    engine = object.__new__(LLMEngine)
+    renderer = Mock()
+    renderer.shutdown.side_effect = RuntimeError("renderer shutdown failed")
+    engine.renderer = renderer
+    engine.dp_group = object()
+    engine.external_launcher_dp = False
+    cleanup = Mock()
+    monkeypatch.setattr(
+        "vllm.v1.engine.llm_engine.stateless_destroy_torch_distributed_process_group",
+        cleanup,
+    )
+
+    with pytest.raises(RuntimeError, match="renderer shutdown failed"):
+        engine.__del__()
+
+    cleanup.assert_called_once_with(engine.dp_group)
+    engine.renderer = None
+    engine.dp_group = None
 
 
 def _vllm_model(

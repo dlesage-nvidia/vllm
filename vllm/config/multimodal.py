@@ -357,12 +357,23 @@ class MultiModalConfig:
         )
 
         if self.use_gpu_image_backend():
+            from vllm.multimodal.media.image_decode_service import (
+                NVIMAGECODEC_DEFAULT_COALESCE_TIMEOUT_MS,
+                validate_nvimagecodec_coalesce_timeout_ms,
+            )
+
             image_kwargs = self.media_io_kwargs.get("image", {})
             validate_nvimagecodec_decoders(
                 image_kwargs.get("decoders", NVIMAGECODEC_DEFAULT_DECODERS)
             )
             validate_nvimagecodec_batch_size(
                 image_kwargs.get("batch_size", NVIMAGECODEC_DEFAULT_BATCH_SIZE)
+            )
+            validate_nvimagecodec_coalesce_timeout_ms(
+                image_kwargs.get(
+                    "coalesce_timeout_ms",
+                    NVIMAGECODEC_DEFAULT_COALESCE_TIMEOUT_MS,
+                )
             )
             if self.mm_ipc_gpu_memory_gb <= 0:
                 raise ValueError(

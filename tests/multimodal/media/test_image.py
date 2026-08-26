@@ -731,12 +731,14 @@ def test_image_merge_kwargs_preserves_statically_configured_gpu_backend():
             "backend": "nvimagecodec",
             "decoders": 3,
             "batch_size": 4,
+            "coalesce_timeout_ms": 0.25,
             "image_mode": None,
         },
         runtime_kwargs={
             "backend": "nvimagecodec",
             "decoders": 8,
             "batch_size": 16,
+            "coalesce_timeout_ms": 1,
             "image_mode": "RGB",
         },
     )
@@ -745,6 +747,7 @@ def test_image_merge_kwargs_preserves_statically_configured_gpu_backend():
         "backend": "nvimagecodec",
         "decoders": 3,
         "batch_size": 4,
+        "coalesce_timeout_ms": 0.25,
         "image_mode": "RGB",
     }
 

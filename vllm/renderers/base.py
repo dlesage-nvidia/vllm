@@ -101,6 +101,7 @@ class BaseRenderer(ABC, Generic[_T]):
         self.mm_processor: BaseMultiModalProcessor | None = None
         self._readonly_mm_processor: BaseMultiModalProcessor | None = None
         self._mm_cache_stats: MultiModalCacheStats | None = None
+        self._nvimagecodec_service_lease = False
         self._clear_mm_cache_async = make_async(
             self.clear_mm_cache, executor=self._mm_executor
         )
@@ -151,6 +152,13 @@ class BaseRenderer(ABC, Generic[_T]):
             self._mm_timing_registry = MultiModalTimingRegistry(
                 config.observability_config
             )
+            if mm_config is not None and mm_config.use_gpu_image_backend():
+                from vllm.multimodal.media.image_decode_service import (
+                    acquire_nvimagecodec_decode_service_lease,
+                )
+
+                acquire_nvimagecodec_decode_service_lease()
+                self._nvimagecodec_service_lease = True
 
     def get_tokenizer(self) -> _T:
         tokenizer = self.tokenizer
@@ -288,6 +296,14 @@ class BaseRenderer(ABC, Generic[_T]):
         await self._clear_mm_cache_async()
 
     def shutdown(self) -> None:
+        if self._nvimagecodec_service_lease:
+            from vllm.multimodal.media.image_decode_service import (
+                release_nvimagecodec_decode_service_lease,
+            )
+
+            release_nvimagecodec_decode_service_lease()
+            self._nvimagecodec_service_lease = False
+
         mm_processor_cache = self.mm_processor_cache
         if mm_processor_cache is not None:
             mm_processor_cache.close()

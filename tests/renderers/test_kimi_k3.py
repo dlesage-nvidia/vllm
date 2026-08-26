@@ -100,6 +100,7 @@ def test_k3_media_io_defaults_preserve_authorized_startup_settings(monkeypatch):
             "backend": "nvimagecodec",
             "decoders": 4,
             "batch_size": 5,
+            "coalesce_timeout_ms": 0.75,
         }
     }
     authorized_kwargs = merge_media_io_kwargs(
@@ -113,6 +114,7 @@ def test_k3_media_io_defaults_preserve_authorized_startup_settings(monkeypatch):
             "backend": "nvimagecodec",
             "decoders": 4,
             "batch_size": 5,
+            "coalesce_timeout_ms": 0.75,
             "rgba_background_color": (0, 0, 0),
         }
     }
@@ -126,6 +128,7 @@ def test_k3_media_io_defaults_preserve_offline_settings():
                 "backend": "nvimagecodec",
                 "decoders": 3,
                 "batch_size": 7,
+                "coalesce_timeout_ms": 0.5,
             }
         },
     ) == {
@@ -134,6 +137,7 @@ def test_k3_media_io_defaults_preserve_offline_settings():
             "backend": "nvimagecodec",
             "decoders": 3,
             "batch_size": 7,
+            "coalesce_timeout_ms": 0.5,
         }
     }
 
@@ -154,6 +158,7 @@ def test_render_messages_inherits_offline_media_io_settings(monkeypatch):
                 "backend": "nvimagecodec",
                 "decoders": 4,
                 "batch_size": 5,
+                "coalesce_timeout_ms": 0.75,
             }
         }
     )
@@ -169,6 +174,7 @@ def test_render_messages_inherits_offline_media_io_settings(monkeypatch):
             "backend": "nvimagecodec",
             "decoders": 4,
             "batch_size": 5,
+            "coalesce_timeout_ms": 0.75,
         }
     }
 
@@ -362,6 +368,7 @@ def test_render_messages_passes_authorized_media_io_settings(monkeypatch):
             "backend": "nvimagecodec",
             "decoders": 4,
             "batch_size": 5,
+            "coalesce_timeout_ms": 0.75,
         }
     }
 
@@ -376,6 +383,7 @@ def test_render_messages_passes_authorized_media_io_settings(monkeypatch):
             "backend": "nvimagecodec",
             "decoders": 4,
             "batch_size": 5,
+            "coalesce_timeout_ms": 0.75,
         }
     }
 
@@ -493,6 +501,7 @@ async def test_render_messages_async_passes_authorized_media_io_settings(monkeyp
             "backend": "nvimagecodec",
             "decoders": 4,
             "batch_size": 5,
+            "coalesce_timeout_ms": 0.75,
         }
     }
 
@@ -507,6 +516,7 @@ async def test_render_messages_async_passes_authorized_media_io_settings(monkeyp
             "backend": "nvimagecodec",
             "decoders": 4,
             "batch_size": 5,
+            "coalesce_timeout_ms": 0.75,
         }
     }
 
@@ -532,6 +542,7 @@ async def test_render_messages_async_inherits_offline_media_io_settings(monkeypa
                 "backend": "nvimagecodec",
                 "decoders": 4,
                 "batch_size": 5,
+                "coalesce_timeout_ms": 0.75,
             }
         }
     )
@@ -547,5 +558,6 @@ async def test_render_messages_async_inherits_offline_media_io_settings(monkeypa
             "backend": "nvimagecodec",
             "decoders": 4,
             "batch_size": 5,
+            "coalesce_timeout_ms": 0.75,
         }
     }

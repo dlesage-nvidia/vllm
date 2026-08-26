@@ -453,6 +453,11 @@ class LLMEngine:
                 module.cleanup()
 
     def __del__(self):
-        dp_group = getattr(self, "dp_group", None)
-        if dp_group is not None and not self.external_launcher_dp:
-            stateless_destroy_torch_distributed_process_group(dp_group)
+        renderer = getattr(self, "renderer", None)
+        try:
+            if renderer is not None:
+                renderer.shutdown()
+        finally:
+            dp_group = getattr(self, "dp_group", None)
+            if dp_group is not None and not self.external_launcher_dp:
+                stateless_destroy_torch_distributed_process_group(dp_group)

@@ -114,6 +114,9 @@ class OnlineRenderer:
             )
         )
 
+    def shutdown(self) -> None:
+        self.renderer.shutdown()
+
     async def render_chat(
         self,
         request: ChatCompletionRequest,

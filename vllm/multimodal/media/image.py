@@ -34,6 +34,10 @@ from ..image import (
     rgba_to_rgb,
 )
 from .base import MediaIO, MediaWithBytes
+from .image_decode_service import (
+    NVIMAGECODEC_DEFAULT_COALESCE_TIMEOUT_MS,
+    validate_nvimagecodec_coalesce_timeout_ms,
+)
 
 MAGIC_NUMPY_PREFIX = b"\x93NUMPY"  # https://numpy.org/devdocs/reference/generated/numpy.lib.format.html#format-version-1-0
 
@@ -116,6 +120,7 @@ class ImageMediaIO(MediaIO[Image.Image]):
             runtime_kwargs = dict(runtime_kwargs)
             runtime_kwargs.pop("decoders", None)
             runtime_kwargs.pop("batch_size", None)
+            runtime_kwargs.pop("coalesce_timeout_ms", None)
 
             static_backend = (default_kwargs or {}).get("backend")
             if static_backend is None:
@@ -146,6 +151,7 @@ class ImageMediaIO(MediaIO[Image.Image]):
         backend: str | None = None,
         decoders: int = NVIMAGECODEC_DEFAULT_DECODERS,
         batch_size: int = NVIMAGECODEC_DEFAULT_BATCH_SIZE,
+        coalesce_timeout_ms: float = NVIMAGECODEC_DEFAULT_COALESCE_TIMEOUT_MS,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -168,6 +174,11 @@ class ImageMediaIO(MediaIO[Image.Image]):
             validate_nvimagecodec_batch_size(batch_size)
             if self.backend == NVIMAGECODEC_IMAGE_BACKEND
             else batch_size
+        )
+        self.coalesce_timeout_ms = (
+            validate_nvimagecodec_coalesce_timeout_ms(coalesce_timeout_ms)
+            if self.backend == NVIMAGECODEC_IMAGE_BACKEND
+            else coalesce_timeout_ms
         )
         # `kwargs` contains custom arguments from
         # --media-io-kwargs for this modality, merged with

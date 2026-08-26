@@ -827,7 +827,7 @@ Select the backend and reserve VRAM for frontend decoding:
 ```bash
 vllm serve Qwen/Qwen3-VL-30B-A3B-Instruct \
   --media-io-kwargs \
-    '{"image": {"backend": "nvimagecodec", "decoders": 2, "batch_size": 5}}' \
+    '{"image": {"backend": "nvimagecodec", "decoders": 2, "batch_size": 5, "coalesce_timeout_ms": 0.25}}' \
   --mm-ipc-gpu-memory-gb 1
 ```
 
@@ -865,6 +865,26 @@ memory at startup. `batch_size` controls how many images vLLM submits in one
 native call. It defaults to `5`, must be between `1` and `64`, and is likewise
 fixed at startup. Images from the same request, including JPEG-encoded video
 frames, are grouped where possible while their original order is preserved.
+Concurrent requests that each contain one compatible JPEG also share native
+batches. Direct multi-image and non-JPEG work uses the same process-local
+service and counts against the same `decoders` limit.
+
+`coalesce_timeout_ms` is the maximum intentional wait for a partial
+cross-request JPEG batch. It defaults to `0`, which adds no low-QPS delay but
+still combines requests already queued while all decoder slots are busy. A
+small nonzero value can produce fuller batches at the cost of up to that much
+additional decode latency. It must be between `0` and `1000` and, like the
+other decoder settings, cannot be overridden per request. Setting
+`batch_size=1` disables cross-request coalescing.
+
+In an A100 decode-bottleneck sweep, `0.25` ms was the best tested high-QPS
+setting for both 1080p and 4K JPEGs. Keep the zero default when minimizing
+low-QPS latency is more important, and retune for the deployment workload.
+
+Pending encoded inputs and admission waiters are bounded. When both bounds are
+full, the backend returns an overload error instead of growing frontend memory
+without limit.
+
 Before the existing multimodal preprocessing path runs, each decoded image
 passes through one pageable host RGB or RGBA buffer. The buffer is released
 after the image is copied into Pillow-owned memory.

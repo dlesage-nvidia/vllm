@@ -17,6 +17,7 @@ import requests
 import torch
 from PIL import Image, ImageChops
 
+import vllm.multimodal.media.connector as connector_module
 from vllm.assets.base import VLLM_S3_BUCKET_URL
 from vllm.multimodal.image import convert_image_mode
 from vllm.multimodal.inputs import PlaceholderRange
@@ -27,6 +28,10 @@ from vllm.multimodal.media import (
     MediaWithBytes,
 )
 from vllm.multimodal.media.image import _ImageBatchItemError
+from vllm.multimodal.media.image_decode_service import (
+    get_nvimagecodec_decode_service_stats,
+    shutdown_nvimagecodec_decode_service,
+)
 
 # Test different image extensions (JPG/PNG) and formats (gray/RGB/RGBA)
 TEST_IMAGE_ASSETS = [
@@ -113,6 +118,47 @@ async def test_fetch_images_nvimagecodec_decodes_request_as_one_batch(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_nvimagecodec_coalesces_singletons_across_requests(monkeypatch):
+    shutdown_nvimagecodec_decode_service()
+    encoded_images = [b"\xff\xd8" + bytes([index]) for index in range(5)]
+    image_urls = [
+        "data:image/jpeg;base64," + base64.b64encode(encoded).decode("ascii")
+        for encoded in encoded_images
+    ]
+    decode_calls: list[list[bytes]] = []
+
+    def load_bytes_many(self, items):
+        decode_calls.append(list(items))
+        return [MediaWithBytes(Image.new("RGB", (2, 2)), item) for item in items]
+
+    monkeypatch.setattr(ImageMediaIO, "load_bytes_many", load_bytes_many)
+    connector = MediaConnector(
+        media_io_kwargs={
+            "image": {
+                "backend": "nvimagecodec",
+                "decoders": 1,
+                "batch_size": 5,
+                "coalesce_timeout_ms": 1000,
+            }
+        }
+    )
+
+    try:
+        images = await asyncio.gather(
+            *(connector.fetch_image_async(image_url) for image_url in image_urls)
+        )
+
+        assert len(decode_calls) == 1
+        # Independent requests may finish fetching in any order. The service
+        # preserves each request's result while still combining the ready work.
+        assert sorted(decode_calls[0]) == sorted(encoded_images)
+        assert [image.original_bytes for image in images] == encoded_images
+        assert get_nvimagecodec_decode_service_stats().batch_widths == {5: 1}
+    finally:
+        shutdown_nvimagecodec_decode_service()
+
+
+@pytest.mark.asyncio
 async def test_fetch_images_async_pillow_decodes_items_concurrently(monkeypatch):
     connector = MediaConnector(media_io_kwargs={"image": {"backend": "pillow"}})
     both_started = asyncio.Event()
@@ -168,6 +214,58 @@ async def test_fetch_images_delegates_to_overridden_scalar_methods():
     assert str(exc_info.value.error) == "scalar image failure"
     assert connector.async_calls == ["bad", "slow"]
     assert connector.completed == ["slow"]
+
+
+@pytest.mark.asyncio
+async def test_nvimagecodec_scalar_super_delegation_does_not_recurse(monkeypatch):
+    encoded = b"hello"
+    image_url = "data:image/jpeg;base64," + base64.b64encode(encoded).decode("ascii")
+    sync_batches = []
+    async_batches = []
+
+    def fake_load_images(image_io, encoded_images):
+        sync_batches.append(list(encoded_images))
+        return [
+            MediaWithBytes(Image.new("RGB", (1, 1)), item) for item in encoded_images
+        ]
+
+    async def fake_load_images_async(image_io, encoded_images):
+        async_batches.append(list(encoded_images))
+        return [
+            MediaWithBytes(Image.new("RGB", (1, 1)), item) for item in encoded_images
+        ]
+
+    monkeypatch.setattr(connector_module, "load_images_with_service", fake_load_images)
+    monkeypatch.setattr(
+        connector_module,
+        "load_images_with_service_async",
+        fake_load_images_async,
+    )
+
+    class DelegatingConnector(MediaConnector):
+        def __init__(self):
+            super().__init__(media_io_kwargs={"image": {"backend": "nvimagecodec"}})
+            self.sync_calls = 0
+            self.async_calls = 0
+
+        def fetch_image(self, image_url, *, image_mode="RGB"):
+            self.sync_calls += 1
+            return super().fetch_image(image_url, image_mode=image_mode)
+
+        async def fetch_image_async(self, image_url, *, image_mode="RGB"):
+            self.async_calls += 1
+            return await super().fetch_image_async(image_url, image_mode=image_mode)
+
+    connector = DelegatingConnector()
+    sync_result = connector.fetch_images([image_url])
+    async_result = await connector.fetch_images_async([image_url])
+
+    assert connector.sync_calls == 1
+    assert connector.async_calls == 1
+    assert sync_batches == [[encoded]]
+    assert async_batches == [[encoded]]
+    assert sync_result[0].original_bytes == encoded
+    assert async_result[0].original_bytes == encoded
 
 
 @pytest.mark.asyncio
