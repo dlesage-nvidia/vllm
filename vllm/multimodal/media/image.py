@@ -16,12 +16,14 @@ from vllm.logger import init_logger
 from vllm.multimodal.image_decoders import (
     NVIMAGECODEC_DEFAULT_BATCH_SIZE,
     NVIMAGECODEC_DEFAULT_DECODERS,
+    NVIMAGECODEC_DEFAULT_PIPELINE_DEPTH,
     NVIMAGECODEC_IMAGE_BACKEND,
     PILLOW_IMAGE_BACKEND,
     NvImageCodecBatchItemError,
     decode_images_nvimagecodec,
     validate_nvimagecodec_batch_size,
     validate_nvimagecodec_decoders,
+    validate_nvimagecodec_pipeline_depth,
 )
 from vllm.utils.serial_utils import tensor2base64
 from vllm.utils.sparse_utils import check_sparse_tensor_invariants_threadsafe
@@ -120,6 +122,7 @@ class ImageMediaIO(MediaIO[Image.Image]):
             runtime_kwargs = dict(runtime_kwargs)
             runtime_kwargs.pop("decoders", None)
             runtime_kwargs.pop("batch_size", None)
+            runtime_kwargs.pop("pipeline_depth", None)
             runtime_kwargs.pop("coalesce_timeout_ms", None)
 
             static_backend = (default_kwargs or {}).get("backend")
@@ -151,6 +154,7 @@ class ImageMediaIO(MediaIO[Image.Image]):
         backend: str | None = None,
         decoders: int = NVIMAGECODEC_DEFAULT_DECODERS,
         batch_size: int = NVIMAGECODEC_DEFAULT_BATCH_SIZE,
+        pipeline_depth: int = NVIMAGECODEC_DEFAULT_PIPELINE_DEPTH,
         coalesce_timeout_ms: float = NVIMAGECODEC_DEFAULT_COALESCE_TIMEOUT_MS,
         **kwargs,
     ) -> None:
@@ -174,6 +178,11 @@ class ImageMediaIO(MediaIO[Image.Image]):
             validate_nvimagecodec_batch_size(batch_size)
             if self.backend == NVIMAGECODEC_IMAGE_BACKEND
             else batch_size
+        )
+        self.pipeline_depth = (
+            validate_nvimagecodec_pipeline_depth(pipeline_depth)
+            if self.backend == NVIMAGECODEC_IMAGE_BACKEND
+            else pipeline_depth
         )
         self.coalesce_timeout_ms = (
             validate_nvimagecodec_coalesce_timeout_ms(coalesce_timeout_ms)
@@ -268,6 +277,7 @@ class ImageMediaIO(MediaIO[Image.Image]):
                         output_modes=candidate_output_modes,
                         decoders=self.decoders,
                         batch_size=self.batch_size,
+                        pipeline_depth=self.pipeline_depth,
                     )
                 except NvImageCodecBatchItemError as e:
                     raise _indexed_image_error(

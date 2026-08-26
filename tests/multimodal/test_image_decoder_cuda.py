@@ -34,6 +34,7 @@ def _fresh_decoder_pool():
         pool.cond,
         pool.max_slots,
         pool.batch_size,
+        pool.pipeline_depth,
         pool.owner_pid,
         pool.closing,
         pool.generation,
@@ -43,6 +44,7 @@ def _fresh_decoder_pool():
     pool.cond = threading.Condition()
     pool.max_slots = None
     pool.batch_size = None
+    pool.pipeline_depth = None
     pool.owner_pid = os.getpid()
     pool.closing = False
     pool.generation = 0
@@ -55,6 +57,7 @@ def _fresh_decoder_pool():
             pool.cond,
             pool.max_slots,
             pool.batch_size,
+            pool.pipeline_depth,
             pool.owner_pid,
             pool.closing,
             pool.generation,
@@ -158,13 +161,21 @@ def test_nvimagecodec_real_jpeg_native_batches_match_pillow():
         [
             _encode(grayscale, "JPEG", quality=95),
             _encode(cmyk, "JPEG", quality=95),
+            _encode(rgb, "JPEG", quality=80, subsampling=2),
+            _encode(rgb, "JPEG", quality=85, subsampling=1),
+            _encode(rgb, "JPEG", quality=90, subsampling=0),
+            _encode(grayscale, "JPEG", quality=85, progressive=True),
         ]
     )
     memory_pool = MultiModalGPUMemoryPool(len(data) * width * height * 3 + 1)
     set_mm_gpu_ipc_pool(memory_pool)
     try:
         with _fresh_decoder_pool():
-            actual = decode_images_nvimagecodec(data, batch_size=5)
+            actual = decode_images_nvimagecodec(
+                data,
+                batch_size=5,
+                pipeline_depth=2,
+            )
     finally:
         set_mm_gpu_ipc_pool(None)
 

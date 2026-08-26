@@ -352,8 +352,10 @@ class MultiModalConfig:
         from vllm.multimodal.image_decoders import (
             NVIMAGECODEC_DEFAULT_BATCH_SIZE,
             NVIMAGECODEC_DEFAULT_DECODERS,
+            NVIMAGECODEC_DEFAULT_PIPELINE_DEPTH,
             validate_nvimagecodec_batch_size,
             validate_nvimagecodec_decoders,
+            validate_nvimagecodec_pipeline_depth,
         )
 
         if self.use_gpu_image_backend():
@@ -368,6 +370,9 @@ class MultiModalConfig:
             )
             validate_nvimagecodec_batch_size(
                 image_kwargs.get("batch_size", NVIMAGECODEC_DEFAULT_BATCH_SIZE)
+            )
+            validate_nvimagecodec_pipeline_depth(
+                image_kwargs.get("pipeline_depth", NVIMAGECODEC_DEFAULT_PIPELINE_DEPTH)
             )
             validate_nvimagecodec_coalesce_timeout_ms(
                 image_kwargs.get(

@@ -21,6 +21,7 @@ from vllm.multimodal.image_decoders.nvimagecodec import (
     NVIMAGECODEC_MAX_ENCODED_BYTES,
     validate_nvimagecodec_batch_size,
     validate_nvimagecodec_decoders,
+    validate_nvimagecodec_pipeline_depth,
 )
 
 from .base import MediaWithBytes
@@ -57,6 +58,7 @@ class NvImageCodecQueueFullError(RuntimeError):
 class ImageDecodeServiceConfig:
     decoders: int
     batch_size: int
+    pipeline_depth: int
     coalesce_timeout_ms: float
     max_pending_items: int
     max_pending_encoded_bytes: int
@@ -65,16 +67,19 @@ class ImageDecodeServiceConfig:
     def from_image_io(cls, image_io: ImageMediaIO) -> ImageDecodeServiceConfig:
         decoders = validate_nvimagecodec_decoders(image_io.decoders)
         batch_size = validate_nvimagecodec_batch_size(image_io.batch_size)
+        pipeline_depth = validate_nvimagecodec_pipeline_depth(image_io.pipeline_depth)
         timeout_ms = validate_nvimagecodec_coalesce_timeout_ms(
             image_io.coalesce_timeout_ms
         )
+        queue_depth = max(_QUEUE_DEPTH_MULTIPLIER, pipeline_depth)
         return cls(
             decoders=decoders,
             batch_size=batch_size,
+            pipeline_depth=pipeline_depth,
             coalesce_timeout_ms=timeout_ms,
-            max_pending_items=_QUEUE_DEPTH_MULTIPLIER * decoders * batch_size,
+            max_pending_items=queue_depth * decoders * batch_size,
             max_pending_encoded_bytes=(
-                _QUEUE_DEPTH_MULTIPLIER * decoders * NVIMAGECODEC_MAX_ENCODED_BYTES
+                queue_depth * decoders * NVIMAGECODEC_MAX_ENCODED_BYTES
             ),
         )
 
@@ -88,6 +93,12 @@ class ImageDecodeSpec:
 
 @dataclass(frozen=True)
 class ImageDecodeServiceStats:
+    """Cross-request scheduler statistics.
+
+    ``batch_widths`` counts service claim widths. A pipelined claim can contain
+    multiple native batches and therefore exceed the configured batch size.
+    """
+
     submitted_images: int
     direct_jobs: int
     batch_widths: dict[int, int]
@@ -404,9 +415,8 @@ class NvImageCodecDecodeService:
             assert batch_candidate is not None
             spec = batch_candidate[1]
             queue = self._batch_queues[spec]
-            jobs = [
-                queue.popleft() for _ in range(min(len(queue), self.config.batch_size))
-            ]
+            max_claim_size = self.config.batch_size * self.config.pipeline_depth
+            jobs = [queue.popleft() for _ in range(min(len(queue), max_claim_size))]
             if not queue:
                 self._batch_queues.pop(spec)
             kind = "coalesced"

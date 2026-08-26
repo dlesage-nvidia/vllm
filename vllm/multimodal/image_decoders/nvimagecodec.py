@@ -3,10 +3,11 @@
 
 import os
 import threading
+from collections import deque
 from collections.abc import Iterator, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
-from typing import ClassVar, Literal
+from typing import Any, ClassVar, Literal
 
 import numpy as np
 from PIL import Image
@@ -21,7 +22,9 @@ PILLOW_IMAGE_BACKEND = "pillow"
 NVIMAGECODEC_IMAGE_BACKEND = "nvimagecodec"
 NVIMAGECODEC_DEFAULT_DECODERS = 2
 NVIMAGECODEC_DEFAULT_BATCH_SIZE = 5
+NVIMAGECODEC_DEFAULT_PIPELINE_DEPTH = 2
 NVIMAGECODEC_MAX_BATCH_SIZE = 64
+NVIMAGECODEC_MAX_PIPELINE_DEPTH = 8
 NVIMAGECODEC_MAX_CHANNELS = 4
 
 # Largest raster covered by the retained-memory calibration below. Larger
@@ -101,6 +104,19 @@ def validate_nvimagecodec_batch_size(batch_size: object) -> int:
     return batch_size
 
 
+def validate_nvimagecodec_pipeline_depth(pipeline_depth: object) -> int:
+    if (
+        isinstance(pipeline_depth, bool)
+        or not isinstance(pipeline_depth, int)
+        or not 1 <= pipeline_depth <= NVIMAGECODEC_MAX_PIPELINE_DEPTH
+    ):
+        raise ValueError(
+            "pipeline_depth must be an integer between 1 and "
+            f"{NVIMAGECODEC_MAX_PIPELINE_DEPTH}"
+        )
+    return pipeline_depth
+
+
 def _validate_output_modes(
     data: Sequence[bytes],
     output_modes: Sequence[_OutputMode] | None,
@@ -134,22 +150,33 @@ class NvImageCodecDecoderSlot:
 
     def __init__(self, stream=None) -> None:
         self.stream = stream
+        self.extra_streams: list[object] = []
         self.gpu_decoder = None
         self.cpu_decoder = None
         self.decode_params: dict[_OutputMode, object] = {}
 
     def invalidate(self) -> None:
         self.stream = None
+        self.extra_streams.clear()
         self.gpu_decoder = None
         self.cpu_decoder = None
         self.decode_params.clear()
 
-    def get_stream(self):
-        if self.stream is None:
+    def get_stream(self, index: int = 0):
+        if index == 0 and self.stream is None:
             import torch
 
             self.stream = torch.cuda.Stream(device=NvImageCodecBackend._DEVICE_INDEX)
-        return self.stream
+        if index == 0:
+            return self.stream
+
+        import torch
+
+        while len(self.extra_streams) < index:
+            self.extra_streams.append(
+                torch.cuda.Stream(device=NvImageCodecBackend._DEVICE_INDEX)
+            )
+        return self.extra_streams[index - 1]
 
     def get_decode_params(self, nvimgcodec, output_mode: _OutputMode):
         params = self.decode_params.get(output_mode)
@@ -207,6 +234,7 @@ class _NvImageCodecDecoderPool:
         self.cond = threading.Condition()
         self.max_slots: int | None = None
         self.batch_size: int | None = None
+        self.pipeline_depth: int | None = None
         self.closing = False
         self.generation = 0
 
@@ -228,6 +256,7 @@ class _NvImageCodecDecoderPool:
             self.active = 0
             self.cond = threading.Condition()
             self.batch_size = None
+            self.pipeline_depth = None
             self.generation = 0
             return
         raise RuntimeError(
@@ -235,7 +264,12 @@ class _NvImageCodecDecoderPool:
             "workers with the spawn multiprocessing method."
         )
 
-    def configure(self, decoders: int, batch_size: int) -> None:
+    def configure(
+        self,
+        decoders: int,
+        batch_size: int,
+        pipeline_depth: int = NVIMAGECODEC_DEFAULT_PIPELINE_DEPTH,
+    ) -> None:
         self.check_pid()
         with self.cond:
             if self.closing:
@@ -243,11 +277,18 @@ class _NvImageCodecDecoderPool:
             if self.max_slots is None:
                 self.max_slots = decoders
                 self.batch_size = batch_size
-            elif self.max_slots != decoders or self.batch_size != batch_size:
+                self.pipeline_depth = pipeline_depth
+            elif (
+                self.max_slots != decoders
+                or self.batch_size != batch_size
+                or self.pipeline_depth != pipeline_depth
+            ):
                 raise RuntimeError(
                     "nvImageCodec decoder pool is already configured as "
-                    f"decoders={self.max_slots}, batch_size={self.batch_size}; got "
-                    f"decoders={decoders}, batch_size={batch_size}"
+                    f"decoders={self.max_slots}, batch_size={self.batch_size}, "
+                    f"pipeline_depth={self.pipeline_depth}; got "
+                    f"decoders={decoders}, batch_size={batch_size}, "
+                    f"pipeline_depth={pipeline_depth}"
                 )
 
     def shutdown(self) -> None:
@@ -267,6 +308,7 @@ class _NvImageCodecDecoderPool:
             self.active = 0
             self.max_slots = None
             self.batch_size = None
+            self.pipeline_depth = None
         for slot in slots:
             slot.invalidate()
         with self.cond:
@@ -293,6 +335,18 @@ class _DecodeItem:
         return self.width * self.height * channels
 
 
+@dataclass
+class _PendingGPUChunk:
+    items: list[_DecodeItem]
+    decoded: list[object | None]
+    device_views: list[object | None]
+    host_buffers: list[object | None]
+    event: Any
+    lease: Any | None
+    stream: Any
+    stream_index: int
+
+
 class NvImageCodecBackend:
     """nvImageCodec utilities for bounded native-batch image decoding."""
 
@@ -303,10 +357,16 @@ class NvImageCodecBackend:
         return NvImageCodecDecoderSlot()
 
     @classmethod
-    def _configure_decoder_slots(cls, decoders: object, batch_size: object) -> None:
+    def _configure_decoder_slots(
+        cls,
+        decoders: object,
+        batch_size: object,
+        pipeline_depth: object = NVIMAGECODEC_DEFAULT_PIPELINE_DEPTH,
+    ) -> None:
         _nvimagecodec_decoder_pool.configure(
             validate_nvimagecodec_decoders(decoders),
             validate_nvimagecodec_batch_size(batch_size),
+            validate_nvimagecodec_pipeline_depth(pipeline_depth),
         )
 
     @staticmethod
@@ -516,6 +576,199 @@ class NvImageCodecBackend:
             # images before the caller returns its GPU lease.
             del host_image, host_array, decoded
 
+    @staticmethod
+    def _decoded_to_pinned(decoded, item: _DecodeItem):
+        """Queue one device-to-pinned-host copy on the current CUDA stream."""
+        import torch
+
+        channels = 3 if item.output_mode == "RGB" else 4
+        expected_shape = (item.height, item.width, channels)
+        device_view = None
+        host_buffer = None
+        try:
+            if (
+                decoded.ndim != 3
+                or tuple(decoded.shape) != expected_shape
+                or decoded.dtype != np.uint8
+            ):
+                raise ValueError(
+                    "nvImageCodec returned an image with unexpected shape or dtype: "
+                    f"shape={tuple(decoded.shape)}, dtype={decoded.dtype}"
+                )
+
+            device_view = torch.from_dlpack(decoded)
+            if (
+                tuple(device_view.shape) != expected_shape
+                or device_view.dtype != torch.uint8
+            ):
+                raise ValueError(
+                    "nvImageCodec returned a DLPack image with unexpected shape or "
+                    f"dtype: shape={tuple(device_view.shape)}, "
+                    f"dtype={device_view.dtype}"
+                )
+            host_buffer = torch.empty(
+                expected_shape,
+                dtype=torch.uint8,
+                device="cpu",
+                pin_memory=True,
+            )
+            host_buffer.copy_(device_view, non_blocking=True)
+            return device_view, host_buffer
+        except BaseException:
+            del host_buffer, device_view, decoded
+            raise
+
+    @staticmethod
+    def _record_stream_event(stream):
+        return stream.record_event()
+
+    @staticmethod
+    def _pinned_to_pillow(host_buffer, item: _DecodeItem) -> Image.Image:
+        channels = 3 if item.output_mode == "RGB" else 4
+        expected_shape = (item.height, item.width, channels)
+        host_array = None
+        try:
+            to_numpy = getattr(host_buffer, "numpy", None)
+            host_array = to_numpy() if callable(to_numpy) else np.asarray(host_buffer)
+            if (
+                tuple(host_array.shape) != expected_shape
+                or host_array.dtype != np.uint8
+            ):
+                raise ValueError(
+                    "nvImageCodec returned a pinned host image with unexpected "
+                    "shape or dtype: "
+                    f"shape={tuple(host_array.shape)}, dtype={host_array.dtype}"
+                )
+            if not host_array.flags.c_contiguous:
+                host_array = np.ascontiguousarray(host_array)
+            return Image.frombytes(
+                item.output_mode,
+                (item.width, item.height),
+                host_array,
+            )
+        finally:
+            del host_array, host_buffer
+
+    @classmethod
+    def _submit_gpu_chunk(
+        cls,
+        slot: NvImageCodecDecoderSlot,
+        items: Sequence[_DecodeItem],
+        nvimgcodec,
+        lease,
+        stream_index: int,
+    ) -> _PendingGPUChunk:
+        stream: Any = None
+        decoded: list[object | None] = []
+        device_views: list[object | None] = []
+        host_buffers: list[object | None] = []
+        output = None
+        device_view = None
+        host_buffer = None
+        may_have_submitted = False
+        try:
+            params = slot.get_decode_params(nvimgcodec, items[0].output_mode)
+            stream = slot.get_stream(stream_index)
+            with cls._torch_stream_context(stream):
+                may_have_submitted = True
+                decoded = cls._decode_native(
+                    slot.get_gpu_decoder(nvimgcodec),
+                    items,
+                    params,
+                    cuda_stream=stream.cuda_stream,
+                )
+                for output, item in zip(decoded, items):
+                    if output is None:
+                        device_views.append(None)
+                        host_buffers.append(None)
+                    else:
+                        try:
+                            device_view, host_buffer = cls._decoded_to_pinned(
+                                output, item
+                            )
+                        except Exception as error:
+                            raise NvImageCodecBatchItemError(
+                                item.index, error
+                            ) from error
+                        device_views.append(device_view)
+                        host_buffers.append(host_buffer)
+                event = cls._record_stream_event(stream)
+            return _PendingGPUChunk(
+                items=list(items),
+                decoded=decoded,
+                device_views=device_views,
+                host_buffers=host_buffers,
+                event=event,
+                lease=lease,
+                stream=stream,
+                stream_index=stream_index,
+            )
+        except BaseException:
+            try:
+                if may_have_submitted and stream is not None:
+                    with suppress(BaseException):
+                        stream.synchronize()
+            finally:
+                host_buffers.clear()
+                device_views.clear()
+                decoded.clear()
+                del host_buffer, device_view, output
+                lease.release()
+            raise
+
+    @staticmethod
+    def _clear_pending_device_state(pending: _PendingGPUChunk) -> None:
+        pending.device_views.clear()
+        pending.decoded.clear()
+        if pending.lease is not None:
+            pending.lease.release()
+            pending.lease = None
+
+    @classmethod
+    def _drain_gpu_chunk(
+        cls, pending: _PendingGPUChunk
+    ) -> tuple[list[_DecodeItem], list[object | None], int]:
+        pending.event.synchronize()
+        items = pending.items
+        host_buffers = pending.host_buffers
+        pending.host_buffers = []
+        cls._clear_pending_device_state(pending)
+        return items, host_buffers, pending.stream_index
+
+    @classmethod
+    def _discard_pending_gpu_chunk(cls, pending: _PendingGPUChunk) -> None:
+        try:
+            pending.event.synchronize()
+        except BaseException:
+            with suppress(BaseException):
+                pending.stream.synchronize()
+        finally:
+            pending.host_buffers.clear()
+            cls._clear_pending_device_state(pending)
+
+    @classmethod
+    def _materialize_pinned_chunk(
+        cls,
+        items: Sequence[_DecodeItem],
+        host_buffers: list[object | None],
+        results: list[Image.Image | None],
+    ) -> list[_DecodeItem]:
+        misses: list[_DecodeItem] = []
+        host_buffer = None
+        try:
+            for item, host_buffer in zip(items, host_buffers):
+                if host_buffer is None:
+                    misses.append(item)
+                else:
+                    try:
+                        results[item.index] = cls._pinned_to_pillow(host_buffer, item)
+                    except Exception as error:
+                        raise NvImageCodecBatchItemError(item.index, error) from error
+        finally:
+            host_buffers.clear()
+            del host_buffer
+        return misses
+
     @classmethod
     def _decode_cpu_chunk(
         cls,
@@ -591,6 +844,104 @@ class NvImageCodecBackend:
         cls._decode_cpu_chunk(slot, misses, nvimgcodec, results)
 
     @classmethod
+    def _decode_gpu_chunks_pipelined(
+        cls,
+        slot: NvImageCodecDecoderSlot,
+        chunks: Sequence[Sequence[_DecodeItem]],
+        nvimgcodec,
+        memory_pool,
+        results: list[Image.Image | None],
+        *,
+        pipeline_depth: int,
+    ) -> None:
+        """Overlap native decode, pinned D2H, and Pillow materialization."""
+        chunk_list = [list(chunk) for chunk in chunks]
+        pending: deque[_PendingGPUChunk] = deque()
+        free_stream_indices = deque(range(pipeline_depth))
+        miss_batches: list[list[_DecodeItem]] = []
+        next_chunk = 0
+
+        try:
+            while next_chunk < len(chunk_list) or pending:
+                # Fill the ring. Once this worker owns a lease, acquisition must
+                # stay nonblocking so a pool that fits only one chunk cannot
+                # deadlock waiting for memory that only this worker can release.
+                while next_chunk < len(chunk_list) and free_stream_indices:
+                    chunk = chunk_list[next_chunk]
+                    raw_bytes = sum(item.raw_bytes for item in chunk)
+                    lease = (
+                        memory_pool.try_acquire(raw_bytes)
+                        if pending
+                        else memory_pool.acquire(raw_bytes)
+                    )
+                    if lease is None:
+                        break
+                    stream_index = free_stream_indices.popleft()
+                    try:
+                        submitted = cls._submit_gpu_chunk(
+                            slot,
+                            chunk,
+                            nvimgcodec,
+                            lease,
+                            stream_index,
+                        )
+                    except BaseException:
+                        free_stream_indices.appendleft(stream_index)
+                        raise
+                    pending.append(submitted)
+                    next_chunk += 1
+
+                if not pending:
+                    continue
+
+                oldest = pending.popleft()
+                try:
+                    items, host_buffers, stream_index = cls._drain_gpu_chunk(oldest)
+                except BaseException:
+                    cls._discard_pending_gpu_chunk(oldest)
+                    raise
+                free_stream_indices.append(stream_index)
+
+                # Refill the freed GPU entry before doing CPU work. This attempt
+                # is deliberately nonblocking even when the ring became empty;
+                # materializing the ready host batch is more useful than waiting
+                # for another decoder worker to release global GPU capacity.
+                while next_chunk < len(chunk_list) and free_stream_indices:
+                    chunk = chunk_list[next_chunk]
+                    raw_bytes = sum(item.raw_bytes for item in chunk)
+                    lease = memory_pool.try_acquire(raw_bytes)
+                    if lease is None:
+                        break
+                    refill_stream_index = free_stream_indices.popleft()
+                    try:
+                        submitted = cls._submit_gpu_chunk(
+                            slot,
+                            chunk,
+                            nvimgcodec,
+                            lease,
+                            refill_stream_index,
+                        )
+                    except BaseException:
+                        free_stream_indices.appendleft(refill_stream_index)
+                        raise
+                    pending.append(submitted)
+                    next_chunk += 1
+
+                misses = cls._materialize_pinned_chunk(
+                    items,
+                    host_buffers,
+                    results,
+                )
+                if misses:
+                    miss_batches.append(misses)
+        finally:
+            while pending:
+                cls._discard_pending_gpu_chunk(pending.popleft())
+
+        for misses in miss_batches:
+            cls._decode_cpu_chunk(slot, misses, nvimgcodec, results)
+
+    @classmethod
     def decode_many(
         cls,
         data: Sequence[bytes],
@@ -598,10 +949,12 @@ class NvImageCodecBackend:
         output_modes: Sequence[_OutputMode] | None = None,
         decoders: int = NVIMAGECODEC_DEFAULT_DECODERS,
         batch_size: int = NVIMAGECODEC_DEFAULT_BATCH_SIZE,
+        pipeline_depth: int = NVIMAGECODEC_DEFAULT_PIPELINE_DEPTH,
     ) -> list[Image.Image | None]:
         """Decode supported images in native batches with positional fallback."""
         decoders = validate_nvimagecodec_decoders(decoders)
         batch_size = validate_nvimagecodec_batch_size(batch_size)
+        pipeline_depth = validate_nvimagecodec_pipeline_depth(pipeline_depth)
         encoded_images = list(data)
         modes = _validate_output_modes(encoded_images, output_modes)
         if not encoded_images:
@@ -619,7 +972,7 @@ class NvImageCodecBackend:
             return results
 
         try:
-            cls._configure_decoder_slots(decoders, batch_size)
+            cls._configure_decoder_slots(decoders, batch_size, pipeline_depth)
             cpu_items = [
                 item for item in eligible if item.codec_name in _NVIMAGECODEC_CPU_CODECS
             ]
@@ -654,19 +1007,33 @@ class NvImageCodecBackend:
                     mode_items = [
                         item for item in gpu_items if item.output_mode == mode
                     ]
-                    for chunk in cls._iter_chunks(
-                        mode_items,
-                        batch_size=batch_size,
-                        max_raw_bytes=max_gpu_raw_bytes,
-                    ):
+                    chunks = list(
+                        cls._iter_chunks(
+                            mode_items,
+                            batch_size=batch_size,
+                            max_raw_bytes=max_gpu_raw_bytes,
+                        )
+                    )
+                    if pipeline_depth > 1 and len(chunks) > 1:
                         with cls._borrow_decoder_slot() as slot:
-                            cls._decode_gpu_chunk(
+                            cls._decode_gpu_chunks_pipelined(
                                 slot,
-                                chunk,
+                                chunks,
                                 nvimgcodec,
                                 memory_pool,
                                 results,
+                                pipeline_depth=pipeline_depth,
                             )
+                    else:
+                        for chunk in chunks:
+                            with cls._borrow_decoder_slot() as slot:
+                                cls._decode_gpu_chunk(
+                                    slot,
+                                    chunk,
+                                    nvimgcodec,
+                                    memory_pool,
+                                    results,
+                                )
 
             max_cpu_raw_bytes = effective_max_pixels * NVIMAGECODEC_MAX_CHANNELS
             for mode in ("RGB", "RGBA"):
@@ -692,6 +1059,7 @@ class NvImageCodecBackend:
         output_mode: _OutputMode = "RGB",
         decoders: int = NVIMAGECODEC_DEFAULT_DECODERS,
         batch_size: int = NVIMAGECODEC_DEFAULT_BATCH_SIZE,
+        pipeline_depth: int = NVIMAGECODEC_DEFAULT_PIPELINE_DEPTH,
     ) -> Image.Image | None:
         """Decode one image through the same native-batch implementation."""
         return cls.decode_many(
@@ -699,6 +1067,7 @@ class NvImageCodecBackend:
             output_modes=[output_mode],
             decoders=decoders,
             batch_size=batch_size,
+            pipeline_depth=pipeline_depth,
         )[0]
 
 
@@ -713,12 +1082,14 @@ def decode_images_nvimagecodec(
     output_modes: Sequence[_OutputMode] | None = None,
     decoders: int = NVIMAGECODEC_DEFAULT_DECODERS,
     batch_size: int = NVIMAGECODEC_DEFAULT_BATCH_SIZE,
+    pipeline_depth: int = NVIMAGECODEC_DEFAULT_PIPELINE_DEPTH,
 ) -> list[Image.Image | None]:
     return NvImageCodecBackend.decode_many(
         data,
         output_modes=output_modes,
         decoders=decoders,
         batch_size=batch_size,
+        pipeline_depth=pipeline_depth,
     )
 
 
@@ -728,10 +1099,12 @@ def decode_image_nvimagecodec(
     output_mode: _OutputMode = "RGB",
     decoders: int = NVIMAGECODEC_DEFAULT_DECODERS,
     batch_size: int = NVIMAGECODEC_DEFAULT_BATCH_SIZE,
+    pipeline_depth: int = NVIMAGECODEC_DEFAULT_PIPELINE_DEPTH,
 ) -> Image.Image | None:
     return NvImageCodecBackend.decode(
         data,
         output_mode=output_mode,
         decoders=decoders,
         batch_size=batch_size,
+        pipeline_depth=pipeline_depth,
     )

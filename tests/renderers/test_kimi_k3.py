@@ -100,12 +100,18 @@ def test_k3_media_io_defaults_preserve_authorized_startup_settings(monkeypatch):
             "backend": "nvimagecodec",
             "decoders": 4,
             "batch_size": 5,
+            "pipeline_depth": 2,
             "coalesce_timeout_ms": 0.75,
         }
     }
     authorized_kwargs = merge_media_io_kwargs(
         startup_kwargs,
-        {"image": {"rgba_background_color": (0, 0, 0)}},
+        {
+            "image": {
+                "pipeline_depth": 7,
+                "rgba_background_color": (0, 0, 0),
+            }
+        },
     )
 
     assert _merge_k3_media_io_kwargs(authorized_kwargs) == {
@@ -114,6 +120,7 @@ def test_k3_media_io_defaults_preserve_authorized_startup_settings(monkeypatch):
             "backend": "nvimagecodec",
             "decoders": 4,
             "batch_size": 5,
+            "pipeline_depth": 2,
             "coalesce_timeout_ms": 0.75,
             "rgba_background_color": (0, 0, 0),
         }
@@ -128,6 +135,7 @@ def test_k3_media_io_defaults_preserve_offline_settings():
                 "backend": "nvimagecodec",
                 "decoders": 3,
                 "batch_size": 7,
+                "pipeline_depth": 3,
                 "coalesce_timeout_ms": 0.5,
             }
         },
@@ -137,6 +145,7 @@ def test_k3_media_io_defaults_preserve_offline_settings():
             "backend": "nvimagecodec",
             "decoders": 3,
             "batch_size": 7,
+            "pipeline_depth": 3,
             "coalesce_timeout_ms": 0.5,
         }
     }
@@ -158,6 +167,7 @@ def test_render_messages_inherits_offline_media_io_settings(monkeypatch):
                 "backend": "nvimagecodec",
                 "decoders": 4,
                 "batch_size": 5,
+                "pipeline_depth": 2,
                 "coalesce_timeout_ms": 0.75,
             }
         }
@@ -174,6 +184,7 @@ def test_render_messages_inherits_offline_media_io_settings(monkeypatch):
             "backend": "nvimagecodec",
             "decoders": 4,
             "batch_size": 5,
+            "pipeline_depth": 2,
             "coalesce_timeout_ms": 0.75,
         }
     }

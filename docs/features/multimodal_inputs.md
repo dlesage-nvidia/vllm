@@ -827,7 +827,7 @@ Select the backend and reserve VRAM for frontend decoding:
 ```bash
 vllm serve Qwen/Qwen3-VL-30B-A3B-Instruct \
   --media-io-kwargs \
-    '{"image": {"backend": "nvimagecodec", "decoders": 2, "batch_size": 5, "coalesce_timeout_ms": 0.25}}' \
+    '{"image": {"backend": "nvimagecodec", "decoders": 2, "batch_size": 5, "pipeline_depth": 2, "coalesce_timeout_ms": 0.25}}' \
   --mm-ipc-gpu-memory-gb 1
 ```
 
@@ -835,14 +835,16 @@ You can also select the backend with
 `VLLM_IMAGE_LOADER_BACKEND=nvimagecodec`. A positive
 `--mm-ipc-gpu-memory-gb` value is required. vLLM subtracts this budget from
 the engine's KV-cache headroom and uses it as a byte-counting semaphore for
-decoded GPU images. Choose a budget large enough for the largest concurrent
-native GPU batch, including three bytes per RGB pixel or four bytes per RGBA
-pixel. With multiple API server processes, vLLM divides the budget evenly
-among them. CPU-plugin batches do not acquire this decoded-raster GPU budget,
-but the positive reservation is still required because one backend instance
-can receive both CPU- and GPU-capable formats. A single image whose decoded
-raster exceeds its process-local budget is rejected as a configuration error;
-it does not silently switch to Pillow.
+decoded GPU images. The budget must fit the largest native GPU batch, including
+three bytes per RGB pixel or four bytes per RGBA pixel. Keeping every decoder
+slot and pipeline entry occupied can require that amount multiplied by
+`decoders * pipeline_depth`; a smaller budget safely limits actual concurrency.
+With multiple API server processes, vLLM divides the budget evenly among them.
+CPU-plugin batches do not acquire this decoded-raster GPU budget, but the
+positive reservation is still required because one backend instance can receive
+both CPU- and GPU-capable formats. A single image whose decoded raster exceeds
+its process-local budget is rejected as a configuration error; it does not
+silently switch to Pillow.
 
 The fixed per-decoder KV-cache reservation also scales with
 `VLLM_MAX_IMAGE_PIXELS`, because nvImageCodec retains temporary buffers at
@@ -869,6 +871,15 @@ Concurrent requests that each contain one compatible JPEG also share native
 batches. Direct multi-image and non-JPEG work uses the same process-local
 service and counts against the same `decoders` limit.
 
+`pipeline_depth` controls how many native batches each decoder slot can keep in
+flight while decoded pixels are copied to the host and converted to Pillow
+images. It defaults to `2`, must be between `1` and `8`, and is fixed at
+startup. Once at least `batch_size` compatible singleton JPEG requests are
+ready, the service can claim up to `batch_size * pipeline_depth` requests for
+one pipelined worker call without waiting for the larger number to arrive.
+The decode-service shutdown statistic named `batch_widths` reports these claim
+widths, not the widths of the individual native decode calls.
+
 `coalesce_timeout_ms` is the maximum intentional wait for a partial
 cross-request JPEG batch. It defaults to `0`, which adds no low-QPS delay but
 still combines requests already queued while all decoder slots are busy. A
@@ -885,9 +896,13 @@ Pending encoded inputs and admission waiters are bounded. When both bounds are
 full, the backend returns an overload error instead of growing frontend memory
 without limit.
 
-Before the existing multimodal preprocessing path runs, each decoded image
-passes through one pageable host RGB or RGBA buffer. The buffer is released
-after the image is copied into Pillow-owned memory.
+With `pipeline_depth=1`, each decoded image follows the original synchronous
+pageable-host copy path. At depth two or greater, GPU batches use pinned host
+buffers and CUDA events so the next native batch can run while ready pixels are
+copied into Pillow-owned memory. The decoded-raster GPU lease is released after
+the event completes and before Pillow materialization. The pinned buffer is
+released after Pillow takes its copy; downstream preprocessing still receives a
+CPU-resident Pillow image.
 
 ### Video Inputs
 

@@ -117,6 +117,35 @@ def test_nvimagecodec_rejects_invalid_batch_size(batch_size: object):
         )
 
 
+@pytest.mark.parametrize("pipeline_depth", [True, 0, -1, 1.5, "2", 9])
+def test_nvimagecodec_rejects_invalid_pipeline_depth(pipeline_depth: object):
+    with pytest.raises(ValueError, match="pipeline_depth"):
+        MultiModalConfig(
+            mm_ipc_gpu_memory_gb=1,
+            media_io_kwargs={
+                "image": {
+                    "backend": "nvimagecodec",
+                    "pipeline_depth": pipeline_depth,
+                }
+            },
+        )
+
+
+@pytest.mark.parametrize("pipeline_depth", [1, 2, 8])
+def test_nvimagecodec_accepts_valid_pipeline_depth(pipeline_depth: int):
+    config = MultiModalConfig(
+        mm_ipc_gpu_memory_gb=1,
+        media_io_kwargs={
+            "image": {
+                "backend": "nvimagecodec",
+                "pipeline_depth": pipeline_depth,
+            }
+        },
+    )
+
+    assert config.media_io_kwargs["image"]["pipeline_depth"] == pipeline_depth
+
+
 @pytest.mark.parametrize("timeout_ms", [True, -1, 1.5j, "0.5", 1001])
 def test_nvimagecodec_rejects_invalid_coalesce_timeout(timeout_ms: object):
     with pytest.raises(ValueError, match="coalesce_timeout_ms"):

@@ -23,8 +23,11 @@ default backend. It does not recursively submit work to `global_thread_pool`
 from `load_bytes_many`: that method already runs in the same pool, so nested
 submission and waiting can deadlock when all workers are occupied.
 
-The cross-request change does not keep decoded pixels on the GPU. Device-to-host
-copies and Pillow materialization remain a separate optimization.
+The fourth, independently revertible change adds a bounded decode ring. It
+copies decoded pixels asynchronously into pinned host buffers, submits another
+native batch before materializing the ready Pillow images, and releases each GPU
+lease as soon as its copy event completes. It still returns Pillow images;
+keeping pixels GPU-resident for downstream preprocessing remains separate work.
 
 ## Goals
 
@@ -39,12 +42,13 @@ copies and Pillow materialization remain a separate optimization.
 - Bound queueing latency, pending encoded bytes, decoder concurrency, and GPU
   memory use.
 - Make the achieved native batch widths and queue delay observable.
+- Overlap native decode and device-to-host copies with Pillow materialization
+  without weakening GPU-memory accounting or positional fallback.
 
 ## Non-goals
 
 - Returning GPU-resident images or eliminating device-to-host copies.
-- Pinned host buffers, asynchronous host conversion, or a shorter GPU-memory
-  lease.
+- Changing downstream multimodal preprocessing to consume device images.
 - Sharing slots or reserved capacity with PyNvVideoCodec.
 - Coalescing CPU-plugin codecs across requests in the first implementation.
 - Changing the model scheduler, request admission, or inference execution.
@@ -66,12 +70,14 @@ showed the cost of replacing independent executor jobs with one serial
 This is a focused local diagnostic, not an end-to-end serving result. It is
 sufficient to make restoration of the old Pillow dispatch a prerequisite.
 
-On A100, the existing adapter measurements also showed why batch width alone is
-not the final optimization: the native-width-five adapter path reached about
+On A100, the existing adapter measurements showed why batch width alone was not
+the final optimization: the native-width-five adapter path reached about
 0.71 Gpixel/s while a raw native-width-five hardware decode probe reached about
 6.22 Gpixel/s. The gap includes device-to-host synchronization, Pillow object
-creation, metadata work, and adapter overhead. This design addresses only the
-batch-width portion.
+creation, metadata work, and adapter overhead. Cross-request coalescing addresses
+the batch-width portion; the bounded ring addresses the serial synchronization
+between successive native calls. It does not eliminate the transfer or Pillow
+materialization.
 
 The implemented cross-request service was subsequently measured on an A100
 with 16 concurrent singleton JPEG requests, two decoder slots, three randomized
@@ -190,7 +196,7 @@ sweep.
 | -------------- | -------- |
 | Share image and video decoder slots | Reject. The resource types, factories, configuration, invalidation, and retained memory are different. A generic implementation helper can be a later refactor, without sharing slots or capacity. |
 | Fall back when one image exceeds the configured GPU pool | Keep the current hard admission error. The operator explicitly chose an insufficient budget; silently using Pillow would hide capacity misconfiguration. Coalescing must isolate the error to that request. |
-| Shorten the GPU lease | Separate measured PR. The lease must cover live device outputs and every `.cpu()` synchronization. Safe host staging or pinned buffers need their own ownership design. |
+| Shorten the GPU lease | Implemented in the fourth, independently revertible change. An event first proves the pinned copy complete; device images and DLPack views are then dropped before the lease is released. Pillow materialization happens only after that release. |
 | Avoid both Pillow and nvImageCodec header parsing | Defer. Pillow supplies animation, transparency, EXIF, and source metadata that `CodeStream` does not. Measured header work is small relative to raster transfer. |
 | Group every native call by exact codec | Benchmark first. It can fragment batches and has no effect on the all-JPEG target workload. Cross-request v1 deliberately queues only JPEG. |
 | Merge the GPU and CPU chunk loops | Reject for now. Their memory leases, fallback behavior, and failure handling differ, and combined CPU/GPU decoder use has deadlocked. |
@@ -265,9 +271,9 @@ SOI check selects candidates; normal Pillow and nvImageCodec inspection still
 perform authoritative validation in the worker. Corrupt data therefore follows
 the normal positional error path.
 
-Configure `decoders`, `batch_size`, `coalesce_timeout_ms`, admission limits, and
-the owning PID once per process. They are not compatibility-key variants. Any
-later mismatch is rejected before enqueueing.
+Configure `decoders`, `batch_size`, `pipeline_depth`, `coalesce_timeout_ms`,
+admission limits, and the owning PID once per process. They are not
+compatibility-key variants. Any later mismatch is rejected before enqueueing.
 
 Use a frozen, value-based `ImageDecodeSpec` as the compatibility key. It contains
 every per-call value that affects output semantics:
@@ -289,27 +295,60 @@ measured extension can add a codec-aware key for them.
 For each compatibility queue:
 
 1. Dispatch immediately when at least `batch_size` entries are waiting.
-2. Otherwise dispatch the oldest partial batch when its coalescing deadline
+2. Claim at most `batch_size * pipeline_depth` compatible entries. Do not wait
+   for that maximum after one native batch is ready.
+3. Otherwise dispatch the oldest partial batch when its coalescing deadline
    expires.
-3. Never dispatch more than `decoders` jobs concurrently.
-4. Account coalesced and direct jobs against the same `decoders` limit and select
+4. Never dispatch more than `decoders` jobs concurrently.
+5. Account coalesced and direct jobs against the same `decoders` limit and select
    fairly between the direct queue and the oldest ready compatibility head.
-5. Preserve FIFO order within a compatibility key and choose the oldest ready
+6. Preserve FIFO order within a compatibility key and choose the oldest ready
    head across keys.
-6. Skip a cancelled entry that has not been claimed. Finish a claimed native
+7. Skip a cancelled entry that has not been claimed. Finish a claimed native
    batch even if its requester is later cancelled.
 
-Add a startup-only `coalesce_timeout_ms` image option. Request-level overrides
-are stripped just like `backend`, `decoders`, and `batch_size`. Do not choose a
-non-zero default from intuition. Sweep `0`, `0.1`, `0.25`, `0.5`, and `1.0` ms on
-the A100. A zero timeout still combines entries already queued when the
-dispatcher runs and adds no intentional low-QPS delay.
+Add startup-only `pipeline_depth` and `coalesce_timeout_ms` image options.
+Request-level overrides are stripped just like `backend`, `decoders`, and
+`batch_size`. Do not choose a non-zero coalescing default from intuition. Sweep
+`0`, `0.1`, `0.25`, `0.5`, and `1.0` ms on the A100. A zero timeout still
+combines entries already queued when the dispatcher runs and adds no
+intentional low-QPS delay.
+
+### Decode Ring and Buffer Ownership
+
+`pipeline_depth` bounds the number of native GPU batches associated with one
+decoder worker call. Depth one preserves the pre-ring pageable-copy path. The
+default depth two is double buffering: while one completed batch is converted
+to Pillow images on the CPU, the next batch can decode and copy on a distinct
+external CUDA stream. Larger depths are available for measurement but multiply
+the maximum live decoded and pinned-host raster bytes.
+
+Each ring submission follows this ownership sequence:
+
+1. Acquire the decoded-raster byte lease and submit one native batch on its ring
+   stream.
+2. Create DLPack views, enqueue nonblocking copies into pinned CPU tensors on
+   that stream, and record a completion event.
+3. Drain the oldest entry by synchronizing its event. Only then drop its device
+   images and DLPack views and release its GPU lease.
+4. Attempt to refill the freed ring entry before copying the ready host pixels
+   into Pillow-owned memory. Plugin misses are retained positionally and use the
+   existing CPU-plugin fallback after the GPU ring drains.
+
+Only the first acquisition made with no pending entry may block. Every attempt
+made while the worker owns a lease uses atomic nonblocking admission. If the
+pool fits only one native batch, the worker drains that entry, releases it, and
+then refills the ring; it never waits for bytes that it must itself release.
+Exception cleanup synchronizes submitted work, drops every device reference,
+and returns every lease before invalidating the decoder slot. Tests inject
+metadata, stream-construction, native-decode, pinned-copy, event, and Pillow
+conversion failures and verify this order.
 
 Pending work must be bounded. Limit queued entries and encoded bytes using a
 single process-wide cap across every compatibility and direct queue:
 
-- `max_pending_items = 4 * decoders * batch_size`; and
-- `max_pending_encoded_bytes = 4 * decoders *
+- `max_pending_items = max(4, pipeline_depth) * decoders * batch_size`; and
+- `max_pending_encoded_bytes = max(4, pipeline_depth) * decoders *
   NVIMAGECODEC_MAX_ENCODED_BYTES`.
 
 The first implementation can revise the multiplier only with memory and overload
@@ -406,6 +445,12 @@ restartable. Reconfiguration within a live generation remains an error.
   inherited lock on every decode entry point.
 - Submit-versus-shutdown, claim-versus-shutdown, and completion-versus-shutdown
   races leave no queue entries, admission bytes, active slots, or GPU leases.
+- A depth-two ring submits its replacement before Pillow materialization,
+  preserves result order across wraparound, and drains rather than blocking when
+  the GPU byte pool fits only one native batch.
+- Setup, submission, event, pinned-copy, and Pillow-conversion failures
+  synchronize submitted work, drop device references before releasing leases,
+  close earlier Pillow results, and invalidate the affected decoder slot.
 - Last renderer release permits a clean new generation in the same process.
 - Pillow backend execution never touches the nvImageCodec decode service.
 
@@ -432,7 +477,7 @@ depend on thread scheduling or wall-clock sleeps.
 - Assert EXIF orientation is applied exactly once and that native decode params
   disable automatic EXIF and arbitrary-depth conversion.
 - Exercise width-one, partial, and width-five batches with one and two decoder
-  slots.
+  slots, including at least two native chunks through the real pinned ring.
 - Disable Pillow JPEG 2000 pixel decode and prove native J2K/JP2/HTJ2K still
   succeeds through `ImageMediaIO`.
 - Inject a plugin miss, decoder construction failure, host-copy failure, and an
@@ -447,8 +492,8 @@ Use one A100 setup and fixed inference/model settings for the primary report:
 - one image per request;
 - output sequence length 128;
 - 1920x1080 and 3840x2160 JPEG inputs;
-- Pillow baseline, nvImageCodec native batch one, and cross-request native
-  batch five;
+- Pillow baseline, pre-ring nvImageCodec batch five, and double-buffered
+  nvImageCodec batch five;
 - a concurrency/QPS sweep from low load through a sustained decode backlog; and
 - both real inference and a null-inference/decode-bottleneck harness.
 
@@ -457,7 +502,7 @@ Collect:
 - requests/s, images/s, and Gpixel/s;
 - end-to-end latency and TTFT p50/p95/p99;
 - decode service time and queue delay;
-- native batch-width histogram;
+- service claim-width and native decode-width histograms;
 - process CPU utilization and CPU-seconds per image;
 - NVJPG average, peak, and time distribution; and
 - GPU-memory-pool high-water mark and decoder-slot occupancy.
@@ -499,13 +544,16 @@ smoke coverage, but use A100 as the reference for five-engine NVJPG claims.
    worker isolation, observability, and deterministic tests with an experimental
    timeout default of zero. The A100 sweep retains zero as the latency-safe
    production default and identifies 0.25 ms as the high-QPS tuning point.
-3. **Host-transfer optimization change:** profile pinned staging, asynchronous
-   copies, earlier safe lease release, and potentially GPU-resident downstream
-   preprocessing. This is deliberately separate from batching.
-4. **Optional independent cleanups:** generic slot-pool implementation,
+3. **Decode-ring change:** add bounded pinned staging, asynchronous copies, and
+   event-proven early lease release as an independently revertible commit on top
+   of cross-request batching. Keep `pipeline_depth=2` as the measured
+   double-buffer default.
+4. **GPU-resident preprocessing change:** optionally eliminate the host transfer
+   by changing the downstream multimodal contract. This remains a separate PR.
+5. **Optional independent cleanups:** generic slot-pool implementation,
    no-EXIF Pillow copy removal, sync URL parallelism, and mixed CPU/GPU image
    prioritization.
 
-Implementation started after the stabilization tests were green. The
-instrumented A100 timeout sweep is complete and its default/tuning decision is
-recorded above.
+The stabilization, cross-request batching, and decode ring are implemented as
+successive commits. The instrumented A100 timeout and pipeline-depth sweeps are
+complete; their default/tuning decisions are recorded above.

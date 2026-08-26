@@ -11,8 +11,8 @@ bytes they need from a process-global :class:`MultiModalGPUMemoryPool` before
 allocating on the device and release them once the device memory is freed.
 
 The pool is a simple byte-counting semaphore: ``acquire`` blocks until enough
-budget is free, so concurrent requests serialize rather than oversubscribe the
-GPU. It lives only in the frontend process; the engine carves the matching
+budget is free, while ``try_acquire`` reports temporary exhaustion without
+waiting. It lives only in the frontend process; the engine carves the matching
 amount out of its KV-cache budget so the headroom physically exists.
 """
 
@@ -52,10 +52,11 @@ class MultiModalGPUMemoryLease:
 
 
 class MultiModalGPUMemoryPool:
-    """Blocking byte-counting semaphore for frontend GPU multimodal memory.
+    """Byte-counting semaphore for frontend GPU multimodal memory.
 
-    Thread-safe in both directions: ``acquire`` (blocking) and ``release`` are
-    typically called from the renderer's multimodal executor threads.
+    Thread-safe in all directions: ``acquire`` (blocking), ``try_acquire``
+    (nonblocking), and ``release`` are typically called from the renderer's
+    multimodal executor threads.
     """
 
     def __init__(self, total_bytes: int):
@@ -77,12 +78,7 @@ class MultiModalGPUMemoryPool:
         with self._cond:
             return self._available
 
-    def acquire(self, nbytes: int) -> MultiModalGPUMemoryLease:
-        """Reserve ``nbytes``, blocking until that much budget is free.
-
-        Raises ``ValueError`` if ``nbytes`` exceeds the pool's total capacity,
-        since such a request could never be satisfied.
-        """
+    def _validate_acquire_size(self, nbytes: int) -> None:
         if nbytes < 0:
             raise ValueError(f"Cannot acquire negative bytes: {nbytes}")
         if nbytes > self._total_bytes:
@@ -91,14 +87,38 @@ class MultiModalGPUMemoryPool:
                 f"the total pool size of {self._total_bytes} bytes. Increase "
                 f"--mm-ipc-gpu-memory-gb or reduce the multimodal input size."
             )
+
+    def _reserve_locked(self, nbytes: int) -> MultiModalGPUMemoryLease:
+        self._available -= nbytes
+        lease_id = self._next_lease_id
+        self._next_lease_id += 1
+        self._outstanding.add(lease_id)
+        return MultiModalGPUMemoryLease(self, lease_id, nbytes)
+
+    def acquire(self, nbytes: int) -> MultiModalGPUMemoryLease:
+        """Reserve ``nbytes``, blocking until that much budget is free.
+
+        Raises ``ValueError`` if ``nbytes`` is negative or exceeds the pool's
+        total capacity, since either request can never be satisfied.
+        """
+        self._validate_acquire_size(nbytes)
         with self._cond:
             while self._available < nbytes:
                 self._cond.wait()
-            self._available -= nbytes
-            lease_id = self._next_lease_id
-            self._next_lease_id += 1
-            self._outstanding.add(lease_id)
-        return MultiModalGPUMemoryLease(self, lease_id, nbytes)
+            return self._reserve_locked(nbytes)
+
+    def try_acquire(self, nbytes: int) -> MultiModalGPUMemoryLease | None:
+        """Reserve ``nbytes`` without waiting for budget to become available.
+
+        Returns ``None`` when the request is valid but the currently available
+        budget is insufficient. Negative requests and requests larger than the
+        pool's total capacity raise the same ``ValueError`` as :meth:`acquire`.
+        """
+        self._validate_acquire_size(nbytes)
+        with self._cond:
+            if self._available < nbytes:
+                return None
+            return self._reserve_locked(nbytes)
 
     def _release(self, lease: MultiModalGPUMemoryLease) -> None:
         with self._cond:

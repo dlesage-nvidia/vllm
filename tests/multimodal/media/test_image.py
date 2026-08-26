@@ -450,8 +450,8 @@ def test_nvimagecodec_backend_decodes_rgb_jpeg(monkeypatch):
     decoded = Image.new("RGB", source.size, (11, 22, 33))
     calls = []
 
-    def fake_decode(encoded, *, output_modes, decoders, batch_size):
-        calls.append((encoded, output_modes, decoders, batch_size))
+    def fake_decode(encoded, *, output_modes, decoders, batch_size, pipeline_depth):
+        calls.append((encoded, output_modes, decoders, batch_size, pipeline_depth))
         return [decoded]
 
     monkeypatch.setattr(
@@ -462,7 +462,7 @@ def test_nvimagecodec_backend_decodes_rgb_jpeg(monkeypatch):
 
     assert result.media is decoded
     assert result.io_config == {"backend": "nvimagecodec"}
-    assert calls == [([data], ["RGB"], 3, 5)]
+    assert calls == [([data], ["RGB"], 3, 5, 2)]
 
 
 def test_nvimagecodec_batches_all_supported_format_families(monkeypatch):
@@ -477,8 +477,8 @@ def test_nvimagecodec_batches_all_supported_format_families(monkeypatch):
     ]
     calls = []
 
-    def fake_decode(datas, *, output_modes, decoders, batch_size):
-        calls.append((datas, output_modes, decoders, batch_size))
+    def fake_decode(datas, *, output_modes, decoders, batch_size, pipeline_depth):
+        calls.append((datas, output_modes, decoders, batch_size, pipeline_depth))
         return decoded
 
     monkeypatch.setattr(
@@ -486,7 +486,7 @@ def test_nvimagecodec_batches_all_supported_format_families(monkeypatch):
     )
 
     results = ImageMediaIO(
-        backend="nvimagecodec", decoders=3, batch_size=4
+        backend="nvimagecodec", decoders=3, batch_size=4, pipeline_depth=3
     ).load_bytes_many(encoded)
 
     assert [result.media for result in results] == decoded
@@ -494,7 +494,7 @@ def test_nvimagecodec_batches_all_supported_format_families(monkeypatch):
     assert [result.io_config for result in results] == [
         {"backend": "nvimagecodec"}
     ] * len(formats)
-    assert calls == [(encoded, ["RGB"] * len(formats), 3, 4)]
+    assert calls == [(encoded, ["RGB"] * len(formats), 3, 4, 3)]
 
 
 def test_nvimagecodec_decodes_opaque_gpu_formats_as_rgb_for_rgba_target(monkeypatch):
@@ -731,6 +731,7 @@ def test_image_merge_kwargs_preserves_statically_configured_gpu_backend():
             "backend": "nvimagecodec",
             "decoders": 3,
             "batch_size": 4,
+            "pipeline_depth": 3,
             "coalesce_timeout_ms": 0.25,
             "image_mode": None,
         },
@@ -738,6 +739,7 @@ def test_image_merge_kwargs_preserves_statically_configured_gpu_backend():
             "backend": "nvimagecodec",
             "decoders": 8,
             "batch_size": 16,
+            "pipeline_depth": 7,
             "coalesce_timeout_ms": 1,
             "image_mode": "RGB",
         },
@@ -747,6 +749,7 @@ def test_image_merge_kwargs_preserves_statically_configured_gpu_backend():
         "backend": "nvimagecodec",
         "decoders": 3,
         "batch_size": 4,
+        "pipeline_depth": 3,
         "coalesce_timeout_ms": 0.25,
         "image_mode": "RGB",
     }

@@ -9,6 +9,7 @@ import pytest
 import vllm.multimodal.gpu_ipc_memory as gpu_ipc_memory
 from vllm.config.multimodal import MultiModalConfig
 from vllm.multimodal.gpu_ipc_memory import (
+    MultiModalGPUMemoryLease,
     MultiModalGPUMemoryPool,
     get_mm_gpu_ipc_pool,
     maybe_init_mm_gpu_ipc_pool,
@@ -91,6 +92,93 @@ def test_acquire_release_accounting():
     assert pool.available_bytes == 60
 
     lease.release()
+    assert pool.available_bytes == 100
+
+
+def test_try_acquire_success():
+    pool = MultiModalGPUMemoryPool(total_bytes=100)
+
+    lease = pool.try_acquire(40)
+
+    assert lease is not None
+    assert lease.nbytes == 40
+    assert pool.available_bytes == 60
+    lease.release()
+
+
+def test_try_acquire_insufficient_available_returns_none():
+    pool = MultiModalGPUMemoryPool(total_bytes=100)
+    first = pool.acquire(80)
+
+    assert pool.try_acquire(30) is None
+    assert pool.available_bytes == 20
+
+    first.release()
+    assert pool.available_bytes == 100
+
+
+def test_try_acquire_too_large_raises():
+    pool = MultiModalGPUMemoryPool(total_bytes=100)
+
+    with pytest.raises(ValueError, match="exceeds the total pool size"):
+        pool.try_acquire(101)
+
+    assert pool.available_bytes == 100
+
+
+def test_try_acquire_negative_raises():
+    pool = MultiModalGPUMemoryPool(total_bytes=100)
+
+    with pytest.raises(ValueError, match="Cannot acquire negative bytes"):
+        pool.try_acquire(-1)
+
+    assert pool.available_bytes == 100
+
+
+def test_try_acquire_is_atomic_for_one_lease():
+    pool = MultiModalGPUMemoryPool(total_bytes=100)
+    contender_count = 8
+    start = threading.Barrier(contender_count + 1)
+    leases: list[MultiModalGPUMemoryLease | None] = [None] * contender_count
+
+    def contend(index: int):
+        start.wait()
+        leases[index] = pool.try_acquire(100)
+
+    threads = [
+        threading.Thread(target=contend, args=(index,))
+        for index in range(contender_count)
+    ]
+    for thread in threads:
+        thread.start()
+
+    start.wait()
+    for thread in threads:
+        thread.join(timeout=2.0)
+        assert not thread.is_alive()
+
+    assert sum(lease is not None for lease in leases) == 1
+    assert pool.available_bytes == 0
+
+    winner = next(lease for lease in leases if lease is not None)
+    winner.release()
+    assert pool.available_bytes == 100
+
+
+def test_try_acquire_release_accounting():
+    pool = MultiModalGPUMemoryPool(total_bytes=100)
+    lease = pool.try_acquire(100)
+    assert lease is not None
+    assert pool.try_acquire(1) is None
+
+    lease.release()
+    assert pool.available_bytes == 100
+
+    next_lease = pool.try_acquire(100)
+    assert next_lease is not None
+    assert pool.available_bytes == 0
+    next_lease.release()
+    next_lease.release()
     assert pool.available_bytes == 100
 
 

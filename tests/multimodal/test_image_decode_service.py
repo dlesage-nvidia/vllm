@@ -40,10 +40,12 @@ class _FakeImageIO:
         *,
         decoders: int = 1,
         batch_size: int = 5,
+        pipeline_depth: int = 2,
         coalesce_timeout_ms: float = 1000,
     ) -> None:
         self.decoders = decoders
         self.batch_size = batch_size
+        self.pipeline_depth = pipeline_depth
         self.coalesce_timeout_ms = coalesce_timeout_ms
         self._load = load
 
@@ -85,6 +87,56 @@ def test_five_singleton_jpegs_form_one_native_batch():
     assert calls == [encoded]
     assert [result.original_bytes for result in results] == encoded
     assert get_nvimagecodec_decode_service_stats().batch_widths == {5: 1}
+
+
+def test_service_claims_no_more_than_pipeline_capacity_once_ready():
+    calls: list[list[bytes]] = []
+
+    def load(items: list[bytes]):
+        calls.append(items)
+        return [_result(item) for item in items]
+
+    image_io = _FakeImageIO(
+        load,
+        batch_size=2,
+        pipeline_depth=3,
+        coalesce_timeout_ms=0,
+    )
+    service = get_nvimagecodec_decode_service(image_io)
+    encoded = [b"\xff\xd8" + bytes([index]) for index in range(7)]
+    with service._cond:
+        futures = [service.submit(image_io, [item]) for item in encoded]
+    results = [future.result(timeout=2)[0] for future in futures]
+
+    assert calls == [encoded[:6], encoded[6:]]
+    assert [result.original_bytes for result in results] == encoded
+    assert service.snapshot_stats().batch_widths == {6: 1, 1: 1}
+    for result in results:
+        result.media.close()
+
+
+def test_pipeline_does_not_delay_a_ready_native_batch():
+    calls: list[list[bytes]] = []
+
+    def load(items: list[bytes]):
+        calls.append(items)
+        return [_result(item) for item in items]
+
+    image_io = _FakeImageIO(
+        load,
+        batch_size=2,
+        pipeline_depth=8,
+        coalesce_timeout_ms=1000,
+    )
+    service = get_nvimagecodec_decode_service(image_io)
+    encoded = [b"\xff\xd8one", b"\xff\xd8two"]
+    futures = [service.submit(image_io, [item]) for item in encoded]
+    results = [future.result(timeout=2)[0] for future in futures]
+
+    assert calls == [encoded]
+    assert service.snapshot_stats().batch_widths == {2: 1}
+    for result in results:
+        result.media.close()
 
 
 def test_partial_batch_flushes_after_timeout():
@@ -143,6 +195,31 @@ def test_process_configuration_is_immutable_until_shutdown():
     )
     with pytest.raises(RuntimeError, match="already configured"):
         get_nvimagecodec_decode_service(incompatible)
+
+    incompatible_depth = _FakeImageIO(
+        lambda items: [_result(item) for item in items], pipeline_depth=3
+    )
+    with pytest.raises(RuntimeError, match="already configured"):
+        get_nvimagecodec_decode_service(incompatible_depth)
+
+
+@pytest.mark.parametrize(("pipeline_depth", "queue_depth"), [(1, 4), (4, 4), (8, 8)])
+def test_pipeline_depth_scales_admission_to_one_full_claim(
+    pipeline_depth: int, queue_depth: int
+):
+    image_io = _FakeImageIO(
+        lambda items: [_result(item) for item in items],
+        decoders=2,
+        batch_size=3,
+        pipeline_depth=pipeline_depth,
+    )
+
+    config = ImageDecodeServiceConfig.from_image_io(image_io)  # type: ignore[arg-type]
+
+    assert config.max_pending_items == queue_depth * 2 * 3
+    assert config.max_pending_encoded_bytes == (
+        queue_depth * 2 * nvimagecodec.NVIMAGECODEC_MAX_ENCODED_BYTES
+    )
 
 
 @pytest.mark.asyncio
@@ -255,6 +332,7 @@ def test_admission_backlog_is_bounded_and_recovers_after_cancellation():
     config = ImageDecodeServiceConfig(
         decoders=1,
         batch_size=1,
+        pipeline_depth=1,
         coalesce_timeout_ms=0,
         max_pending_items=1,
         max_pending_encoded_bytes=1,
@@ -296,6 +374,7 @@ def test_jobs_larger_than_either_admission_tier_are_rejected():
     config = ImageDecodeServiceConfig(
         decoders=1,
         batch_size=1,
+        pipeline_depth=1,
         coalesce_timeout_ms=0,
         max_pending_items=1,
         max_pending_encoded_bytes=1,
@@ -333,6 +412,7 @@ def test_completion_releases_admission_before_waking_caller():
     config = ImageDecodeServiceConfig(
         decoders=1,
         batch_size=1,
+        pipeline_depth=1,
         coalesce_timeout_ms=0,
         max_pending_items=1,
         max_pending_encoded_bytes=1,
@@ -559,6 +639,7 @@ def test_last_lease_resets_decoder_pool_without_service():
 
     assert nvimagecodec._nvimagecodec_decoder_pool.max_slots is None
     assert nvimagecodec._nvimagecodec_decoder_pool.batch_size is None
+    assert nvimagecodec._nvimagecodec_decoder_pool.pipeline_depth is None
 
 
 def test_explicit_shutdown_resets_decoder_pool_without_service():
@@ -568,6 +649,7 @@ def test_explicit_shutdown_resets_decoder_pool_without_service():
 
     assert nvimagecodec._nvimagecodec_decoder_pool.max_slots is None
     assert nvimagecodec._nvimagecodec_decoder_pool.batch_size is None
+    assert nvimagecodec._nvimagecodec_decoder_pool.pipeline_depth is None
 
 
 def test_last_lease_shutdown_serializes_new_service_creation(monkeypatch):

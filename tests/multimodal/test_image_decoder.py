@@ -18,14 +18,17 @@ from vllm.multimodal.gpu_ipc_memory import (
 )
 from vllm.multimodal.image_decoders.nvimagecodec import (
     NVIMAGECODEC_MAX_BATCH_SIZE,
+    NVIMAGECODEC_MAX_PIPELINE_DEPTH,
     NVIMAGECODEC_MAX_PIXELS,
     NvImageCodecBackend,
+    NvImageCodecBatchItemError,
     NvImageCodecDecoderSlot,
     _nvimagecodec_decoder_pool,
     decode_image_nvimagecodec,
     shutdown_nvimagecodec_decoder_pool,
     validate_nvimagecodec_batch_size,
     validate_nvimagecodec_decoders,
+    validate_nvimagecodec_pipeline_depth,
 )
 
 pytestmark = pytest.mark.cpu_test
@@ -40,6 +43,7 @@ def _fresh_decoder_pool():
         pool.cond,
         pool.max_slots,
         pool.batch_size,
+        pool.pipeline_depth,
         pool.owner_pid,
         pool.closing,
         pool.generation,
@@ -49,6 +53,7 @@ def _fresh_decoder_pool():
     pool.cond = threading.Condition()
     pool.max_slots = None
     pool.batch_size = None
+    pool.pipeline_depth = None
     pool.owner_pid = os.getpid()
     pool.closing = False
     pool.generation = 0
@@ -61,6 +66,7 @@ def _fresh_decoder_pool():
             pool.cond,
             pool.max_slots,
             pool.batch_size,
+            pool.pipeline_depth,
             pool.owner_pid,
             pool.closing,
             pool.generation,
@@ -193,16 +199,36 @@ def _install_fake_backend(
         "vllm.multimodal.image_decoders.nvimagecodec._load_nvimgcodec",
         lambda: nvimgcodec,
     )
-    stream = SimpleNamespace(
-        cuda_stream=123,
-        device=SimpleNamespace(index=0),
-    )
+
+    class FakeEvent:
+        def synchronize(self):
+            pass
+
+    class FakeStream:
+        def __init__(self, index: int):
+            self.cuda_stream = 123 + index
+            self.device = SimpleNamespace(index=0)
+
+        def record_event(self):
+            return FakeEvent()
+
+        def synchronize(self):
+            pass
+
+    stream = FakeStream(0)
+
+    def create_slot(cls):
+        slot = NvImageCodecDecoderSlot(stream if with_gpu_stream else None)
+        if with_gpu_stream:
+            slot.extra_streams = [
+                FakeStream(index) for index in range(1, NVIMAGECODEC_MAX_PIPELINE_DEPTH)
+            ]
+        return slot
+
     monkeypatch.setattr(
         NvImageCodecBackend,
         "_create_decoder_slot",
-        classmethod(
-            lambda cls: NvImageCodecDecoderSlot(stream if with_gpu_stream else None)
-        ),
+        classmethod(create_slot),
     )
 
     @contextmanager
@@ -224,6 +250,18 @@ def _install_fake_backend(
             )
         ),
     )
+    monkeypatch.setattr(
+        NvImageCodecBackend,
+        "_decoded_to_pinned",
+        staticmethod(
+            lambda output, item: (
+                output,
+                np.zeros(
+                    (item.height, item.width, len(item.output_mode)), dtype=np.uint8
+                ),
+            )
+        ),
+    )
 
 
 @pytest.mark.parametrize("value", [True, 0, -1, 1.5, "2"])
@@ -238,6 +276,14 @@ def test_validate_nvimagecodec_decoders_rejects_invalid_values(value: object):
 def test_validate_nvimagecodec_batch_size_rejects_invalid_values(value: object):
     with pytest.raises(ValueError, match="batch_size"):
         validate_nvimagecodec_batch_size(value)
+
+
+@pytest.mark.parametrize(
+    "value", [True, 0, -1, 1.5, "2", NVIMAGECODEC_MAX_PIPELINE_DEPTH + 1]
+)
+def test_validate_nvimagecodec_pipeline_depth_rejects_invalid_values(value: object):
+    with pytest.raises(ValueError, match="pipeline_depth"):
+        validate_nvimagecodec_pipeline_depth(value)
 
 
 def test_empty_batch_does_not_import_nvimagecodec(monkeypatch):
@@ -382,6 +428,423 @@ def test_batch_size_chunks_native_calls(monkeypatch):
 
     sizes = [len(event[2]) for event in events if event[0:2] == ("decode", "gpu")]
     assert sizes == [5, 5, 2]
+
+
+def test_pipeline_submits_refill_before_materializing_ready_chunk(monkeypatch):
+    data = [bytes([index]) for index in range(12)]
+    events: list[tuple[Any, ...]] = []
+    nvimgcodec = _fake_nvimgcodec(
+        {item: _metadata("jpeg") for item in data},
+        events=events,
+    )
+    _install_fake_backend(monkeypatch, nvimgcodec)
+    set_mm_gpu_ipc_pool(MultiModalGPUMemoryPool(4096))
+
+    class FakeEvent:
+        def __init__(self, stream_id: int):
+            self.stream_id = stream_id
+
+        def synchronize(self):
+            events.append(("sync", self.stream_id))
+
+    def record_event(stream):
+        events.append(("record", stream.cuda_stream))
+        return FakeEvent(stream.cuda_stream)
+
+    def materialize(host_buffer, item):
+        events.append(("materialize", item.index))
+        return Image.new(item.output_mode, (item.width, item.height))
+
+    monkeypatch.setattr(
+        NvImageCodecBackend,
+        "_record_stream_event",
+        staticmethod(record_event),
+    )
+    monkeypatch.setattr(
+        NvImageCodecBackend,
+        "_pinned_to_pillow",
+        staticmethod(materialize),
+    )
+
+    results = NvImageCodecBackend.decode_many(
+        data,
+        batch_size=5,
+        pipeline_depth=2,
+    )
+
+    assert all(result is not None for result in results)
+    decode_positions = [
+        index for index, event in enumerate(events) if event[0:2] == ("decode", "gpu")
+    ]
+    first_sync = next(index for index, event in enumerate(events) if event[0] == "sync")
+    first_materialize = next(
+        index for index, event in enumerate(events) if event[0] == "materialize"
+    )
+    assert len(decode_positions) == 3
+    assert decode_positions[1] < first_sync
+    assert decode_positions[2] < first_materialize
+    assert [event[1] for event in events if event[0] == "materialize"] == list(
+        range(12)
+    )
+
+
+def test_pipeline_drains_instead_of_blocking_when_pool_fits_one_chunk(monkeypatch):
+    data = [bytes([index]) for index in range(12)]
+    events: list[tuple[Any, ...]] = []
+    nvimgcodec = _fake_nvimgcodec(
+        {item: _metadata("jpeg") for item in data},
+        events=events,
+    )
+    _install_fake_backend(monkeypatch, nvimgcodec)
+
+    class TrackingPool(MultiModalGPUMemoryPool):
+        def __init__(self, total_bytes: int):
+            super().__init__(total_bytes)
+            self.exhausted_attempts = 0
+
+        def try_acquire(self, nbytes: int):
+            lease = super().try_acquire(nbytes)
+            if lease is None:
+                self.exhausted_attempts += 1
+            return lease
+
+    # One five-image RGB chunk consumes exactly 5 * 8 * 4 * 3 bytes.
+    pool = TrackingPool(480)
+    set_mm_gpu_ipc_pool(pool)
+
+    results = NvImageCodecBackend.decode_many(
+        data,
+        batch_size=5,
+        pipeline_depth=4,
+    )
+
+    assert all(result is not None for result in results)
+    assert pool.exhausted_attempts >= 2
+    assert pool.available_bytes == pool.total_bytes
+    sizes = [len(event[2]) for event in events if event[0:2] == ("decode", "gpu")]
+    assert sizes == [5, 5, 2]
+
+
+def test_pipeline_depth_one_uses_legacy_conversion_path(monkeypatch):
+    data = [bytes([index]) for index in range(12)]
+    nvimgcodec = _fake_nvimgcodec(
+        {item: _metadata("jpeg") for item in data},
+    )
+    _install_fake_backend(monkeypatch, nvimgcodec)
+    set_mm_gpu_ipc_pool(MultiModalGPUMemoryPool(4096))
+    monkeypatch.setattr(
+        NvImageCodecBackend,
+        "_decoded_to_pinned",
+        staticmethod(lambda *_args: pytest.fail("depth one used pinned staging")),
+    )
+
+    assert all(
+        NvImageCodecBackend.decode_many(
+            data,
+            batch_size=5,
+            pipeline_depth=1,
+        )
+    )
+
+
+def test_pipeline_submission_failure_releases_all_leases_and_invalidates_slot(
+    monkeypatch,
+):
+    data = [bytes([index]) for index in range(12)]
+    nvimgcodec = _fake_nvimgcodec(
+        {item: _metadata("jpeg") for item in data},
+    )
+    _install_fake_backend(monkeypatch, nvimgcodec)
+    pool = MultiModalGPUMemoryPool(4096)
+    set_mm_gpu_ipc_pool(pool)
+
+    def stage(output, item):
+        if item.index == 5:
+            raise RuntimeError("pinned staging failed")
+        return output, np.zeros((item.height, item.width, 3), dtype=np.uint8)
+
+    monkeypatch.setattr(
+        NvImageCodecBackend,
+        "_decoded_to_pinned",
+        staticmethod(stage),
+    )
+
+    with pytest.raises(
+        NvImageCodecBatchItemError, match="pinned staging failed"
+    ) as exc_info:
+        NvImageCodecBackend.decode_many(
+            data,
+            batch_size=5,
+            pipeline_depth=2,
+        )
+
+    assert exc_info.value.index == 5
+    assert pool.available_bytes == pool.total_bytes
+    slot = _nvimagecodec_decoder_pool.slots[0]
+    assert slot.gpu_decoder is None
+    assert slot.stream is None
+    assert slot.extra_streams == []
+
+
+@pytest.mark.parametrize("failure_point", ["params", "stream"])
+def test_pipeline_setup_failure_releases_lease(monkeypatch, failure_point: str):
+    data = [bytes([index]) for index in range(6)]
+    nvimgcodec = _fake_nvimgcodec(
+        {item: _metadata("jpeg") for item in data},
+    )
+    _install_fake_backend(monkeypatch, nvimgcodec)
+    pool = MultiModalGPUMemoryPool(4096)
+    set_mm_gpu_ipc_pool(pool)
+
+    def fail(*_args, **_kwargs):
+        raise RuntimeError(f"{failure_point} setup failed")
+
+    monkeypatch.setattr(
+        NvImageCodecDecoderSlot,
+        "get_decode_params" if failure_point == "params" else "get_stream",
+        fail,
+    )
+
+    with pytest.raises(RuntimeError, match=f"{failure_point} setup failed"):
+        NvImageCodecBackend.decode_many(
+            data,
+            batch_size=5,
+            pipeline_depth=2,
+        )
+
+    assert pool.available_bytes == pool.total_bytes
+    assert _nvimagecodec_decoder_pool.slots[0].gpu_decoder is None
+
+
+def test_pipeline_conversion_failure_drops_device_outputs_before_lease(monkeypatch):
+    import gc
+    import weakref
+
+    data = [bytes([index]) for index in range(6)]
+    output_refs: list[Any] = []
+    released_with_live_outputs: list[bool] = []
+
+    class TrackedOutput:
+        ndim = 2
+        shape = (4, 8)
+        dtype = np.uint8
+
+    class TrackingPool(MultiModalGPUMemoryPool):
+        def _release(self, lease: Any) -> None:
+            gc.collect()
+            released_with_live_outputs.append(
+                any(output_ref() is not None for output_ref in output_refs)
+            )
+            super()._release(lease)
+
+    def on_decode(kind, sources):
+        if kind != "gpu":
+            return None
+        if sources[0].data == data[0]:
+            return [None] * len(sources)
+        outputs = [TrackedOutput() for _ in sources]
+        output_refs.extend(weakref.ref(output) for output in outputs)
+        return outputs
+
+    real_stage = NvImageCodecBackend._decoded_to_pinned
+    nvimgcodec = _fake_nvimgcodec(
+        {item: _metadata("jpeg") for item in data},
+        on_decode=on_decode,
+    )
+    _install_fake_backend(monkeypatch, nvimgcodec)
+    monkeypatch.setattr(
+        NvImageCodecBackend,
+        "_decoded_to_pinned",
+        staticmethod(real_stage),
+    )
+    pool = TrackingPool(4096)
+    set_mm_gpu_ipc_pool(pool)
+
+    with pytest.raises(NvImageCodecBatchItemError, match="unexpected shape"):
+        NvImageCodecBackend.decode_many(
+            data,
+            batch_size=5,
+            pipeline_depth=2,
+        )
+
+    gc.collect()
+    assert released_with_live_outputs == [False, False]
+    assert all(output_ref() is None for output_ref in output_refs)
+    assert pool.available_bytes == pool.total_bytes
+
+
+def test_pipeline_event_record_failure_releases_all_leases(monkeypatch):
+    data = [bytes([index]) for index in range(6)]
+    nvimgcodec = _fake_nvimgcodec(
+        {item: _metadata("jpeg") for item in data},
+    )
+    _install_fake_backend(monkeypatch, nvimgcodec)
+    pool = MultiModalGPUMemoryPool(4096)
+    set_mm_gpu_ipc_pool(pool)
+    record_count = 0
+
+    class ImmediateEvent:
+        def synchronize(self):
+            pass
+
+    def record_event(_stream):
+        nonlocal record_count
+        record_count += 1
+        if record_count == 2:
+            raise RuntimeError("event record failed")
+        return ImmediateEvent()
+
+    monkeypatch.setattr(
+        NvImageCodecBackend,
+        "_record_stream_event",
+        staticmethod(record_event),
+    )
+
+    with pytest.raises(RuntimeError, match="event record failed"):
+        NvImageCodecBackend.decode_many(
+            data,
+            batch_size=5,
+            pipeline_depth=2,
+        )
+
+    assert pool.available_bytes == pool.total_bytes
+    assert _nvimagecodec_decoder_pool.slots[0].gpu_decoder is None
+
+
+def test_pipeline_event_sync_failure_discards_entire_ring(monkeypatch):
+    data = [bytes([index]) for index in range(6)]
+    nvimgcodec = _fake_nvimgcodec(
+        {item: _metadata("jpeg") for item in data},
+    )
+    _install_fake_backend(monkeypatch, nvimgcodec)
+    pool = MultiModalGPUMemoryPool(4096)
+    set_mm_gpu_ipc_pool(pool)
+    record_count = 0
+    failed_syncs = 0
+
+    class Event:
+        def __init__(self, fail: bool):
+            self.fail = fail
+
+        def synchronize(self):
+            nonlocal failed_syncs
+            if self.fail:
+                failed_syncs += 1
+                raise RuntimeError("event sync failed")
+
+    def record_event(_stream):
+        nonlocal record_count
+        record_count += 1
+        return Event(fail=record_count == 1)
+
+    monkeypatch.setattr(
+        NvImageCodecBackend,
+        "_record_stream_event",
+        staticmethod(record_event),
+    )
+
+    with pytest.raises(RuntimeError, match="event sync failed"):
+        NvImageCodecBackend.decode_many(
+            data,
+            batch_size=5,
+            pipeline_depth=2,
+        )
+
+    assert failed_syncs == 2
+    assert pool.available_bytes == pool.total_bytes
+    assert _nvimagecodec_decoder_pool.slots[0].gpu_decoder is None
+
+
+def test_pipeline_pillow_failure_closes_earlier_result_and_drains_ring(monkeypatch):
+    data = [bytes([index]) for index in range(6)]
+    nvimgcodec = _fake_nvimgcodec(
+        {item: _metadata("jpeg") for item in data},
+    )
+    _install_fake_backend(monkeypatch, nvimgcodec)
+    pool = MultiModalGPUMemoryPool(4096)
+    set_mm_gpu_ipc_pool(pool)
+    first_image = Image.new("RGB", (8, 4))
+
+    def materialize(_host_buffer, item):
+        if item.index == 1:
+            raise RuntimeError("Pillow conversion failed")
+        return first_image if item.index == 0 else Image.new("RGB", (8, 4))
+
+    monkeypatch.setattr(
+        NvImageCodecBackend,
+        "_pinned_to_pillow",
+        staticmethod(materialize),
+    )
+
+    with pytest.raises(
+        NvImageCodecBatchItemError, match="Pillow conversion failed"
+    ) as exc_info:
+        NvImageCodecBackend.decode_many(
+            data,
+            batch_size=5,
+            pipeline_depth=2,
+        )
+
+    assert exc_info.value.index == 1
+    with pytest.raises(ValueError):
+        first_image.getpixel((0, 0))
+    assert pool.available_bytes == pool.total_bytes
+    assert _nvimagecodec_decoder_pool.slots[0].gpu_decoder is None
+
+
+def test_pipeline_gpu_misses_fall_back_by_native_chunk(monkeypatch):
+    data = [bytes([index]) for index in range(12)]
+    events: list[tuple[Any, ...]] = []
+    nvimgcodec = _fake_nvimgcodec(
+        {item: _metadata("jpeg") for item in data},
+        outcomes={
+            ("gpu", data[1]): False,
+            ("gpu", data[10]): False,
+        },
+        events=events,
+    )
+    _install_fake_backend(monkeypatch, nvimgcodec)
+    set_mm_gpu_ipc_pool(MultiModalGPUMemoryPool(4096))
+
+    assert all(
+        NvImageCodecBackend.decode_many(
+            data,
+            batch_size=5,
+            pipeline_depth=2,
+        )
+    )
+    gpu_batches = [event[2] for event in events if event[0:2] == ("decode", "gpu")]
+    cpu_batches = [event[2] for event in events if event[0:2] == ("decode", "cpu")]
+    assert [len(batch) for batch in gpu_batches] == [5, 5, 2]
+    assert cpu_batches == [[data[1]], [data[10]]]
+
+
+def test_cpu_codec_batches_never_enter_gpu_pipeline(monkeypatch):
+    data = [bytes([index]) for index in range(12)]
+    events: list[tuple[Any, ...]] = []
+    nvimgcodec = _fake_nvimgcodec(
+        {item: _metadata("png") for item in data},
+        events=events,
+    )
+    _install_fake_backend(monkeypatch, nvimgcodec, with_gpu_stream=False)
+    monkeypatch.setattr(
+        NvImageCodecBackend,
+        "_decoded_to_pinned",
+        staticmethod(lambda *_args: pytest.fail("CPU codec used pinned GPU staging")),
+    )
+
+    assert all(
+        NvImageCodecBackend.decode_many(
+            data,
+            batch_size=5,
+            pipeline_depth=4,
+        )
+    )
+    assert [len(event[2]) for event in events if event[0:2] == ("decode", "cpu")] == [
+        5,
+        5,
+        2,
+    ]
 
 
 def test_aggregate_encoded_bytes_chunks_native_calls(monkeypatch):
@@ -667,13 +1130,15 @@ def test_late_conversion_failure_closes_earlier_pillow_results(monkeypatch):
 
 
 def test_decoder_configuration_is_process_wide():
-    NvImageCodecBackend._configure_decoder_slots(2, 5)
-    NvImageCodecBackend._configure_decoder_slots(2, 5)
+    NvImageCodecBackend._configure_decoder_slots(2, 5, 2)
+    NvImageCodecBackend._configure_decoder_slots(2, 5, 2)
 
     with pytest.raises(RuntimeError, match="already configured"):
         NvImageCodecBackend._configure_decoder_slots(3, 5)
     with pytest.raises(RuntimeError, match="already configured"):
         NvImageCodecBackend._configure_decoder_slots(2, 8)
+    with pytest.raises(RuntimeError, match="already configured"):
+        NvImageCodecBackend._configure_decoder_slots(2, 5, 3)
 
 
 def test_decode_params_disable_orientation_and_depth_conversion():
@@ -894,6 +1359,7 @@ def test_shutdown_releases_retained_slots_and_configuration():
     assert pool.active == 0
     assert pool.max_slots is None
     assert pool.batch_size is None
+    assert pool.pipeline_depth is None
 
 
 def test_scalar_wrapper_delegates_to_native_batch(monkeypatch):
@@ -915,6 +1381,7 @@ def test_scalar_wrapper_delegates_to_native_batch(monkeypatch):
         output_mode="RGBA",
         decoders=3,
         batch_size=8,
+        pipeline_depth=4,
     )
 
     assert actual is expected
@@ -925,6 +1392,7 @@ def test_scalar_wrapper_delegates_to_native_batch(monkeypatch):
                 "output_modes": ["RGBA"],
                 "decoders": 3,
                 "batch_size": 8,
+                "pipeline_depth": 4,
             },
         )
     ]
