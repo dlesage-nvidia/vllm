@@ -310,6 +310,11 @@ it is either implemented with evidence or moved to the decision table above.
   exists; do not add a second grouping policy to the CPU/Pillow return path.
 - [ ] Evaluate the pre-existing Pillow no-EXIF copy and synchronous URL-fetch
   opportunities as independent changes with their own baseline measurements.
+- [ ] Investigate the history-dependent nvImageCodec throughput seen in both
+  long-lived-MPS and fresh direct-context cells. MPS bypass rules out the
+  shared server as the sole cause; reproduce the mode change with a dedicated
+  endurance harness, collect CUDA/NVJPG timelines, and keep daemon lifecycle
+  control outside this feature PR.
 
 ### Reviewed and Already Accounted For
 
