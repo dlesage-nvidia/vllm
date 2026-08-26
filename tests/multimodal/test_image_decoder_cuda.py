@@ -205,6 +205,9 @@ def test_nvimagecodec_real_cpu_codec_batch_preserves_rgb_and_rgba():
 
     rgb = Image.new("RGB", (65, 33), (10, 20, 30))
     rgba = Image.new("RGBA", (63, 35), (40, 50, 60, 70))
+    palette = Image.new("P", (3, 1))
+    palette.putpalette([10, 20, 30, 40, 50, 60, 70, 80, 90] + [0] * (256 * 3 - 9))
+    palette.putdata([0, 1, 2])
     pbm = Image.new("1", (61, 31), 1)
     pgm = Image.new("L", (64, 32), 127)
     data = [
@@ -216,8 +219,19 @@ def test_nvimagecodec_real_cpu_codec_batch_preserves_rgb_and_rgba():
         _encode(rgb, "WEBP", lossless=True),
         _encode(rgba, "PNG"),
         _encode(rgba, "WEBP", lossless=True),
+        _encode(palette, "PNG", transparency=bytes([0, 128, 255])),
     ]
-    modes = ["RGB", "RGB", "RGB", "RGB", "RGB", "RGB", "RGBA", "RGBA"]
+    modes = [
+        "RGB",
+        "RGB",
+        "RGB",
+        "RGB",
+        "RGB",
+        "RGB",
+        "RGBA",
+        "RGBA",
+        "RGBA",
+    ]
     assert [encoded[:2] for encoded in data[2:5]] == [b"P4", b"P5", b"P6"]
 
     with _fresh_decoder_pool():
@@ -231,6 +245,41 @@ def test_nvimagecodec_real_cpu_codec_batch_preserves_rgb_and_rgba():
         assert decoded is not None
         expected = _pillow_decode(encoded, mode)
         np.testing.assert_array_equal(np.asarray(decoded), np.asarray(expected))
+
+
+@requires_cuda
+def test_nvimagecodec_real_exif_orientation_matches_pillow_once():
+    pytest.importorskip("nvidia.nvimgcodec")
+
+    height, width = 31, 53
+    y, x = np.mgrid[:height, :width]
+    source = Image.fromarray(
+        np.stack(
+            ((x * 5) % 256, (y * 7) % 256, (x * 3 + y * 11) % 256),
+            axis=-1,
+        ).astype(np.uint8)
+    )
+    exif = Image.Exif()
+    exif[Image.ExifTags.Base.Orientation] = 6
+    exif[Image.ExifTags.Base.ImageDescription] = "nvImageCodec EXIF test"
+    data = _encode(source, "JPEG", quality=95, subsampling=0, exif=exif)
+    expected = ImageMediaIO(backend="pillow").load_bytes(data)
+
+    set_mm_gpu_ipc_pool(MultiModalGPUMemoryPool(width * height * 3 + 1))
+    try:
+        with _fresh_decoder_pool():
+            actual = ImageMediaIO(backend="nvimagecodec").load_bytes(data)
+    finally:
+        set_mm_gpu_ipc_pool(None)
+
+    assert actual.io_config == {"backend": "nvimagecodec"}
+    assert actual.media.size == expected.media.size == (height, width)
+    assert actual.media.getexif() == expected.media.getexif()
+    np.testing.assert_allclose(
+        np.asarray(actual.media, dtype=np.int16),
+        np.asarray(expected.media, dtype=np.int16),
+        atol=6,
+    )
 
 
 @requires_cuda
