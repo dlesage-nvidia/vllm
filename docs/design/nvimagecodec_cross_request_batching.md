@@ -2,7 +2,7 @@
 
 Status: implemented and benchmarked.
 
-Reviewed and updated on 2026-08-25.
+Reviewed and updated on 2026-08-26.
 
 ## Summary
 
@@ -263,6 +263,69 @@ by the dedicated CUDA decoder suite.
 | Optimize no-EXIF Pillow normalization | Worth a standalone Pillow PR. It predates this feature and should be measured independently. |
 | Parallelize synchronous URL fetching | Follow-up. It is useful for offline callers but is not required for cross-request server batching. |
 | Remove scalar decoder wrappers | Optional cleanup before feature merge; it does not affect this design. |
+
+## Follow-up TODO
+
+This checklist records optimization ideas found during code review and the
+review of NVIDIA's public nvImageCodec Python samples. Keep an item here until
+it is either implemented with evidence or moved to the decision table above.
+
+### Before Final Review of This Change
+
+- [ ] Finish matched A100 and RTX PRO 6000 decode-only and OSL-128 inference
+  measurements at 1080p and 4K. Report throughput, server-plus-MPS CPU use,
+  NVJPG utilization, and exact service accounting from fresh-process runs.
+- [ ] A/B-test the decoder's `max_num_cpu_threads` setting at one, two, and four
+  threads, capped to avoid oversubscribing the API server. NVIDIA's
+  [DataLoader sample](https://docs.nvidia.com/cuda/nvimagecodec/samples/torch_dataloader.html)
+  gives a batched decoder multiple CPU threads for parsing and dispatch, but
+  this change should retain one unless the serving benchmarks show a repeatable
+  throughput benefit without a material CPU or memory regression.
+- [ ] Benchmark reusable native output images with the bounded ring, following
+  NVIDIA's
+  [resource-reuse sample](https://docs.nvidia.com/cuda/nvimagecodec/samples/reuse_resources.html).
+  Record allocation savings, retained GPU memory, cancellation behavior, and
+  mixed-resolution growth before deciding whether it is safe for this change
+  or belongs in a follow-up PR.
+- [ ] Re-run a multi-wave CUDA ring stress with more than `pipeline_depth`
+  back-to-back chunks, mixed resolutions, and cancellation after the final
+  tuning choice. Prove that native-image and DLPack lifetimes remain valid and
+  that service-owned encoded bytes, raster leases, pinned staging buffers, and
+  parked request metadata remain within their separate bounds.
+
+### Separate Optimization PRs
+
+- [ ] Keep decoded pixels on the GPU through resize, normalization, and tensor
+  conversion, using the
+  [CV-CUDA interop pattern](https://docs.nvidia.com/cuda/nvimagecodec/samples/cvcuda_sample.html).
+  This intentionally changes the downstream media contract and is not part of
+  the batching/ring change.
+- [ ] If native output-image reuse is not included above, add it with explicit
+  per-slot retained-memory accounting and a policy for buffers that grew for an
+  unusually large image.
+- [ ] Revisit duplicate Pillow and `CodeStream` header parsing only after real
+  fixtures prove equivalent EXIF, animation, transparency, CMYK/YCCK, and
+  malformed-input behavior.
+- [ ] Measure grouped-by-shape GPU preprocessing after the GPU-resident contract
+  exists; do not add a second grouping policy to the CPU/Pillow return path.
+- [ ] Evaluate the pre-existing Pillow no-EXIF copy and synchronous URL-fetch
+  opportunities as independent changes with their own baseline measurements.
+
+### Reviewed and Already Accounted For
+
+- [x] Use one native list decode for a batch rather than serial scalar decode
+  calls, as shown in NVIDIA's
+  [batch sample](https://docs.nvidia.com/cuda/nvimagecodec/samples/batch_sample.html).
+- [x] Reuse persistent decoder slots, use explicit CUDA streams and completion
+  events, and establish DLPack ownership before releasing native image objects.
+- [x] Pass encoded bytes directly; do not stage request images through temporary
+  files.
+- [x] Bound active encoded/raster work while allowing lightweight request
+  waiters to park until capacity is available; do not reject requests merely
+  because all decode slots are momentarily busy.
+- [x] Reject serial per-image synchronization and large fixed fleets of decoder
+  processes as serving defaults. Decoder count, native batch width, and ring
+  depth remain independently measured resources.
 
 ## Proposed Architecture
 
