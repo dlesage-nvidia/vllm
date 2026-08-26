@@ -70,6 +70,21 @@ showed the cost of replacing independent executor jobs with one serial
 This is a focused local diagnostic, not an end-to-end serving result. It is
 sufficient to make restoration of the old Pillow dispatch a prerequisite.
 
+After restoring scalar Pillow dispatch, a five-pair parent-versus-branch run
+used the public asynchronous connector with eight data-URL JPEGs per request.
+The parent was `d125b540b7`; the rebased branch was `7e37f1f51a`. Values are
+means ± sample standard deviation, and paired changes retain the deliberately
+alternated source order:
+
+| Resolution | Parent Pillow | Branch Pillow | Paired change |
+| ---------- | ------------: | ------------: | ------------: |
+| 1920x1080 | 208.4 ± 21.5 images/s | 207.3 ± 20.0 images/s | -0.3% ± 6.9% |
+| 3840x2160 | 49.5 ± 4.7 images/s | 52.0 ± 3.0 images/s | +5.5% ± 5.9% |
+
+The 1080p result is within run noise and 4K is faster, closing the default-path
+regression check. The benchmark used the same Python 3.12.13/Pillow 12.3.0
+environment and identical input digests for both source trees.
+
 On A100, the existing adapter measurements showed why batch width alone was not
 the final optimization: the native-width-five adapter path reached about
 0.71 Gpixel/s while a raw native-width-five hardware decode probe reached about
@@ -255,7 +270,7 @@ by the dedicated CUDA decoder suite.
 | -------------- | -------- |
 | Share image and video decoder slots | Reject. The resource types, factories, configuration, invalidation, and retained memory are different. A generic implementation helper can be a later refactor, without sharing slots or capacity. |
 | Fall back when one image exceeds the configured GPU pool | Keep the current hard admission error. The operator explicitly chose an insufficient budget; silently using Pillow would hide capacity misconfiguration. Coalescing must isolate the error to that request. |
-| Shorten the GPU lease | Implemented in the fourth, independently revertible change. An event first proves the pinned copy complete; device images and DLPack views are then dropped before the lease is released. Pillow materialization happens only after that release. |
+| Shorten the GPU lease | Implemented for multi-chunk depth-two-or-greater ring execution in the fourth, independently revertible change. An event proves the pinned copy complete before device images and DLPack views are dropped and the lease is released. The depth-one and single-chunk synchronous path remains the exact no-ring baseline and is tracked below. |
 | Avoid both Pillow and nvImageCodec header parsing | Defer. Pillow supplies animation, transparency, EXIF, and source metadata that `CodeStream` does not. Measured header work is small relative to raster transfer. |
 | Group every native call by exact codec | Benchmark first. It can fragment batches and has no effect on the all-JPEG target workload. Cross-request v1 deliberately queues only JPEG. |
 | Merge the GPU and CPU chunk loops | Reject for now. Their memory leases, fallback behavior, and failure handling differ, and combined CPU/GPU decoder use has deadlocked. |
@@ -315,6 +330,10 @@ it is either implemented with evidence or moved to the decision table above.
   shared server as the sole cause; reproduce the mode change with a dedicated
   endurance harness, collect CUDA/NVJPG timelines, and keep daemon lifecycle
   control outside this feature PR.
+- [ ] Benchmark early GPU-lease release for depth one and single-chunk calls.
+  They intentionally retain the synchronous no-ring path today; changing them
+  to pinned/event drainage must preserve depth-one equivalence and account for
+  retained pinned memory before the optimization is generalized.
 
 ### Reviewed and Already Accounted For
 
@@ -331,6 +350,12 @@ it is either implemented with evidence or moved to the decision table above.
 - [x] Reject serial per-image synchronization and large fixed fleets of decoder
   processes as serving defaults. Decoder count, native batch width, and ring
   depth remain independently measured resources.
+- [x] Isolate both standalone image and video helpers from the server-only
+  nvImageCodec environment default.
+- [x] Exercise palette PNG `tRNS` expansion and EXIF orientation through the
+  real nvImageCodec library, in addition to fake-backend control-flow tests.
+- [x] Restore and measure the default Pillow eight-image path against the exact
+  parent; 1080p is within noise and 4K is faster in the five-pair comparison.
 
 ## Proposed Architecture
 
