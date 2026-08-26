@@ -137,6 +137,27 @@ def test_hash_collision_video_num_frames():
     )
 
 
+def test_hash_separates_video_frame_decode_config():
+    frames = np.zeros((2, 8, 8, 3), dtype=np.uint8)
+    source = b"same encoded jpeg sequence"
+
+    def item_for_hash(io_config):
+        wrapped = MediaWithBytes(frames, source, io_config)
+        items = MultiModalDataParser()._parse_video_data([wrapped])
+        assert items is not None
+        return items.get_all_items_for_hash()[0]
+
+    pillow = item_for_hash(None)
+    nvimagecodec = item_for_hash(
+        {"frame_io_configs": [{"backend": "nvimagecodec"}, None]}
+    )
+
+    hasher = MultiModalHasher
+    assert hasher.hash_kwargs("blake3", video=pillow) != hasher.hash_kwargs(
+        "blake3", video=nvimagecodec
+    )
+
+
 def test_hash_non_contiguous_array():
     arr = np.arange(24).reshape(4, 6).T
     assert not arr.flags.c_contiguous

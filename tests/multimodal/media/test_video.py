@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+import binascii
 import io
 import sys
 from pathlib import Path
@@ -318,6 +319,43 @@ def test_load_base64_jpeg_returns_metadata():
     # Default fps=1 → duration == num_frames
     assert metadata["fps"] == 1.0
     assert metadata["duration"] == float(num_test_frames)
+
+
+def test_load_base64_jpeg_preserves_frame_io_config(monkeypatch):
+    b64_frames = _make_jpeg_b64_frames(2)
+    imageio = ImageMediaIO()
+    original_load = imageio.load_bytes_many
+    calls = []
+
+    def load_with_backend_config(encoded_frames):
+        calls.append(encoded_frames)
+        frames = original_load(encoded_frames)
+        for frame in frames:
+            frame.io_config = {"backend": "nvimagecodec"}
+        return frames
+
+    monkeypatch.setattr(imageio, "load_bytes_many", load_with_backend_config)
+    videoio = VideoMediaIO(imageio, num_frames=2)
+    loaded = videoio.load_base64("video/jpeg", ",".join(b64_frames))
+
+    assert calls == [[pybase64.b64decode(frame) for frame in b64_frames]]
+    assert loaded.io_config == {
+        "frame_io_configs": [
+            {"backend": "nvimagecodec"},
+            {"backend": "nvimagecodec"},
+        ]
+    }
+
+
+def test_load_base64_jpeg_strictly_decodes_only_selected_frames():
+    valid_frame = _make_jpeg_b64_frames(1)[0]
+
+    videoio = VideoMediaIO(ImageMediaIO(), num_frames=1)
+    frames, _ = videoio.load_base64("video/jpeg", f"{valid_frame},not-valid-base64")
+    assert frames.shape[0] == 1
+
+    with pytest.raises(binascii.Error):
+        videoio.load_base64("video/jpeg", "not-valid-base64")
 
 
 def test_load_base64_jpeg_enforces_num_frames_limit():

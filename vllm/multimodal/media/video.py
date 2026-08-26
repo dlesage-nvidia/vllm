@@ -104,11 +104,6 @@ class VideoMediaIO(MediaIO[MediaWithBytes[tuple[npt.NDArray, dict[str, Any]]]]):
         self, media_type: str, data: str
     ) -> MediaWithBytes[tuple[npt.NDArray, dict[str, Any]]]:
         if media_type.lower() == "video/jpeg":
-            load_frame = partial(
-                self.image_io.load_base64,
-                "image/jpeg",
-            )
-
             if self.num_frames > 0:
                 frame_parts = data.split(",", self.num_frames)[: self.num_frames]
             elif self.num_frames == 0:
@@ -116,9 +111,13 @@ class VideoMediaIO(MediaIO[MediaWithBytes[tuple[npt.NDArray, dict[str, Any]]]]):
             else:
                 frame_parts = data.split(",")
 
-            frames = np.stack(
-                [np.asarray(load_frame(frame_data)) for frame_data in frame_parts]
-            )
+            frame_bytes = [
+                pybase64.b64decode(frame_data, validate=True)
+                for frame_data in frame_parts
+            ]
+            loaded_frames = self.image_io.load_bytes_many(frame_bytes)
+            frames = np.stack([np.asarray(frame) for frame in loaded_frames])
+            frame_io_configs = [frame.io_config for frame in loaded_frames]
             total = int(frames.shape[0])
             fps = float(self.kwargs.get("fps", 1))
 
@@ -164,7 +163,12 @@ class VideoMediaIO(MediaIO[MediaWithBytes[tuple[npt.NDArray, dict[str, Any]]]]):
                 "frames_indices": frames_indices,
                 "do_sample_frames": self.kwargs.get("do_sample_frames", False),
             }
-            return MediaWithBytes((frames, metadata), data.encode())
+            io_config = (
+                {"frame_io_configs": frame_io_configs}
+                if any(config is not None for config in frame_io_configs)
+                else None
+            )
+            return MediaWithBytes((frames, metadata), data.encode(), io_config)
 
         return self.load_bytes(pybase64.b64decode(data))
 

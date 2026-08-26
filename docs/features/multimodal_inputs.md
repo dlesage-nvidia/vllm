@@ -863,8 +863,10 @@ retained by each API server process. It must be a positive integer, defaults
 to `2`, and cannot be overridden per request because vLLM reserves its GPU
 memory at startup. `batch_size` controls how many images vLLM submits in one
 native call. It defaults to `5`, must be between `1` and `64`, and is likewise
-fixed at startup. Before the existing multimodal preprocessing path runs, each
-decoded image passes through one pageable host RGB or RGBA buffer. The buffer is released
+fixed at startup. Images from the same request, including JPEG-encoded video
+frames, are grouped where possible while their original order is preserved.
+Before the existing multimodal preprocessing path runs, each decoded image
+passes through one pageable host RGB or RGBA buffer. The buffer is released
 after the image is copied into Pillow-owned memory.
 
 ### Video Inputs

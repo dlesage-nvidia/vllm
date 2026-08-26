@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 from .audio import AudioEmbeddingMediaIO, AudioMediaIO
 from .base import MediaIO, MediaWithBytes
-from .connector import MEDIA_CONNECTOR_REGISTRY, MediaConnector
+from .connector import MEDIA_CONNECTOR_REGISTRY, MediaBatchError, MediaConnector
 from .image import ImageEmbeddingMediaIO, ImageMediaIO
 from .video import VIDEO_LOADER_REGISTRY, VideoMediaIO
 
@@ -16,5 +16,6 @@ __all__ = [
     "VIDEO_LOADER_REGISTRY",
     "VideoMediaIO",
     "MEDIA_CONNECTOR_REGISTRY",
+    "MediaBatchError",
     "MediaConnector",
 ]

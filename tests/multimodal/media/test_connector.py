@@ -20,7 +20,13 @@ from PIL import Image, ImageChops
 from vllm.assets.base import VLLM_S3_BUCKET_URL
 from vllm.multimodal.image import convert_image_mode
 from vllm.multimodal.inputs import PlaceholderRange
-from vllm.multimodal.media import MediaConnector
+from vllm.multimodal.media import (
+    ImageMediaIO,
+    MediaBatchError,
+    MediaConnector,
+    MediaWithBytes,
+)
+from vllm.multimodal.media.image import _ImageBatchItemError
 
 # Test different image extensions (JPG/PNG) and formats (gray/RGB/RGBA)
 TEST_IMAGE_ASSETS = [
@@ -66,6 +72,162 @@ async def test_fetch_image_http(image_url: str):
     image_sync = connector.fetch_image(image_url)
     image_async = await connector.fetch_image_async(image_url)
     assert _image_equals(image_sync, image_async)
+
+
+@pytest.mark.asyncio
+async def test_fetch_images_nvimagecodec_decodes_request_as_one_batch(monkeypatch):
+    encoded_images = []
+    image_urls = []
+    for color in ((255, 0, 0), (0, 255, 0)):
+        buffer = BytesIO()
+        Image.new("RGB", (2, 2), color).save(buffer, "PNG")
+        encoded = buffer.getvalue()
+        encoded_images.append(encoded)
+        image_urls.append(
+            "data:image/png;base64," + base64.b64encode(encoded).decode("ascii")
+        )
+
+    decode_calls = []
+
+    def load_bytes_many(self, items):
+        decode_calls.append(list(items))
+        return [
+            MediaWithBytes(Image.open(BytesIO(item)).copy(), item) for item in items
+        ]
+
+    monkeypatch.setattr(ImageMediaIO, "load_bytes_many", load_bytes_many)
+    connector = MediaConnector(media_io_kwargs={"image": {"backend": "nvimagecodec"}})
+
+    sync_images = connector.fetch_images(image_urls)
+    async_images = await connector.fetch_images_async(image_urls)
+
+    assert decode_calls == [encoded_images, encoded_images]
+    assert [image.media.getpixel((0, 0)) for image in sync_images] == [
+        (255, 0, 0),
+        (0, 255, 0),
+    ]
+    assert [image.media.getpixel((0, 0)) for image in async_images] == [
+        (255, 0, 0),
+        (0, 255, 0),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_fetch_images_async_pillow_decodes_items_concurrently(monkeypatch):
+    connector = MediaConnector(media_io_kwargs={"image": {"backend": "pillow"}})
+    both_started = asyncio.Event()
+    started = []
+
+    async def load_from_url_async(url, media_io, *, fetch_timeout):
+        started.append((url, media_io))
+        if len(started) == 2:
+            both_started.set()
+        await asyncio.wait_for(both_started.wait(), timeout=1)
+        return url
+
+    monkeypatch.setattr(connector, "load_from_url_async", load_from_url_async)
+
+    results = await connector.fetch_images_async(["one", "two"])
+
+    assert results == ["one", "two"]
+    assert [url for url, _ in started] == ["one", "two"]
+    assert all(isinstance(media_io, ImageMediaIO) for _, media_io in started)
+
+
+@pytest.mark.asyncio
+async def test_fetch_images_delegates_to_overridden_scalar_methods():
+    class ScalarConnector(MediaConnector):
+        def __init__(self):
+            super().__init__()
+            self.sync_calls = []
+            self.async_calls = []
+            self.completed = []
+
+        def fetch_image(self, image_url):
+            self.sync_calls.append(image_url)
+            return f"sync:{image_url}"
+
+        async def fetch_image_async(self, image_url):
+            self.async_calls.append(image_url)
+            if image_url == "bad":
+                await asyncio.sleep(0.01)
+                raise ValueError("scalar image failure")
+            await asyncio.sleep(0.05)
+            self.completed.append(image_url)
+            return f"async:{image_url}"
+
+    connector = ScalarConnector()
+
+    assert connector.fetch_images(["one", "two"]) == ["sync:one", "sync:two"]
+    assert connector.sync_calls == ["one", "two"]
+
+    with pytest.raises(MediaBatchError) as exc_info:
+        await connector.fetch_images_async(["bad", "slow"])
+    assert exc_info.value.index == 0
+    assert type(exc_info.value.error) is ValueError
+    assert str(exc_info.value.error) == "scalar image failure"
+    assert connector.async_calls == ["bad", "slow"]
+    assert connector.completed == ["slow"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_images_async_settles_siblings_before_error(monkeypatch):
+    connector = MediaConnector()
+    completed = []
+
+    async def load_from_url_async(url, media_io, *, fetch_timeout):
+        if url == "bad":
+            await asyncio.sleep(0.01)
+            raise ValueError("bad image")
+        await asyncio.sleep(0.05)
+        completed.append(url)
+        return b"unused"
+
+    monkeypatch.setattr(connector, "load_from_url_async", load_from_url_async)
+    with pytest.raises(MediaBatchError) as exc_info:
+        await connector.fetch_images_async(["bad", "slow"])
+
+    assert exc_info.value.index == 0
+    assert str(exc_info.value.error) == "bad image"
+    assert completed == ["slow"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_images_async_preserves_indexed_decode_error(monkeypatch):
+    original_error = ValueError("corrupt image at index 1")
+
+    def fail_batch(self, encoded_images):
+        raise _ImageBatchItemError(1, original_error)
+
+    monkeypatch.setattr(ImageMediaIO, "load_bytes_many", fail_batch)
+    connector = MediaConnector(media_io_kwargs={"image": {"backend": "nvimagecodec"}})
+
+    with pytest.raises(MediaBatchError) as exc_info:
+        await connector.fetch_images_async(
+            [
+                "data:image/png;base64,aGVsbG8=",
+                "data:image/png;base64,d29ybGQ=",
+            ]
+        )
+
+    assert exc_info.value.index == 1
+    assert exc_info.value.error is original_error
+
+
+def test_fetch_images_sync_preserves_nonzero_error_position():
+    original_error = ValueError("second image failed")
+
+    class ScalarConnector(MediaConnector):
+        def fetch_image(self, image_url):
+            if image_url == "bad":
+                raise original_error
+            return image_url
+
+    with pytest.raises(MediaBatchError) as exc_info:
+        ScalarConnector().fetch_images(["good", "bad", "unused"])
+
+    assert exc_info.value.index == 1
+    assert exc_info.value.error is original_error
 
 
 @pytest.mark.asyncio

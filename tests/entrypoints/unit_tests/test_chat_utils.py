@@ -4,11 +4,13 @@
 import asyncio
 import warnings
 from collections.abc import Mapping
+from io import BytesIO
 from typing import Literal
 from unittest.mock import MagicMock
 
 import pytest
 import torch
+from PIL import Image
 
 from vllm.assets.audio import AudioAsset
 from vllm.assets.image import ImageAsset
@@ -18,12 +20,15 @@ from vllm.entrypoints.chat_utils import (
     MEDIA_CONNECTOR_REGISTRY,
     AsyncMultiModalItemTracker,
     ConversationMessage,
+    MultiModalItemTracker,
+    _PendingImage,
     _postprocess_messages,
     parse_chat_messages,
     parse_chat_messages_async,
 )
 from vllm.exceptions import VLLMValidationError
 from vllm.inputs import MultiModalDataDict, MultiModalUUIDDict
+from vllm.multimodal.media import MediaBatchError, MediaConnector, MediaWithBytes
 from vllm.multimodal.utils import (
     encode_audio_url,
     encode_image_url,
@@ -407,6 +412,141 @@ def test_parse_chat_messages_multiple_images_with_uuids(
     _assert_mm_uuids(mm_uuids, 2, expected_uuids=[image_uuid1, image_uuid2])
 
 
+def test_parse_chat_messages_batches_images_across_messages(
+    monkeypatch, phi3v_model_config
+):
+    class BatchConnector:
+        def __init__(self):
+            self.calls = []
+
+        def fetch_images(self, image_urls):
+            self.calls.append(list(image_urls))
+            return [
+                MediaWithBytes(Image.new("RGB", (1, 1), (index, 0, 0)), b"image")
+                for index, _ in enumerate(image_urls)
+            ]
+
+    connector = BatchConnector()
+    monkeypatch.setattr(
+        MEDIA_CONNECTOR_REGISTRY, "load", lambda *args, **kwargs: connector
+    )
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "image_url",
+                    "image_url": {"url": "image-1"},
+                    "uuid": "uuid-1",
+                }
+            ],
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "image_url",
+                    "image_url": {"url": "image-2"},
+                    "uuid": "uuid-2",
+                }
+            ],
+        },
+    ]
+
+    _, mm_data, mm_uuids = parse_chat_messages(
+        messages, phi3v_model_config, content_format="string"
+    )
+
+    assert connector.calls == [["image-1", "image-2"]]
+    assert mm_data is not None
+    assert [image.media.getpixel((0, 0))[0] for image in mm_data["image"]] == [
+        0,
+        1,
+    ]
+    _assert_mm_uuids(mm_uuids, 2, expected_uuids=["uuid-1", "uuid-2"])
+
+
+def test_parse_chat_messages_custom_connector_keeps_scalar_image_fetch(
+    monkeypatch, phi3v_model_config
+):
+    class ScalarConnector(MediaConnector):
+        def __init__(self):
+            super().__init__()
+            self.calls = []
+
+        def fetch_image(self, image_url):
+            self.calls.append(image_url)
+            return MediaWithBytes(Image.new("RGB", (1, 1)), image_url.encode())
+
+    connector = ScalarConnector()
+    monkeypatch.setattr(
+        MEDIA_CONNECTOR_REGISTRY, "load", lambda *args, **kwargs: connector
+    )
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "image_url", "image_url": {"url": "image-1"}},
+                {"type": "image_url", "image_url": {"url": "image-2"}},
+            ],
+        }
+    ]
+
+    parse_chat_messages(messages, phi3v_model_config, content_format="string")
+
+    assert connector.calls == ["image-1", "image-2"]
+
+
+def test_parse_chat_messages_batches_images_in_vision_chunk(
+    monkeypatch, kimi_k2_5_model_config
+):
+    class BatchConnector:
+        def __init__(self):
+            self.calls = []
+
+        def fetch_images(self, image_urls):
+            self.calls.append(list(image_urls))
+            return [
+                MediaWithBytes(Image.new("RGB", (1, 1)), image_url.encode())
+                for image_url in image_urls
+            ]
+
+    connector = BatchConnector()
+    monkeypatch.setattr(
+        MEDIA_CONNECTOR_REGISTRY, "load", lambda *args, **kwargs: connector
+    )
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "image_url",
+                    "image_url": {"url": "image-1"},
+                    "uuid": "uuid-1",
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {"url": "image-2"},
+                    "uuid": "uuid-2",
+                },
+            ],
+        }
+    ]
+
+    _, mm_data, mm_uuids = parse_chat_messages(
+        messages, kimi_k2_5_model_config, content_format="string"
+    )
+
+    assert connector.calls == [["image-1", "image-2"]]
+    _assert_mm_data_is_vision_chunk_input(mm_data, 2)
+    _assert_mm_uuids(
+        mm_uuids,
+        2,
+        expected_uuids=["uuid-1", "uuid-2"],
+        modality="vision_chunk",
+    )
+
+
 def test_parse_chat_messages_multiple_empty_images_with_uuids(
     phi3v_model_config,
     image_url,
@@ -590,6 +730,80 @@ async def test_parse_chat_messages_multiple_images_with_uuids_async(
     ]
     _assert_mm_data_is_image_input(mm_data, 2)
     _assert_mm_uuids(mm_uuids, 2, expected_uuids=[image_uuid1, image_uuid2])
+
+
+@pytest.mark.asyncio
+async def test_parse_chat_messages_async_batches_images_across_messages(
+    monkeypatch, phi3v_model_config
+):
+    class BatchConnector(MediaConnector):
+        def __init__(self):
+            super().__init__()
+            self.calls = []
+
+        async def fetch_images_async(self, image_urls):
+            self.calls.append(list(image_urls))
+            return [
+                MediaWithBytes(Image.new("RGB", (1, 1)), image_url.encode())
+                for image_url in image_urls
+            ]
+
+    connector = BatchConnector()
+    monkeypatch.setattr(
+        MEDIA_CONNECTOR_REGISTRY, "load", lambda *args, **kwargs: connector
+    )
+    messages = [
+        {
+            "role": "user",
+            "content": [{"type": "image_url", "image_url": {"url": "image-1"}}],
+        },
+        {
+            "role": "user",
+            "content": [{"type": "image_url", "image_url": {"url": "image-2"}}],
+        },
+    ]
+
+    _, mm_data, _ = await parse_chat_messages_async(
+        messages, phi3v_model_config, content_format="string"
+    )
+
+    assert connector.calls == [["image-1", "image-2"]]
+    _assert_mm_data_is_image_input(mm_data, 2)
+
+
+@pytest.mark.asyncio
+async def test_parse_chat_messages_async_custom_connector_keeps_scalar_image_fetch(
+    monkeypatch, phi3v_model_config
+):
+    class ScalarConnector(MediaConnector):
+        def __init__(self):
+            super().__init__()
+            self.calls = []
+
+        async def fetch_image_async(self, image_url):
+            self.calls.append(image_url)
+            return MediaWithBytes(Image.new("RGB", (1, 1)), image_url.encode())
+
+    connector = ScalarConnector()
+    monkeypatch.setattr(
+        MEDIA_CONNECTOR_REGISTRY, "load", lambda *args, **kwargs: connector
+    )
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "image_url", "image_url": {"url": "image-1"}},
+                {"type": "image_url", "image_url": {"url": "image-2"}},
+            ],
+        }
+    ]
+
+    _, mm_data, _ = await parse_chat_messages_async(
+        messages, phi3v_model_config, content_format="string"
+    )
+
+    assert connector.calls == ["image-1", "image-2"]
+    _assert_mm_data_is_image_input(mm_data, 2)
 
 
 @pytest.mark.asyncio
@@ -2923,3 +3137,102 @@ def test_tool_call_arguments_multiple_independent(caplog):
 
     assert len(caplog.records) == 1
     assert "bad" in caplog.records[0].message
+
+
+@pytest.mark.asyncio
+async def test_resolve_items_reports_first_mixed_item_error_after_settling(
+    monkeypatch,
+):
+    """A later batched-image failure must not mask an earlier item failure."""
+
+    completed = []
+    buffer = BytesIO()
+    Image.new("RGB", (1, 1)).save(buffer, "PNG")
+    valid_image = buffer.getvalue()
+    connector = MediaConnector()
+
+    async def load_from_url_async(url, media_io, *, fetch_timeout):
+        if url == "bad-image":
+            await asyncio.sleep(0.01)
+            return b"not an image"
+        await asyncio.sleep(0.05)
+        completed.append(url)
+        return valid_image
+
+    monkeypatch.setattr(connector, "load_from_url_async", load_from_url_async)
+
+    async def fail_video():
+        await asyncio.sleep(0.01)
+        raise RuntimeError("video failure")
+
+    async def finish_audio():
+        await asyncio.sleep(0.05)
+        completed.append("audio")
+        return ("decoded audio", None)
+
+    tracker = AsyncMultiModalItemTracker(MagicMock())
+    tracker.__dict__["connector"] = connector
+    tracker._items_by_modality["vision_chunk"] = [
+        _PendingImage("good-image", None),
+        fail_video,
+        _PendingImage("bad-image", None),
+        finish_audio,
+    ]
+
+    with pytest.raises(RuntimeError, match="video failure"):
+        await tracker.resolve_items()
+
+    assert set(completed) == {"good-image", "audio"}
+
+
+def test_sync_tracker_unwraps_positional_image_error():
+    original_error = ValueError("second pending image failed")
+
+    class FailingConnector:
+        def fetch_images(self, image_urls):
+            assert image_urls == ["good-image", "bad-image"]
+            raise MediaBatchError(1, original_error)
+
+    tracker = MultiModalItemTracker(MagicMock())
+    tracker.__dict__["connector"] = FailingConnector()
+    tracker._items_by_modality["image"] = [
+        (Image.new("RGB", (1, 1)), None),
+        _PendingImage("good-image", None),
+        _PendingImage("bad-image", None),
+    ]
+
+    with pytest.raises(ValueError) as exc_info:
+        tracker.resolve_items()
+
+    assert exc_info.value is original_error
+
+
+@pytest.mark.asyncio
+async def test_async_tracker_maps_pending_error_through_interleaved_items():
+    original_error = ValueError("second pending image failed")
+
+    class FailingConnector:
+        async def fetch_images_async(self, image_urls):
+            assert image_urls == ["good-image", "bad-image"]
+            raise MediaBatchError(1, original_error)
+
+    async def resolved_item():
+        return ("resolved", None)
+
+    async def later_error():
+        raise RuntimeError("later item failed")
+
+    tracker = AsyncMultiModalItemTracker(MagicMock())
+    tracker.__dict__["connector"] = FailingConnector()
+    tracker._items_by_modality["vision_chunk"] = [
+        resolved_item,
+        _PendingImage("good-image", None),
+        resolved_item,
+        _PendingImage("bad-image", None),
+        later_error,
+    ]
+
+    with pytest.raises(ValueError) as exc_info:
+        await tracker.resolve_items()
+
+    assert exc_info.value is original_error

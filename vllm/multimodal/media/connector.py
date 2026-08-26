@@ -8,14 +8,16 @@ import hashlib
 import os
 import tempfile
 import time
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 from urllib.request import url2pathname
 
 import aiohttp
 import numpy as np
 import numpy.typing as npt
+import pybase64
 import requests
 import torch
 from PIL import Image, UnidentifiedImageError
@@ -29,12 +31,13 @@ from vllm.connections import (
 )
 from vllm.exceptions import VLLMUnprocessableEntityError, VLLMValidationError
 from vllm.logger import init_logger
+from vllm.multimodal.image_decoders import NVIMAGECODEC_IMAGE_BACKEND
 from vllm.multimodal.video import get_video_loader_backend_for_processor
 from vllm.utils.registry import ExtensionManager
 
 from .audio import AudioEmbeddingMediaIO, AudioMediaIO
 from .base import MediaIO, MediaWithBytes
-from .image import ImageEmbeddingMediaIO, ImageMediaIO
+from .image import ImageEmbeddingMediaIO, ImageMediaIO, _ImageBatchItemError
 from .video import VideoMediaIO
 
 logger = init_logger(__name__)
@@ -53,6 +56,34 @@ MODALITY_IO_MAP: dict[str, type[MediaIO]] = {
     "image": ImageMediaIO,
     "video": VideoMediaIO,
 }
+
+
+class _BytesMediaIO(MediaIO[bytes]):
+    """Load encoded bytes through the connector without decoding them."""
+
+    def __init__(self, media_io: MediaIO[Any]) -> None:
+        self.media_io = media_io
+
+    def get_max_bytes(self) -> int | None:
+        return self.media_io.get_max_bytes()
+
+    def load_bytes(self, data: bytes) -> bytes:
+        return data
+
+    def load_base64(self, media_type: str, data: str) -> bytes:
+        return pybase64.b64decode(data, validate=True)
+
+    def load_file(self, filepath: Path) -> bytes:
+        return filepath.read_bytes()
+
+
+class MediaBatchError(Exception):
+    """A plural media fetch failure at a specific input position."""
+
+    def __init__(self, index: int, error: BaseException) -> None:
+        super().__init__(str(error))
+        self.index = index
+        self.error = error
 
 
 def _wrap_media_fetch_error(
@@ -547,6 +578,141 @@ class MediaConnector:
         except UnidentifiedImageError as e:
             # convert to ValueError to be properly caught upstream
             raise ValueError(str(e)) from e
+
+    def _fetch_images_nvimagecodec(
+        self,
+        image_urls: Sequence[str],
+        image_io: ImageMediaIO,
+    ) -> list[MediaWithBytes[Image.Image]]:
+        bytes_io = _BytesMediaIO(image_io)
+        encoded_images = []
+        for index, image_url in enumerate(image_urls):
+            try:
+                encoded_images.append(
+                    self.load_from_url(
+                        image_url,
+                        bytes_io,
+                        fetch_timeout=envs.VLLM_IMAGE_FETCH_TIMEOUT,
+                    )
+                )
+            except Exception as e:
+                raise MediaBatchError(index, e) from e
+
+        try:
+            return image_io.load_bytes_many(encoded_images)
+        except _ImageBatchItemError as e:
+            raise MediaBatchError(e.index, e.error) from None
+        except Exception as e:
+            if len(encoded_images) == 1:
+                raise MediaBatchError(0, e) from None
+            raise
+
+    async def _fetch_images_nvimagecodec_async(
+        self,
+        image_urls: Sequence[str],
+        image_io: ImageMediaIO,
+    ) -> list[MediaWithBytes[Image.Image]]:
+        bytes_io = _BytesMediaIO(image_io)
+        results = await asyncio.gather(
+            *(
+                self.load_from_url_async(
+                    image_url,
+                    bytes_io,
+                    fetch_timeout=envs.VLLM_IMAGE_FETCH_TIMEOUT,
+                )
+                for image_url in image_urls
+            ),
+            return_exceptions=True,
+        )
+        for index, result in enumerate(results):
+            if isinstance(result, BaseException):
+                raise MediaBatchError(index, result)
+
+        encoded_images = [cast(bytes, result) for result in results]
+        loop = asyncio.get_running_loop()
+        try:
+            return await loop.run_in_executor(
+                global_thread_pool, image_io.load_bytes_many, encoded_images
+            )
+        except _ImageBatchItemError as e:
+            raise MediaBatchError(e.index, e.error) from None
+        except Exception as e:
+            if len(encoded_images) == 1:
+                raise MediaBatchError(0, e) from None
+            raise
+
+    def fetch_images(
+        self,
+        image_urls: Sequence[str],
+        *,
+        image_mode: str | None = "RGB",
+    ) -> list[MediaWithBytes[Image.Image]]:
+        """Load images, retaining the failed input position in batch errors."""
+        fetch_image = self.fetch_image
+        if getattr(fetch_image, "__func__", None) is not MediaConnector.fetch_image:
+            # Registered connectors historically customized scalar fetching.
+            # Preserve those semantics instead of bypassing the override through
+            # this newly inherited raw-byte batch implementation.
+            images = []
+            for index, image_url in enumerate(image_urls):
+                try:
+                    images.append(fetch_image(image_url))
+                except Exception as e:
+                    raise MediaBatchError(index, e) from e
+            return cast(list[MediaWithBytes[Image.Image]], images)
+
+        image_io = ImageMediaIO(
+            **({"image_mode": image_mode} | self.media_io_kwargs.get("image", {}))
+        )
+        if image_io.backend != NVIMAGECODEC_IMAGE_BACKEND:
+            images = []
+            for index, image_url in enumerate(image_urls):
+                try:
+                    images.append(fetch_image(image_url, image_mode=image_mode))
+                except Exception as e:
+                    raise MediaBatchError(index, e) from e
+            return cast(list[MediaWithBytes[Image.Image]], images)
+        return MediaConnector._fetch_images_nvimagecodec(self, image_urls, image_io)
+
+    async def fetch_images_async(
+        self,
+        image_urls: Sequence[str],
+        *,
+        image_mode: str | None = "RGB",
+    ) -> list[MediaWithBytes[Image.Image]]:
+        """Fetch images, retaining the failed input position in batch errors."""
+        fetch_image_async = self.fetch_image_async
+        if (
+            getattr(fetch_image_async, "__func__", None)
+            is not MediaConnector.fetch_image_async
+        ):
+            results = await asyncio.gather(
+                *(fetch_image_async(image_url) for image_url in image_urls),
+                return_exceptions=True,
+            )
+            for index, result in enumerate(results):
+                if isinstance(result, BaseException):
+                    raise MediaBatchError(index, result)
+            return cast(list[MediaWithBytes[Image.Image]], results)
+
+        image_io = ImageMediaIO(
+            **({"image_mode": image_mode} | self.media_io_kwargs.get("image", {}))
+        )
+        if image_io.backend != NVIMAGECODEC_IMAGE_BACKEND:
+            results = await asyncio.gather(
+                *(
+                    fetch_image_async(image_url, image_mode=image_mode)
+                    for image_url in image_urls
+                ),
+                return_exceptions=True,
+            )
+            for index, result in enumerate(results):
+                if isinstance(result, BaseException):
+                    raise MediaBatchError(index, result)
+            return cast(list[MediaWithBytes[Image.Image]], results)
+        return await MediaConnector._fetch_images_nvimagecodec_async(
+            self, image_urls, image_io
+        )
 
     def fetch_video(
         self,

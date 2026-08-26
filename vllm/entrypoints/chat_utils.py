@@ -65,7 +65,11 @@ from vllm.multimodal.inputs import (
     VisionChunkImage,
     VisionChunkVideo,
 )
-from vllm.multimodal.media import MEDIA_CONNECTOR_REGISTRY, MediaConnector
+from vllm.multimodal.media import (
+    MEDIA_CONNECTOR_REGISTRY,
+    MediaBatchError,
+    MediaConnector,
+)
 from vllm.multimodal.processing import BaseMultiModalProcessor
 from vllm.renderers.embed_utils import (
     safe_load_prompt_embeds,
@@ -419,7 +423,18 @@ ModalityStr = Literal[
     "prompt_embeds",
 ]
 _T = TypeVar("_T")
-_AsyncMultiModalItem: TypeAlias = Callable[[], Awaitable[tuple[object, str | None]]]
+
+
+@dataclass(frozen=True)
+class _PendingImage:
+    image_url: str
+    uuid: str | None
+
+
+_SyncMultiModalItem: TypeAlias = tuple[object, str | None] | _PendingImage
+_AsyncMultiModalItem: TypeAlias = (
+    Callable[[], Awaitable[tuple[object, str | None]]] | _PendingImage
+)
 
 
 # Backward compatibility for single item input
@@ -574,6 +589,16 @@ class BaseMultiModalItemTracker(ABC, Generic[_T]):
             self._model_config.multimodal_config.media_io_kwargs
             if self._model_config.multimodal_config
             else None
+        )
+
+    @cached_property
+    def connector(self) -> MediaConnector:
+        # Defer connector setup until a request actually contains media.
+        return MEDIA_CONNECTOR_REGISTRY.load(
+            envs.VLLM_MEDIA_CONNECTOR,
+            media_io_kwargs=self.media_io_kwargs,
+            allowed_local_media_path=self.allowed_local_media_path,
+            allowed_media_domains=self.allowed_media_domains,
         )
 
     @property
@@ -808,12 +833,44 @@ def _resolve_items(
     return mm_data, mm_uuids
 
 
-class MultiModalItemTracker(BaseMultiModalItemTracker[tuple[object, str | None]]):
+class MultiModalItemTracker(BaseMultiModalItemTracker[_SyncMultiModalItem]):
     def resolve_items(
         self,
     ) -> tuple[MultiModalDataDict | None, MultiModalUUIDDict | None]:
         if not self._items_by_modality:
             return None, None
+
+        resolved_items_by_modality: dict[str, list[tuple[object, str | None]]] = {}
+        for modality, items in self._items_by_modality.items():
+            pending = [
+                (index, item)
+                for index, item in enumerate(items)
+                if isinstance(item, _PendingImage)
+            ]
+            resolved_items: list[Any] = list(items)
+            if pending:
+                image_urls = [item.image_url for _, item in pending]
+                fetch_images = getattr(self.connector, "fetch_images", None)
+                try:
+                    if callable(fetch_images):
+                        images = fetch_images(image_urls)
+                    else:
+                        images = [
+                            self.connector.fetch_image(image_url)
+                            for image_url in image_urls
+                        ]
+                except MediaBatchError as e:
+                    raise e.error from None
+                if len(images) != len(pending):
+                    raise RuntimeError(
+                        "Media connector returned an unexpected image batch size"
+                    )
+                for (index, item), image in zip(pending, images):
+                    resolved_items[index] = (image, item.uuid)
+
+            resolved_items_by_modality[modality] = cast(
+                list[tuple[object, str | None]], resolved_items
+            )
 
         # Text-only models (`is_multimodal_model=False`) with inputs of
         # modality `prompt_embeds` have no MM processor since `prompt_embeds` are
@@ -822,7 +879,7 @@ class MultiModalItemTracker(BaseMultiModalItemTracker[tuple[object, str | None]]
             self.mm_processor if self._model_config.is_multimodal_model else None
         )
         return _resolve_items(
-            dict(self._items_by_modality),
+            resolved_items_by_modality,
             mm_processor,
             self._modality_order,
         )
@@ -834,6 +891,20 @@ class MultiModalItemTracker(BaseMultiModalItemTracker[tuple[object, str | None]]
 
 
 class AsyncMultiModalItemTracker(BaseMultiModalItemTracker[_AsyncMultiModalItem]):
+    async def _fetch_images_async(self, image_urls: list[str]) -> list[object]:
+        fetch_images_async = getattr(self.connector, "fetch_images_async", None)
+        if callable(fetch_images_async):
+            return await fetch_images_async(image_urls)
+
+        results = await asyncio.gather(
+            *(self.connector.fetch_image_async(url) for url in image_urls),
+            return_exceptions=True,
+        )
+        for index, result in enumerate(results):
+            if isinstance(result, BaseException):
+                raise MediaBatchError(index, result)
+        return cast(list[object], results)
+
     async def resolve_items(
         self,
     ) -> tuple[MultiModalDataDict | None, MultiModalUUIDDict | None]:
@@ -842,17 +913,57 @@ class AsyncMultiModalItemTracker(BaseMultiModalItemTracker[_AsyncMultiModalItem]
 
         resolved_items_by_modality: dict[str, list[Any]] = {}
         for modality, items in self._items_by_modality.items():
-            results = await asyncio.gather(
-                *(item() for item in items), return_exceptions=True
-            )
-            for result in results:
+            pending = [
+                (index, item)
+                for index, item in enumerate(items)
+                if isinstance(item, _PendingImage)
+            ]
+            callables = [
+                (index, item)
+                for index, item in enumerate(items)
+                if not isinstance(item, _PendingImage)
+            ]
+            awaitables: list[Awaitable[Any]] = []
+            if pending:
+                awaitables.append(
+                    self._fetch_images_async([item.image_url for _, item in pending])
+                )
+            awaitables.extend(item() for _, item in callables)
+            results = await asyncio.gather(*awaitables, return_exceptions=True)
+
+            resolved_items: list[Any] = [None] * len(items)
+            result_offset = 0
+            if pending:
+                image_result = results[0]
+                result_offset = 1
+                if isinstance(image_result, BaseException):
+                    if isinstance(image_result, MediaBatchError):
+                        failing_index, _ = pending[image_result.index]
+                        resolved_items[failing_index] = image_result.error
+                    else:
+                        for index, _ in pending:
+                            resolved_items[index] = image_result
+                else:
+                    if len(image_result) != len(pending):
+                        image_result = RuntimeError(
+                            "Media connector returned an unexpected image batch size"
+                        )
+                        for index, _ in pending:
+                            resolved_items[index] = image_result
+                    else:
+                        for (index, item), image in zip(pending, image_result):
+                            resolved_items[index] = (image, item.uuid)
+            for (index, _), result in zip(callables, results[result_offset:]):
+                resolved_items[index] = result
+
+            for result in resolved_items:
                 if isinstance(result, BaseException):
                     # Gathering with return_exceptions=True lets every task in
                     # this modality finish (or itself fail) before we raise,
                     # instead of abandoning still-in-flight fetches (real
                     # network/thread-pool work) the moment the first one fails.
                     raise result
-            resolved_items_by_modality[modality] = results
+            resolved_items_by_modality[modality] = resolved_items
 
         mm_processor = (
             self.mm_processor if self._model_config.is_multimodal_model else None
@@ -955,14 +1066,7 @@ class MultiModalContentParser(BaseMultiModalContentParser):
 
     @cached_property
     def _connector(self) -> MediaConnector:
-        # Connector setup may probe VLLM_MEDIA_CACHE. Defer it until a request
-        # actually contains media so text-only parsing never blocks on that I/O.
-        return MEDIA_CONNECTOR_REGISTRY.load(
-            envs.VLLM_MEDIA_CONNECTOR,
-            media_io_kwargs=self._tracker.media_io_kwargs,
-            allowed_local_media_path=self._tracker.allowed_local_media_path,
-            allowed_media_domains=self._tracker.allowed_media_domains,
-        )
+        return self._tracker.connector
 
     @property
     def model_config(self) -> ModelConfig:
@@ -986,9 +1090,10 @@ class MultiModalContentParser(BaseMultiModalContentParser):
         self._add_placeholder("prompt_embeds", PROMPT_EMBEDS_PLACEHOLDER_TOKEN)
 
     def parse_image(self, image_url: str | None, uuid: str | None = None) -> None:
-        image = self._connector.fetch_image(image_url) if image_url else None
-
-        placeholder = self._tracker.add("image", (image, uuid))
+        item: _SyncMultiModalItem = (
+            _PendingImage(image_url, uuid) if image_url else (None, uuid)
+        )
+        placeholder = self._tracker.add("image", item)
         self._add_placeholder("image", placeholder)
 
     def parse_image_embeds(
@@ -1110,14 +1215,7 @@ class AsyncMultiModalContentParser(BaseMultiModalContentParser):
 
     @cached_property
     def _connector(self) -> MediaConnector:
-        # Connector setup may probe VLLM_MEDIA_CACHE. Defer it until a request
-        # actually contains media so text-only parsing never blocks on that I/O.
-        return MEDIA_CONNECTOR_REGISTRY.load(
-            envs.VLLM_MEDIA_CONNECTOR,
-            media_io_kwargs=self._tracker.media_io_kwargs,
-            allowed_local_media_path=self._tracker.allowed_local_media_path,
-            allowed_media_domains=self._tracker.allowed_media_domains,
-        )
+        return self._tracker.connector
 
     @property
     def model_config(self) -> ModelConfig:
@@ -1152,16 +1250,13 @@ class AsyncMultiModalContentParser(BaseMultiModalContentParser):
         tensor = await safe_load_prompt_embeds_async(self.model_config, data_bytes)
         return tensor, None
 
-    async def _image_with_uuid_async(self, image_url: str | None, uuid: str | None):
-        image = (
-            await self._connector.fetch_image_async(image_url) if image_url else None
-        )
-        return image, uuid
-
     def parse_image(self, image_url: str | None, uuid: str | None = None) -> None:
-        placeholder = self._tracker.add(
-            "image", partial(self._image_with_uuid_async, image_url, uuid)
+        item: _AsyncMultiModalItem = (
+            _PendingImage(image_url, uuid)
+            if image_url
+            else partial(self._item_with_uuid_async, None, uuid)
         )
+        placeholder = self._tracker.add("image", item)
         self._add_placeholder("image", placeholder)
 
     def parse_image_embeds(
