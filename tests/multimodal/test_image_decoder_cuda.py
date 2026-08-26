@@ -168,28 +168,36 @@ def test_nvimagecodec_real_jpeg_native_batches_match_pillow():
         ]
     )
     data.extend(data[:10])
+    expected = [
+        np.array(_pillow_decode(encoded, "RGB"), dtype=np.int16) for encoded in data
+    ]
     memory_pool = MultiModalGPUMemoryPool(len(data) * width * height * 3 + 1)
     set_mm_gpu_ipc_pool(memory_pool)
     try:
         with _fresh_decoder_pool():
-            actual = decode_images_nvimagecodec(
-                data,
-                batch_size=5,
-                pipeline_depth=4,
-            )
+            # Reuse the retained decoder and its four ring streams across more
+            # than one ringful of chunks, repeatedly. nvImageCodec has fixed
+            # back-to-back parameter races in the past, so a single decode call
+            # is not sufficient lifetime coverage for the serving path.
+            for _ in range(8):
+                actual = decode_images_nvimagecodec(
+                    data,
+                    batch_size=5,
+                    pipeline_depth=4,
+                )
+
+                assert memory_pool.available_bytes == memory_pool.total_bytes
+                assert all(image is not None for image in actual)
+                for decoded, expected_pixels in zip(actual, expected):
+                    assert decoded is not None
+                    np.testing.assert_allclose(
+                        np.asarray(decoded, dtype=np.int16),
+                        expected_pixels,
+                        atol=6,
+                    )
+                    decoded.close()
     finally:
         set_mm_gpu_ipc_pool(None)
-
-    assert memory_pool.available_bytes == memory_pool.total_bytes
-    assert all(image is not None for image in actual)
-    for encoded, decoded in zip(data, actual):
-        assert decoded is not None
-        expected = _pillow_decode(encoded, "RGB")
-        np.testing.assert_allclose(
-            np.asarray(decoded, dtype=np.int16),
-            np.asarray(expected, dtype=np.int16),
-            atol=6,
-        )
 
 
 def test_nvimagecodec_real_cpu_codec_batch_preserves_rgb_and_rgba():
