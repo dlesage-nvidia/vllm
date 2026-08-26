@@ -22,7 +22,7 @@ PILLOW_IMAGE_BACKEND = "pillow"
 NVIMAGECODEC_IMAGE_BACKEND = "nvimagecodec"
 NVIMAGECODEC_DEFAULT_DECODERS = 2
 NVIMAGECODEC_DEFAULT_BATCH_SIZE = 5
-NVIMAGECODEC_DEFAULT_PIPELINE_DEPTH = 2
+NVIMAGECODEC_DEFAULT_PIPELINE_DEPTH = 4
 NVIMAGECODEC_MAX_BATCH_SIZE = 64
 NVIMAGECODEC_MAX_PIPELINE_DEPTH = 8
 NVIMAGECODEC_MAX_CHANNELS = 4
@@ -401,12 +401,15 @@ class NvImageCodecBackend:
             while True:
                 if pool.closing or pool.generation != generation:
                     raise RuntimeError("nvImageCodec decoder pool is shutting down")
-                if pool.slots:
-                    slot = pool.slots.pop()
-                    break
+                # Populate the configured pool before reusing an idle slot. If
+                # a fast worker returns first, idle-first selection can leave a
+                # multi-worker service permanently using only one decoder.
                 if pool.active < pool.max_slots:
                     pool.active += 1
                     create_slot = True
+                    break
+                if pool.slots:
+                    slot = pool.slots.pop()
                     break
                 pool.cond.wait()
 

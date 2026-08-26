@@ -167,6 +167,7 @@ def test_nvimagecodec_real_jpeg_native_batches_match_pillow():
             _encode(grayscale, "JPEG", quality=85, progressive=True),
         ]
     )
+    data.extend(data[:10])
     memory_pool = MultiModalGPUMemoryPool(len(data) * width * height * 3 + 1)
     set_mm_gpu_ipc_pool(memory_pool)
     try:
@@ -174,7 +175,7 @@ def test_nvimagecodec_real_jpeg_native_batches_match_pillow():
             actual = decode_images_nvimagecodec(
                 data,
                 batch_size=5,
-                pipeline_depth=2,
+                pipeline_depth=4,
             )
     finally:
         set_mm_gpu_ipc_pool(None)

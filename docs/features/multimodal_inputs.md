@@ -827,7 +827,7 @@ Select the backend and reserve VRAM for frontend decoding:
 ```bash
 vllm serve Qwen/Qwen3-VL-30B-A3B-Instruct \
   --media-io-kwargs \
-    '{"image": {"backend": "nvimagecodec", "decoders": 2, "batch_size": 5, "pipeline_depth": 2, "coalesce_timeout_ms": 0.25}}' \
+    '{"image": {"backend": "nvimagecodec", "decoders": 2, "batch_size": 5, "pipeline_depth": 4, "coalesce_timeout_ms": 0.25}}' \
   --mm-ipc-gpu-memory-gb 1
 ```
 
@@ -871,14 +871,21 @@ Concurrent requests that each contain one compatible JPEG also share native
 batches. Direct multi-image and non-JPEG work uses the same process-local
 service and counts against the same `decoders` limit.
 
-`pipeline_depth` controls how many native batches each decoder slot can keep in
-flight while decoded pixels are copied to the host and converted to Pillow
-images. It defaults to `2`, must be between `1` and `8`, and is fixed at
+`pipeline_depth` controls how many native batch results each decoder slot can
+stage while decoded pixels are copied to the host and converted to Pillow
+images. It defaults to `4`, must be between `1` and `8`, and is fixed at
 startup. Once at least `batch_size` compatible singleton JPEG requests are
 ready, the service can claim up to `batch_size * pipeline_depth` requests for
 one pipelined worker call without waiting for the larger number to arrive.
 The decode-service shutdown statistic named `batch_widths` reports these claim
 widths, not the widths of the individual native decode calls.
+
+The default was selected on an A100 with enough request concurrency to keep two
+decoder workers supplied. A deeper ring can consume proportionally more pinned
+host memory and decoded-raster GPU budget, and it is not automatically faster
+when the workload cannot fill its wider service claims. Depth one remains the
+latency- and memory-conservative setting for workloads that do not build a
+sustained decode backlog.
 
 `coalesce_timeout_ms` is the maximum intentional wait for a partial
 cross-request JPEG batch. It defaults to `0`, which adds no low-QPS delay but

@@ -93,12 +93,71 @@ Both resolutions had zero Pillow fallbacks. CPU time per image fell by 20.5%
 at 1080p and 25.9% at 4K. The device-global NVML NVJPG duty value fell when
 moving from width one to width five even as throughput increased; it measures
 active time, not simultaneous occupancy of the five hardware engines. Native
-widths plus throughput scaling are therefore the saturation evidence.
+widths plus throughput scaling are therefore evidence of effective hardware
+batching, not continuous saturation.
 
 The production timeout remains zero to avoid intentional low-QPS latency. The
 documented 0.25 ms setting is the measured high-QPS throughput tuning point; it
 improved throughput over zero timeout by 2.1% at 1080p and 2.8% at 4K in this
 sweep.
+
+The final ring-depth comparison used a fresh Python process for every cell,
+two decoder workers, native batches of five, concurrency 64, a 0.25 ms
+coalescing window, 10 seconds of warmup, and 20 seconds of measurement. Four
+counterbalanced repetitions at each resolution all passed source, workload,
+fallback, and service-accounting gates. Values are means ± sample standard
+deviation:
+
+| Resolution | Depth one | Depth four | Paired throughput change | CPU cores | NVJPG mean |
+| ---------- | --------: | ---------: | -----------------------: | --------: | -----------: |
+| 1920x1080 | 494.03 ± 4.14 images/s | 545.13 ± 4.23 images/s | +10.35% ± 0.97% | 1.816 → 1.894 | 22.45% → 25.17% |
+| 3840x2160 | 153.94 ± 5.48 images/s | 189.54 ± 2.94 images/s | +23.21% ± 3.54% | 1.887 → 1.980 | 17.74% → 22.11% |
+
+Although instantaneous CPU use increased, CPU time per decoded image fell by
+5.5% at 1080p and 14.8% at 4K. Depth two showed unstable, bimodal throughput at
+1080p, and depth eight could not be kept full by the concurrency-64 workload;
+depth four was stable in every paired run and became the default.
+
+A separate contemporaneous three-repetition Pillow campaign measured 396.21 ±
+9.63 images/s at 1080p and 93.42 ± 1.03 images/s at 4K, again as means ± sample
+standard deviation. CPU use was 5.291 and 4.604 cores, respectively. Relative
+to those unpaired baselines, depth-four nvImageCodec delivered 37.6% and 102.9%
+more throughput while using 64.2% and 57.0% fewer CPU cores.
+
+The ring does not make the current Pillow-output adapter saturate A100 NVJPG.
+Scaling the same depth-four workload to six decoder workers reached 890.9
+images/s and 41.2% mean NVJPG at 1080p. Eight workers reached 416.1 images/s
+and 48.6% mean NVJPG at 4K. A standalone nvImageCodec probe that reused GPU
+outputs reached 2824.1 images/s and 96.8% mean NVJPG at 1080p, and 809.3
+images/s and 91.0% at 4K. Increasing the vLLM native batch ceiling from five
+to 32 did not improve throughput at either resolution, so larger native calls
+alone do not close the gap. Device-to-host transfer, Pillow materialization,
+and request feeding remain contributors to the hardware-idle intervals.
+Removing that CPU-image contract remains a separate change.
+
+The final end-to-end run used one image per request, output length 128,
+concurrency 16, 256 measured requests after 48 warmup requests, and a fresh
+Qwen3-VL-2B server for every cell. Three counterbalanced repetitions produced
+the following means ± sample standard deviation:
+
+| Resolution | Variant | Requests/s | Mean latency | CPU cores | NVJPG mean |
+| ---------- | ------- | ---------: | -----------: | --------: | -----------: |
+| 1920x1080 | Pillow | 19.22 ± 0.08 | 831.52 ms | 1.310 | 0.00% |
+| 1920x1080 | Depth one | 19.83 ± 0.46 | 803.23 ms | 1.209 | 1.72% |
+| 1920x1080 | Depth four | 20.10 ± 0.13 | 794.49 ms | 1.217 | 1.73% |
+| 3840x2160 | Pillow | 14.94 ± 0.27 | 1057.56 ms | 2.328 | 0.00% |
+| 3840x2160 | Depth one | 15.78 ± 0.08 | 1002.92 ms | 1.993 | 7.92% |
+| 3840x2160 | Depth four | 15.71 ± 0.16 | 1007.28 ms | 1.977 | 7.72% |
+
+Depth four improved throughput over Pillow by a paired 4.59% ± 0.89% at
+1080p and 5.15% ± 2.90% at 4K. Its incremental paired change over depth one
+was 1.37% ± 2.13% and -0.47% ± 1.22%, respectively, so this inference workload
+does not demonstrate an additional ring-specific gain. Decode-service claims
+averaged only 2.51 images at 1080p and 1.10 at 4K; inference did not build the
+sustained backlog that made depth four effective in decode-only testing. Input
+ordering and prompt/completion token counts matched across variants. Generated
+text hashes were diagnostic rather than equivalent; pixel fidelity is covered
+by the dedicated CUDA decoder suite.
 
 ## Review Disposition
 
@@ -318,10 +377,10 @@ intentional low-QPS delay.
 
 `pipeline_depth` bounds the number of native GPU batches associated with one
 decoder worker call. Depth one preserves the pre-ring pageable-copy path. The
-default depth two is double buffering: while one completed batch is converted
-to Pillow images on the CPU, the next batch can decode and copy on a distinct
-external CUDA stream. Larger depths are available for measurement but multiply
-the maximum live decoded and pinned-host raster bytes.
+default depth four keeps a wider bounded work window: while completed batches
+are converted to Pillow images on the CPU, a following batch can decode and
+copy on a distinct external CUDA stream. Other depths remain available for
+measurement but change the maximum live decoded and pinned-host raster bytes.
 
 Each ring submission follows this ownership sequence:
 
@@ -492,8 +551,8 @@ Use one A100 setup and fixed inference/model settings for the primary report:
 - one image per request;
 - output sequence length 128;
 - 1920x1080 and 3840x2160 JPEG inputs;
-- Pillow baseline, pre-ring nvImageCodec batch five, and double-buffered
-  nvImageCodec batch five;
+- Pillow baseline, pre-ring nvImageCodec batch five, and nvImageCodec batch
+  five with `pipeline_depth=4`;
 - a concurrency/QPS sweep from low load through a sustained decode backlog; and
 - both real inference and a null-inference/decode-bottleneck harness.
 
@@ -546,11 +605,13 @@ smoke coverage, but use A100 as the reference for five-engine NVJPG claims.
    production default and identifies 0.25 ms as the high-QPS tuning point.
 3. **Decode-ring change:** add bounded pinned staging, asynchronous copies, and
    event-proven early lease release as an independently revertible commit on top
-   of cross-request batching. Keep `pipeline_depth=2` as the measured
-   double-buffer default.
-4. **GPU-resident preprocessing change:** optionally eliminate the host transfer
+   of cross-request batching.
+4. **Measured ring tuning:** make decoder-slot provisioning deterministic and
+   use `pipeline_depth=4`, selected by the fresh-process A100 depth sweep, as
+   the high-backlog default.
+5. **GPU-resident preprocessing change:** optionally eliminate the host transfer
    by changing the downstream multimodal contract. This remains a separate PR.
-5. **Optional independent cleanups:** generic slot-pool implementation,
+6. **Optional independent cleanups:** generic slot-pool implementation,
    no-EXIF Pillow copy removal, sync URL parallelism, and mixed CPU/GPU image
    prioritization.
 

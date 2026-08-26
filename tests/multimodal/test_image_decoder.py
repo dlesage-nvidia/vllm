@@ -341,7 +341,7 @@ def test_gpu_and_cpu_decoders_are_separate_and_retained(monkeypatch):
     _install_fake_backend(monkeypatch, nvimgcodec)
     set_mm_gpu_ipc_pool(MultiModalGPUMemoryPool(1024))
 
-    assert all(NvImageCodecBackend.decode_many([jpeg, png], batch_size=5))
+    assert all(NvImageCodecBackend.decode_many([jpeg, png], decoders=1, batch_size=5))
     decoder_events = [event for event in events if event[0] == "decoder"]
     assert [event[1] for event in decoder_events] == ["gpu", "cpu"]
     gpu_kwargs = decoder_events[0][2]
@@ -1229,6 +1229,32 @@ def test_decoder_slots_bound_concurrent_native_batches(monkeypatch):
         assert not thread.is_alive()
 
     assert max_active == 2
+
+
+def test_decoder_pool_grows_before_reusing_idle_slots(monkeypatch):
+    created_slots: list[NvImageCodecDecoderSlot] = []
+
+    def create_slot(cls):
+        slot = NvImageCodecDecoderSlot()
+        created_slots.append(slot)
+        return slot
+
+    monkeypatch.setattr(
+        NvImageCodecBackend,
+        "_create_decoder_slot",
+        classmethod(create_slot),
+    )
+    NvImageCodecBackend._configure_decoder_slots(2, 5)
+
+    with NvImageCodecBackend._borrow_decoder_slot() as first:
+        pass
+    with NvImageCodecBackend._borrow_decoder_slot() as second:
+        pass
+
+    assert created_slots == [first, second]
+    assert first is not second
+    assert _nvimagecodec_decoder_pool.active == 2
+    assert len(_nvimagecodec_decoder_pool.slots) == 2
 
 
 def test_decoder_pool_shutdown_wakes_existing_and_late_borrowers(monkeypatch):

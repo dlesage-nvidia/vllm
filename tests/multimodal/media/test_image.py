@@ -462,7 +462,7 @@ def test_nvimagecodec_backend_decodes_rgb_jpeg(monkeypatch):
 
     assert result.media is decoded
     assert result.io_config == {"backend": "nvimagecodec"}
-    assert calls == [([data], ["RGB"], 3, 5, 2)]
+    assert calls == [([data], ["RGB"], 3, 5, 4)]
 
 
 def test_nvimagecodec_batches_all_supported_format_families(monkeypatch):
