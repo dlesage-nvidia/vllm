@@ -13,8 +13,10 @@ from vllm.multimodal.inputs import (
 )
 from vllm.multimodal.utils import (
     argsort_mm_positions,
+    encode_image_base64,
     encode_image_url,
     fetch_image,
+    fetch_video,
     group_and_batch_mm_items,
 )
 
@@ -266,6 +268,29 @@ def test_fetch_image_rejects_explicit_nvimagecodec_before_connector(monkeypatch)
 
     with pytest.raises(ValueError, match="only supports the Pillow image backend"):
         fetch_image("unused", {"backend": "nvimagecodec"})
+
+
+def test_fetch_video_frames_do_not_inherit_nvimagecodec_backend(monkeypatch):
+    monkeypatch.setenv("VLLM_IMAGE_LOADER_BACKEND", "nvimagecodec")
+
+    def fail_nvimagecodec_decode(*args, **kwargs):
+        pytest.fail("standalone fetch_video must not use nvImageCodec from the env")
+
+    monkeypatch.setattr(
+        "vllm.multimodal.media.image.decode_images_nvimagecodec",
+        fail_nvimagecodec_decode,
+    )
+    frames = [
+        encode_image_base64(Image.new("RGB", (2, 2), color=color), format="JPEG")
+        for color in ("red", "blue")
+    ]
+
+    video, _metadata = fetch_video(
+        f"data:video/jpeg;base64,{','.join(frames)}",
+        {"num_frames": len(frames)},
+    )
+
+    assert video.shape == (2, 2, 2, 3)
 
 
 def test_group_and_batch_mm_items_split_by_shared_data():

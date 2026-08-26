@@ -389,7 +389,10 @@ def fetch_video(
         This method has direct access to local files and is only intended
         to be called by user code. Never call this from the online server!
     """
-    media_io_kwargs = None if not video_io_kwargs else {"video": video_io_kwargs}
+    media_io_kwargs = {
+        "image": {"backend": PILLOW_IMAGE_BACKEND},
+        "video": dict(video_io_kwargs or {}),
+    }
     media_connector = MediaConnector(
         media_io_kwargs=media_io_kwargs,
         allowed_local_media_path="/",
