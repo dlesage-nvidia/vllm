@@ -353,6 +353,7 @@ class MultiModalConfig:
             NVIMAGECODEC_DEFAULT_BATCH_SIZE,
             NVIMAGECODEC_DEFAULT_DECODERS,
             NVIMAGECODEC_DEFAULT_PIPELINE_DEPTH,
+            ensure_nvimagecodec_available,
             validate_nvimagecodec_batch_size,
             validate_nvimagecodec_decoders,
             validate_nvimagecodec_pipeline_depth,
@@ -385,6 +386,7 @@ class MultiModalConfig:
                     "The nvImageCodec image backend requires a positive "
                     "mm_ipc_gpu_memory_gb value."
                 )
+            ensure_nvimagecodec_available()
         return self
 
     @staticmethod

@@ -32,6 +32,15 @@ from vllm.multimodal.video_decoders.pynvvideocodec import (
 from vllm.utils.mem_constants import GiB_bytes
 
 
+@pytest.fixture(autouse=True)
+def _isolate_optional_image_backend(monkeypatch):
+    monkeypatch.setenv("VLLM_IMAGE_LOADER_BACKEND", "pillow")
+    monkeypatch.setattr(
+        "vllm.multimodal.image_decoders.ensure_nvimagecodec_available",
+        lambda: None,
+    )
+
+
 def _mm_config(
     *,
     mm_ipc_gpu_memory_gb: float = 0,

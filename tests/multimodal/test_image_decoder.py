@@ -547,7 +547,7 @@ def test_pipeline_depth_one_uses_legacy_conversion_path(monkeypatch):
     )
 
 
-def test_pipeline_submission_failure_releases_all_leases_and_invalidates_slot(
+def test_pipeline_systemic_submission_failure_releases_leases_and_invalidates_slot(
     monkeypatch,
 ):
     data = [bytes([index]) for index in range(12)]
@@ -560,7 +560,7 @@ def test_pipeline_submission_failure_releases_all_leases_and_invalidates_slot(
 
     def stage(output, item):
         if item.index == 5:
-            raise RuntimeError("pinned staging failed")
+            raise MemoryError("pinned staging failed")
         return output, np.zeros((item.height, item.width, 3), dtype=np.uint8)
 
     monkeypatch.setattr(
@@ -569,16 +569,13 @@ def test_pipeline_submission_failure_releases_all_leases_and_invalidates_slot(
         staticmethod(stage),
     )
 
-    with pytest.raises(
-        NvImageCodecBatchItemError, match="pinned staging failed"
-    ) as exc_info:
+    with pytest.raises(MemoryError, match="pinned staging failed"):
         NvImageCodecBackend.decode_many(
             data,
             batch_size=5,
             pipeline_depth=2,
         )
 
-    assert exc_info.value.index == 5
     assert pool.available_bytes == pool.total_bytes
     slot = _nvimagecodec_decoder_pool.slots[0]
     assert slot.gpu_decoder is None
@@ -755,7 +752,7 @@ def test_pipeline_event_sync_failure_discards_entire_ring(monkeypatch):
     assert _nvimagecodec_decoder_pool.slots[0].gpu_decoder is None
 
 
-def test_pipeline_pillow_failure_closes_earlier_result_and_drains_ring(monkeypatch):
+def test_pipeline_systemic_pillow_failure_closes_result_and_drains_ring(monkeypatch):
     data = [bytes([index]) for index in range(6)]
     nvimgcodec = _fake_nvimgcodec(
         {item: _metadata("jpeg") for item in data},
@@ -767,7 +764,7 @@ def test_pipeline_pillow_failure_closes_earlier_result_and_drains_ring(monkeypat
 
     def materialize(_host_buffer, item):
         if item.index == 1:
-            raise RuntimeError("Pillow conversion failed")
+            raise MemoryError("Pillow conversion failed")
         return first_image if item.index == 0 else Image.new("RGB", (8, 4))
 
     monkeypatch.setattr(
@@ -776,16 +773,13 @@ def test_pipeline_pillow_failure_closes_earlier_result_and_drains_ring(monkeypat
         staticmethod(materialize),
     )
 
-    with pytest.raises(
-        NvImageCodecBatchItemError, match="Pillow conversion failed"
-    ) as exc_info:
+    with pytest.raises(MemoryError, match="Pillow conversion failed"):
         NvImageCodecBackend.decode_many(
             data,
             batch_size=5,
             pipeline_depth=2,
         )
 
-    assert exc_info.value.index == 1
     with pytest.raises(ValueError):
         first_image.getpixel((0, 0))
     assert pool.available_bytes == pool.total_bytes

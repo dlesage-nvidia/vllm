@@ -56,6 +56,14 @@ class NvImageCodecBatchItemError(ValueError):
         self.error = error
 
 
+class NvImageCodecIsolatableBatchError(ValueError):
+    """An explicitly item-local native output validation failure."""
+
+
+class NvImageCodecServiceError(RuntimeError):
+    """A backend or process configuration failure affecting the whole claim."""
+
+
 def _close_decoded_results(results: list[Image.Image | None]) -> None:
     for index, result in enumerate(results):
         try:
@@ -136,12 +144,17 @@ def _load_nvimgcodec():
     try:
         from nvidia import nvimgcodec
     except ImportError as exc:
-        raise RuntimeError(
+        raise NvImageCodecServiceError(
             "The nvImageCodec image backend requires x86-64 with CUDA 12 or "
             "13 and the CUDA-major-matched nvidia-nvimgcodec package. Install "
             "vLLM's 'nvimagecodec' extra. Arm is not currently supported."
         ) from exc
     return nvimgcodec
+
+
+def ensure_nvimagecodec_available() -> None:
+    """Fail configuration early when the optional backend is unavailable."""
+    _load_nvimgcodec()
 
 
 class NvImageCodecDecoderSlot:
@@ -545,7 +558,7 @@ class NvImageCodecBackend:
                 or tuple(decoded.shape) != expected_shape
                 or decoded.dtype != np.uint8
             ):
-                raise ValueError(
+                raise NvImageCodecIsolatableBatchError(
                     "nvImageCodec returned an image with unexpected shape or dtype: "
                     f"shape={tuple(decoded.shape)}, dtype={decoded.dtype}"
                 )
@@ -554,13 +567,15 @@ class NvImageCodecBackend:
             # pageable host buffer rather than retaining a pinned allocation.
             host_image = decoded.cpu()
             if host_image is None:
-                raise RuntimeError("nvImageCodec failed to copy an image to host")
+                raise NvImageCodecIsolatableBatchError(
+                    "nvImageCodec failed to copy an image to host"
+                )
             host_array = np.asarray(host_image)
             if (
                 tuple(host_array.shape) != expected_shape
                 or host_array.dtype != np.uint8
             ):
-                raise ValueError(
+                raise NvImageCodecIsolatableBatchError(
                     "nvImageCodec returned a host image with unexpected "
                     "shape or dtype: "
                     f"shape={tuple(host_array.shape)}, dtype={host_array.dtype}"
@@ -593,7 +608,7 @@ class NvImageCodecBackend:
                 or tuple(decoded.shape) != expected_shape
                 or decoded.dtype != np.uint8
             ):
-                raise ValueError(
+                raise NvImageCodecIsolatableBatchError(
                     "nvImageCodec returned an image with unexpected shape or dtype: "
                     f"shape={tuple(decoded.shape)}, dtype={decoded.dtype}"
                 )
@@ -603,7 +618,7 @@ class NvImageCodecBackend:
                 tuple(device_view.shape) != expected_shape
                 or device_view.dtype != torch.uint8
             ):
-                raise ValueError(
+                raise NvImageCodecIsolatableBatchError(
                     "nvImageCodec returned a DLPack image with unexpected shape or "
                     f"dtype: shape={tuple(device_view.shape)}, "
                     f"dtype={device_view.dtype}"
@@ -636,7 +651,7 @@ class NvImageCodecBackend:
                 tuple(host_array.shape) != expected_shape
                 or host_array.dtype != np.uint8
             ):
-                raise ValueError(
+                raise NvImageCodecIsolatableBatchError(
                     "nvImageCodec returned a pinned host image with unexpected "
                     "shape or dtype: "
                     f"shape={tuple(host_array.shape)}, dtype={host_array.dtype}"
@@ -688,7 +703,7 @@ class NvImageCodecBackend:
                             device_view, host_buffer = cls._decoded_to_pinned(
                                 output, item
                             )
-                        except Exception as error:
+                        except NvImageCodecIsolatableBatchError as error:
                             raise NvImageCodecBatchItemError(
                                 item.index, error
                             ) from error
@@ -764,7 +779,7 @@ class NvImageCodecBackend:
                 else:
                     try:
                         results[item.index] = cls._pinned_to_pillow(host_buffer, item)
-                    except Exception as error:
+                    except NvImageCodecIsolatableBatchError as error:
                         raise NvImageCodecBatchItemError(item.index, error) from error
         finally:
             host_buffers.clear()
@@ -794,7 +809,7 @@ class NvImageCodecBackend:
                 if output is not None:
                     try:
                         results[item.index] = cls._decoded_to_pillow(output, item)
-                    except Exception as error:
+                    except NvImageCodecIsolatableBatchError as error:
                         raise NvImageCodecBatchItemError(item.index, error) from error
         finally:
             decoded.clear()
@@ -831,7 +846,7 @@ class NvImageCodecBackend:
                     else:
                         try:
                             results[item.index] = cls._decoded_to_pillow(output, item)
-                        except Exception as error:
+                        except NvImageCodecIsolatableBatchError as error:
                             raise NvImageCodecBatchItemError(
                                 item.index, error
                             ) from error
@@ -988,7 +1003,7 @@ class NvImageCodecBackend:
 
                 memory_pool = get_mm_gpu_ipc_pool()
                 if memory_pool is None:
-                    raise RuntimeError(
+                    raise NvImageCodecServiceError(
                         "The nvImageCodec image backend requires a positive "
                         "--mm-ipc-gpu-memory-gb value."
                     )

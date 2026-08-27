@@ -17,6 +17,15 @@ from vllm.transformers_utils.model_arch_config_convertor import (
 from vllm.v1.attention.backends.registry import AttentionBackendEnum
 
 
+@pytest.fixture(autouse=True)
+def _stub_nvimagecodec_availability(monkeypatch):
+    monkeypatch.setenv("VLLM_IMAGE_LOADER_BACKEND", "pillow")
+    monkeypatch.setattr(
+        "vllm.multimodal.image_decoders.ensure_nvimagecodec_available",
+        lambda: None,
+    )
+
+
 def test_mm_encoder_attn_backend_str_conversion():
     config = MultiModalConfig(mm_encoder_attn_backend="FLASH_ATTN")  # type: ignore[arg-type]
     assert config.mm_encoder_attn_backend == AttentionBackendEnum.FLASH_ATTN
@@ -80,6 +89,22 @@ def test_use_gpu_image_backend_from_environment(monkeypatch):
     config = MultiModalConfig(mm_ipc_gpu_memory_gb=1)
 
     assert config.use_gpu_image_backend()
+
+
+def test_nvimagecodec_is_import_checked_at_startup(monkeypatch):
+    def unavailable():
+        raise RuntimeError("nvImageCodec package is unavailable")
+
+    monkeypatch.setattr(
+        "vllm.multimodal.image_decoders.ensure_nvimagecodec_available",
+        unavailable,
+    )
+
+    with pytest.raises(RuntimeError, match="package is unavailable"):
+        MultiModalConfig(
+            mm_ipc_gpu_memory_gb=1,
+            media_io_kwargs={"image": {"backend": "nvimagecodec"}},
+        )
 
 
 def test_custom_image_backend_remains_connector_owned():
