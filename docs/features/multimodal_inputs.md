@@ -908,9 +908,11 @@ Active decode entries and their owned encoded bytes are bounded. A large
 logical multi-image request is segmented into bounded service jobs. Under
 capacity pressure, an asynchronous request parks in FIFO order before fetching
 or owning encoded image bytes, then its segments proceed as capacity becomes
-available. These lightweight pre-fetch waiters are not capped. Synchronous
-segment submission cannot park its caller and instead returns an overload error
-when admission is full.
+available. Active pre-fetch requests are item-count bounded; exact encoded-byte
+accounting begins after each fetch because byte length is not known uniformly
+for HTTP, file, and data-URL inputs. These lightweight pre-fetch waiters are not
+capped. Synchronous segment submission cannot park its caller and instead
+returns an overload error when admission is full.
 
 With `pipeline_depth=1`, every decoded image follows the original synchronous
 pageable-host copy path. At depth two or greater, only a worker claim that

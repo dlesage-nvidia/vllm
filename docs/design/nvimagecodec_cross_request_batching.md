@@ -196,6 +196,49 @@ effective in decode-only testing. Input ordering and prompt/completion token
 counts matched across variants. Generated text hashes were diagnostic rather
 than equivalent; pixel fidelity is covered by the dedicated CUDA decoder suite.
 
+A follow-up then tested whether a depth-greater-than-one configuration should
+use pinned/event staging even when a worker claim fits one native chunk. The
+control was commit `2fda3654cc`; experimental commit `d79d9cd197` changed only
+that gate and added its path-selection regression. Concurrency five ensured
+every service claim fit one chunk. Each cell used one warm process for three
+15-second windows; values are means ± sample standard deviation:
+
+| GPU | Resolution | Synchronous control | Single-chunk pinned staging | Change | NVJPG mean |
+| --- | --- | ---: | ---: | ---: | ---: |
+| A100 | 1920x1080 | 443.52 ± 2.43 images/s | 393.17 ± 5.05 images/s | -11.35% | 37.11% → 33.55% |
+| A100 | 3840x2160 | 137.75 ± 2.95 images/s | 95.16 ± 0.46 images/s | -30.92% | 33.62% → 23.63% |
+| RTX PRO 6000 | 1920x1080 | 374.19 ± 10.37 images/s | 254.40 ± 11.88 images/s | -32.01% | 16.48% → 11.07% |
+| RTX PRO 6000 | 3840x2160 | 137.02 ± 26.09 images/s | 97.53 ± 18.64 images/s | -28.82% | 19.86% → 18.78% |
+
+The RTX 4K cell remained bimodal, but both stable A100 cells and RTX 1080p
+decisively regressed. Faster pinned device-to-host transfer did not repay the
+extra staging, event, and materialization machinery for a lone native chunk on
+the target hardware. Commit `ea05033c35` therefore reverted the experiment.
+An immediate A100 A-B-A confirmation returned to 439.69 ± 1.91 images/s at
+1080p and 135.60 ± 4.52 images/s at 4K, consistent with the original control.
+Depth one and all single-chunk claims retain the synchronous baseline; the ring
+continues to serve only claims with a following chunk to overlap.
+
+A second scheduler experiment tested splitting one synchronized ready queue
+across both idle decoder workers instead of letting the first worker claim the
+full 20-image ring capacity. Commit `a3a084f78c` kept FIFO order, a native-batch
+floor of five, and the existing per-worker capacity. Five fresh-process,
+counterbalanced pairs used concurrency 20, a five-second warmup, and one
+15-second measurement window. Values are means ± sample standard deviation:
+
+| GPU | Resolution | Full-claim control | Idle-worker partition | Paired change | NVJPG mean, control → partition |
+| --- | --- | ---: | ---: | ---: | ---: |
+| A100 | 1920x1080 | 510.36 ± 42.48 images/s | 533.44 ± 33.39 images/s | +4.78% ± 5.82% | 28.88% → 29.85% |
+| A100 | 3840x2160 | 135.05 ± 5.12 images/s | 127.06 ± 7.11 images/s | -5.80% ± 6.44% | 21.49% → 19.49% |
+| RTX PRO 6000 | 1920x1080 | 582.17 ± 136.47 images/s | 763.81 ± 54.61 images/s | +36.53% ± 29.20% | 26.58% → 33.76% |
+| RTX PRO 6000 | 3840x2160 | 159.89 ± 20.81 images/s | 144.50 ± 6.89 images/s | -8.67% ± 10.17% | 20.17% → 20.83% |
+
+The split improved moderate-concurrency 1080p throughput but consistently
+reduced 4K throughput and raised 4K median latency on both targets. It was also
+neutral in the A100 concurrency-64 screen because sustained backlog already
+kept both workers occupied. Commit `cee455455e` reverted the resolution-
+sensitive heuristic; the scheduler retains the simpler full-claim policy.
+
 The latest matched campaign then tested the selected two-decoder, native-width-
 five, depth-four configuration at higher concurrency. Decode-only used a fresh
 direct CUDA context for every cell. Values are means ± sample standard
@@ -241,7 +284,8 @@ peak allocations.
    connector must use the prior per-image asynchronous fetch/decode calls and
    `asyncio.gather`. Only the nvImageCodec path should fetch encoded bytes and
    invoke a plural decode. Registered connector overrides retain their scalar
-   semantics. Add parent-versus-branch eight-image benchmarks at both target
+   semantics and receive the plural call's `image_mode` when their signature
+   accepts it. Add parent-versus-branch eight-image benchmarks at both target
    resolutions.
 
 2. **Fix Kimi-K3 configuration composition.** Kimi-K3 currently passes an
@@ -325,9 +369,11 @@ peak allocations.
 | Share image and video decoder slots | Reject. The resource types, factories, configuration, invalidation, and retained memory are different. A generic implementation helper can be a later refactor, without sharing slots or capacity. |
 | Fall back when one image exceeds the configured GPU pool | Keep the current hard admission error. The operator explicitly chose an insufficient budget; silently using Pillow would hide capacity misconfiguration. Coalescing must isolate the error to that request. |
 | Shorten the GPU lease | Implemented for multi-chunk depth-two-or-greater ring execution in the fourth, independently revertible change. An event proves the pinned copy complete before device images and DLPack views are dropped and the lease is released. The depth-one and single-chunk synchronous path remains the exact no-ring baseline and is tracked below. |
+| Stage a single native chunk through the pinned ring | Reject. A controlled A100/RTX A/B regressed all four decode-only cells, including stable A100 losses of 11.35% at 1080p and 30.92% at 4K. A lone chunk has no following decode to overlap, so keep the cheaper synchronous path. |
+| Partition one ready queue across idle workers | Reject. It improved moderate-concurrency 1080p throughput, but matched five-pair tests regressed 4K by 5.80% on A100 and 8.67% on RTX and the policy was neutral once sustained backlog occupied both workers. |
 | Reuse native output images | Separate optimization PR. The isolated batch-five/depth-four-equivalent A/B improved A100 throughput by 16-23% and RTX throughput by 2.5-2.8%, so it is worth pursuing. Reuse retains shape-dependent GPU buffers at each ring position outside the current per-call raster lease; safe integration needs explicit high-water accounting, mixed-resolution growth and eviction policy, and cancellation tests. |
 | Raise `max_num_cpu_threads` above one | Reject for this library version. A local GPU without a usable hardware-only path benefited in an isolated hybrid-backend probe, but the first two-thread cells on both A100 and RTX PRO 6000 stopped making forward progress with the GPU idle. Retain one helper per decoder until a library update or a reduced reproducer resolves that failure. |
-| Raise or arbitrarily cap the decoder count | Keep two as the product default and leave the validator resource-accounted rather than imposing an unevidenced ceiling. Exploratory A100 decode-only sweeps peaked at eight decoders for 1080p and ten for 4K, but consumed substantially more CPU and GPU memory. Revisit the default after host materialization and worker-claim partitioning change the bottleneck. |
+| Raise or arbitrarily cap the decoder count | Keep two as the product default and leave the validator resource-accounted rather than imposing an unevidenced ceiling. Exploratory A100 decode-only sweeps peaked at eight decoders for 1080p and ten for 4K, but consumed substantially more CPU and GPU memory. Revisit the default only after a separate host-materialization optimization changes the bottleneck. |
 | Avoid both Pillow and nvImageCodec header parsing | Defer. Pillow supplies animation, transparency, EXIF, and source metadata that `CodeStream` does not. Measured header work is small relative to raster transfer. |
 | Group every native call by exact codec | Benchmark first. It can fragment batches and has no effect on the all-JPEG target workload. Cross-request v1 deliberately queues only JPEG. |
 | Merge the GPU and CPU chunk loops | Reject for now. Their memory leases, fallback behavior, and failure handling differ, and combined CPU/GPU decoder use has deadlocked. |
@@ -336,6 +382,7 @@ peak allocations.
 | Optimize no-EXIF Pillow normalization | Worth a standalone Pillow PR. It predates this feature and should be measured independently. |
 | Parallelize synchronous URL fetching | Follow-up. It is useful for offline callers but is not required for cross-request server batching. |
 | Remove scalar decoder wrappers | Optional cleanup before feature merge; it does not affect this design. |
+| Reserve exact encoded bytes before fetching | Separate memory-hardening PR. Length is not known uniformly before HTTP, file, and data-URL loads; the current pre-fetch tier bounds item count and the post-fetch tiers reserve exact bytes. A stricter bound needs source-specific upper-bound reservation and reconciliation without pessimistically throttling ordinary images. |
 
 ## Follow-up TODO
 
@@ -390,12 +437,10 @@ it is either implemented with evidence or moved to the decision table above.
   shared server as the sole cause; reproduce the mode change with a dedicated
   endurance harness, collect CUDA/NVJPG timelines, and keep daemon lifecycle
   control outside this feature PR.
-- [ ] Instrument the fraction of worker claims that actually enter the ring
-  (at least two native chunks). Separately benchmark pinned/event staging for a
-  single-chunk claim at depth greater than one, including latency, early-lease
-  release, and retained pinned memory. Do not attribute overlap to that path: a
-  single native chunk cannot overlap itself. Keep depth one as the exact
-  synchronous no-ring baseline.
+- [x] Instrument the fraction of worker claims that actually enter the ring
+  and separately benchmark pinned/event staging for a single-chunk claim. The
+  experiment regressed all four A100/RTX cells and was reverted; the decision
+  table and evidence section retain the measurements.
 - [ ] Measure poison-image retry amplification. The bounded remove-one-and-retry
   policy can re-decode successful survivors on each indexed failure; evaluate a
   partial-result or survivor-reuse contract that preserves ordering, exception
@@ -414,10 +459,10 @@ it is either implemented with evidence or moved to the decision table above.
   model-specific processors that require Pillow need a capability-gated
   fallback. Re-run decode-only and inference A/Bs on both A100 and RTX rather
   than transferring absolute results from a GPU without hardware-only decode.
-- [ ] Partition a synchronized ready queue across currently idle decoder
-  workers while retaining full native batches, FIFO ownership, and the
-  per-worker ring bound. Benchmark burst and steady/Poisson arrivals; do not
-  change the claim policy from a latency-only microbenchmark.
+- [x] Partition a synchronized ready queue across currently idle decoder
+  workers and test it on both target GPUs. The five-pair experiment improved
+  1080p but regressed 4K throughput by 5.80% on A100 and 8.67% on RTX, while a
+  concurrency-64 screen was neutral; the isolated implementation was reverted.
 - [ ] Investigate whether nvImageCodec exposes reliable attribution for the
   backend that actually decoded a batch. Log it once per retained decoder slot
   if the API supports that without synchronizing or decoding twice; configured
@@ -426,6 +471,18 @@ it is either implemented with evidence or moved to the decision table above.
   path remains after the CPU-array experiment. Any change needs a process-wide
   memory bound and Pillow-baseline tests because it affects more than the
   nvImageCodec backend.
+- [ ] Account encoded bytes at the pre-fetch boundary, not only after fetch.
+  Give every retained URL, file, or base64 payload a cancellation-safe upper-
+  bound reservation, reconcile it to actual length, and test process-wide byte
+  high-water plus zero counters after cancellation and shutdown. Treat unknown
+  HTTP lengths, already cached bytes, and intentionally oversized Pillow
+  fallbacks explicitly rather than charging every ordinary image the remote
+  download maximum.
+- [ ] Reserve pre-fetch capacity per bounded logical-request segment and
+  release or requeue between segments so a large request cannot hold a full-
+  tier ticket through its tail. Apply the same lifecycle to image inputs and
+  synchronous/asynchronous `video/jpeg`, preserving FIFO fairness, global error
+  indices, ordering, cancellation, and cleanup.
 
 ### Reviewed and Already Accounted For
 
@@ -501,7 +558,9 @@ nvImageCodec, all other inputs
 
 The base scalar `fetch_image` and `fetch_image_async` methods delegate to the
 same plural path, so public scalar calls receive the same scheduling behavior.
-Registered connector overrides retain their historical scalar semantics.
+Registered connector overrides retain their historical scalar semantics; the
+plural API forwards `image_mode` only when signature binding proves that the
+override accepts it.
 
 The synchronous connector uses the same service and waits on its future. This
 allows coalescing when multiple synchronous caller threads exist. A single
@@ -612,12 +671,14 @@ backlog, with the same item and byte caps, and promotes it as capacity becomes
 available.
 The asynchronous connector first limits active fetch/decode work to the two
 tiers' combined item capacity. Excess requests park on lightweight FIFO tickets
-before URL, file, or base64 fetching begins. If exact encoded-byte pressure
-still fills both tiers, the already-admitted caller parks on a byte-free FIFO
-ticket; the next ticket atomically reserves exact item and byte capacity before
-waking. Synchronous callers remain fail-fast with a typed overload error so
-shared media-executor threads cannot block on admission. Neither path bypasses
-decoder accounting or occupies the shared media executor while waiting.
+before URL, file, or base64 fetching begins. The pre-fetch tier is item-counted
+because encoded length is not known uniformly across those sources; after a
+fetch completes, exact encoded-byte pressure is bounded by the two service
+tiers. An already-admitted caller parks on a payload-free FIFO ticket until the
+next ticket atomically reserves exact item and byte capacity. Synchronous
+callers remain fail-fast with a typed overload error so shared media-executor
+threads cannot block on admission. Neither path bypasses decoder accounting or
+occupies the shared media executor while waiting.
 
 ### Results, Ordering, and Errors
 
@@ -729,7 +790,9 @@ depend on thread scheduling or wall-clock sleeps.
 
 - Eight Pillow images again run through independent async scalar loads.
 - Base connector plural and scalar nvImageCodec methods use the decode service;
-  registered connector overrides keep their historical scalar behavior.
+  registered connector overrides keep their historical scalar behavior and
+  compatible overrides receive the requested `image_mode` without retrying a
+  callback-body `TypeError`.
 - Sync and async errors preserve non-zero positions and exception identity.
 - Kimi-K3 retains static backend/decoder/batch/timeout values while applying
   `image_mode=None` in online and offline flows.
