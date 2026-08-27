@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+import asyncio
+from concurrent.futures import Executor
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -11,12 +13,30 @@ from PIL import Image
 
 from vllm import envs
 from vllm.logger import init_logger
+from vllm.multimodal.image_decoders import NVIMAGECODEC_IMAGE_BACKEND
 
 from ..video import VIDEO_LOADER_REGISTRY
 from .base import MediaIO, MediaWithBytes
 from .image import ImageMediaIO
+from .image_decode_service import (
+    load_images_with_service,
+    load_images_with_service_async,
+    reserve_image_decode_request_async,
+)
 
 logger = init_logger(__name__)
+
+
+def _close_loaded_frames(
+    loaded_frames: list[MediaWithBytes[Image.Image]],
+) -> None:
+    for frame in loaded_frames:
+        frame.media.close()
+
+
+def _consume_future_exception(future: asyncio.Future[Any]) -> None:
+    if not future.cancelled():
+        future.exception()
 
 
 class VideoMediaIO(MediaIO[MediaWithBytes[tuple[npt.NDArray, dict[str, Any]]]]):
@@ -100,75 +120,142 @@ class VideoMediaIO(MediaIO[MediaWithBytes[tuple[npt.NDArray, dict[str, Any]]]]):
         )
         return MediaWithBytes(video, data)
 
+    def _jpeg_sequence_frame_count(self, data: str) -> int:
+        if self.num_frames == 0:
+            raise ValueError("num_frames must be greater than 0 or -1")
+
+        available_frames = data.count(",") + 1
+        if self.num_frames > 0:
+            return min(self.num_frames, available_frames)
+        return available_frames
+
+    def _decode_jpeg_sequence_base64(self, data: str) -> list[bytes]:
+        if self.num_frames > 0:
+            frame_parts = data.split(",", self.num_frames)[: self.num_frames]
+        elif self.num_frames == 0:
+            raise ValueError("num_frames must be greater than 0 or -1")
+        else:
+            frame_parts = data.split(",")
+
+        return [
+            pybase64.b64decode(frame_data, validate=True) for frame_data in frame_parts
+        ]
+
+    def _finalize_jpeg_sequence(
+        self,
+        data: str,
+        loaded_frames: list[MediaWithBytes[Image.Image]],
+    ) -> MediaWithBytes[tuple[npt.NDArray, dict[str, Any]]]:
+        try:
+            frames = np.stack([np.asarray(frame) for frame in loaded_frames])
+            frame_io_configs = [frame.io_config for frame in loaded_frames]
+        finally:
+            _close_loaded_frames(loaded_frames)
+
+        total = int(frames.shape[0])
+        fps = float(self.kwargs.get("fps", 1))
+
+        # validate and extract frames_indices
+        frames_indices = self.kwargs.get("frames_indices")
+        if frames_indices is not None:
+            if not (
+                isinstance(frames_indices, list)
+                and all(isinstance(i, int) for i in frames_indices)
+            ):
+                raise ValueError("frames_indices must be a list of integers")
+            if len(frames_indices) != total:
+                raise ValueError(
+                    f"frames_indices length ({len(frames_indices)}) must "
+                    f"match number of frames sent ({total})"
+                )
+        else:
+            frames_indices = list(range(total))
+
+        # validate and extract total_num_frames
+        total_num_frames = self.kwargs.get("total_num_frames", total)
+        if not isinstance(total_num_frames, int) or total_num_frames < 1:
+            raise ValueError("total_num_frames must be a positive integer")
+        if total_num_frames < total:
+            raise ValueError(
+                f"total_num_frames ({total_num_frames}) must be >= "
+                f"number of frames sent ({total})"
+            )
+
+        # validate and extract duration
+        duration = self.kwargs.get("duration")
+        if duration is not None:
+            if not isinstance(duration, (int, float)) or duration < 0:
+                raise ValueError("duration must be a non-negative number")
+        else:
+            duration = total_num_frames / fps if fps > 0 else 0.0
+
+        metadata = {
+            "total_num_frames": total_num_frames,
+            "fps": fps,
+            "duration": duration,
+            "video_backend": "jpeg_sequence",
+            "frames_indices": frames_indices,
+            "do_sample_frames": self.kwargs.get("do_sample_frames", False),
+        }
+        io_config = (
+            {"frame_io_configs": frame_io_configs}
+            if any(config is not None for config in frame_io_configs)
+            else None
+        )
+        return MediaWithBytes((frames, metadata), data.encode(), io_config)
+
+    async def load_base64_async(
+        self,
+        media_type: str,
+        data: str,
+        *,
+        executor: Executor,
+    ) -> MediaWithBytes[tuple[npt.NDArray, dict[str, Any]]]:
+        loop = asyncio.get_running_loop()
+        if (
+            media_type.lower() != "video/jpeg"
+            or self.image_io.backend != NVIMAGECODEC_IMAGE_BACKEND
+        ):
+            return await loop.run_in_executor(
+                executor, self.load_base64, media_type, data
+            )
+
+        frame_count = self._jpeg_sequence_frame_count(data)
+        async with reserve_image_decode_request_async(self.image_io, frame_count):
+            frame_bytes = await loop.run_in_executor(
+                executor, self._decode_jpeg_sequence_base64, data
+            )
+            loaded_frames = await load_images_with_service_async(
+                self.image_io, frame_bytes
+            )
+            try:
+                finalizer = loop.run_in_executor(
+                    executor,
+                    self._finalize_jpeg_sequence,
+                    data,
+                    loaded_frames,
+                )
+            except BaseException:
+                _close_loaded_frames(loaded_frames)
+                raise
+            try:
+                return await asyncio.shield(finalizer)
+            except asyncio.CancelledError:
+                # The executor call owns and closes the decoded frames. Let it
+                # finish after request cancellation and consume any exception.
+                finalizer.add_done_callback(_consume_future_exception)
+                raise
+
     def load_base64(
         self, media_type: str, data: str
     ) -> MediaWithBytes[tuple[npt.NDArray, dict[str, Any]]]:
         if media_type.lower() == "video/jpeg":
-            if self.num_frames > 0:
-                frame_parts = data.split(",", self.num_frames)[: self.num_frames]
-            elif self.num_frames == 0:
-                raise ValueError("num_frames must be greater than 0 or -1")
+            frame_bytes = self._decode_jpeg_sequence_base64(data)
+            if self.image_io.backend == NVIMAGECODEC_IMAGE_BACKEND:
+                loaded_frames = load_images_with_service(self.image_io, frame_bytes)
             else:
-                frame_parts = data.split(",")
-
-            frame_bytes = [
-                pybase64.b64decode(frame_data, validate=True)
-                for frame_data in frame_parts
-            ]
-            loaded_frames = self.image_io.load_bytes_many(frame_bytes)
-            frames = np.stack([np.asarray(frame) for frame in loaded_frames])
-            frame_io_configs = [frame.io_config for frame in loaded_frames]
-            total = int(frames.shape[0])
-            fps = float(self.kwargs.get("fps", 1))
-
-            # validate and extract frames_indices
-            frames_indices = self.kwargs.get("frames_indices")
-            if frames_indices is not None:
-                if not (
-                    isinstance(frames_indices, list)
-                    and all(isinstance(i, int) for i in frames_indices)
-                ):
-                    raise ValueError("frames_indices must be a list of integers")
-                if len(frames_indices) != total:
-                    raise ValueError(
-                        f"frames_indices length ({len(frames_indices)}) must "
-                        f"match number of frames sent ({total})"
-                    )
-            else:
-                frames_indices = list(range(total))
-
-            # validate and extract total_num_frames
-            total_num_frames = self.kwargs.get("total_num_frames", total)
-            if not isinstance(total_num_frames, int) or total_num_frames < 1:
-                raise ValueError("total_num_frames must be a positive integer")
-            if total_num_frames < total:
-                raise ValueError(
-                    f"total_num_frames ({total_num_frames}) must be >= "
-                    f"number of frames sent ({total})"
-                )
-
-            # validate and extract duration
-            duration = self.kwargs.get("duration")
-            if duration is not None:
-                if not isinstance(duration, (int, float)) or duration < 0:
-                    raise ValueError("duration must be a non-negative number")
-            else:
-                duration = total_num_frames / fps if fps > 0 else 0.0
-
-            metadata = {
-                "total_num_frames": total_num_frames,
-                "fps": fps,
-                "duration": duration,
-                "video_backend": "jpeg_sequence",
-                "frames_indices": frames_indices,
-                "do_sample_frames": self.kwargs.get("do_sample_frames", False),
-            }
-            io_config = (
-                {"frame_io_configs": frame_io_configs}
-                if any(config is not None for config in frame_io_configs)
-                else None
-            )
-            return MediaWithBytes((frames, metadata), data.encode(), io_config)
+                loaded_frames = self.image_io.load_bytes_many(frame_bytes)
+            return self._finalize_jpeg_sequence(data, loaded_frames)
 
         return self.load_bytes(pybase64.b64decode(data))
 

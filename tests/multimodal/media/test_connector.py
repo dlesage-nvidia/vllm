@@ -5,7 +5,9 @@ import asyncio
 import mimetypes
 import os
 import shutil
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 
@@ -611,6 +613,88 @@ async def test_fetch_video_http(video_url: str, num_frames: int):
 
     assert np.array_equal(video_sync, video_async)
     assert metadata_sync == metadata_async
+
+
+@pytest.mark.asyncio
+async def test_fetch_video_jpeg_nvimagecodec_does_not_park_media_pool(monkeypatch):
+    shutdown_nvimagecodec_decode_service()
+    loop = asyncio.get_running_loop()
+    decode_started = asyncio.Event()
+    release_decode = threading.Event()
+    decode_threads = []
+
+    encoded_frames = []
+    frame_parts = []
+    for color in ((255, 0, 0), (0, 255, 0)):
+        buffer = BytesIO()
+        Image.new("RGB", (2, 2), color).save(buffer, "JPEG")
+        encoded = buffer.getvalue()
+        encoded_frames.append(encoded)
+        frame_parts.append(base64.b64encode(encoded).decode("ascii"))
+    video_url = "data:video/jpeg;base64," + ",".join(frame_parts)
+
+    def load_bytes_many(self, items):
+        decode_threads.append(threading.current_thread().name)
+        loop.call_soon_threadsafe(decode_started.set)
+        assert release_decode.wait(timeout=5)
+        return [
+            MediaWithBytes(
+                Image.open(BytesIO(item)).copy(),
+                item,
+                {"backend": "nvimagecodec"},
+            )
+            for item in items
+        ]
+
+    monkeypatch.setattr(ImageMediaIO, "load_bytes_many", load_bytes_many)
+    connector = MediaConnector(
+        media_io_kwargs={
+            "image": {
+                "backend": "nvimagecodec",
+                "decoders": 1,
+                "batch_size": 5,
+                "pipeline_depth": 1,
+            },
+            "video": {"num_frames": 2},
+        }
+    )
+    tasks = []
+    try:
+        with ThreadPoolExecutor(max_workers=2) as media_pool:
+            monkeypatch.setattr(connector_module, "global_thread_pool", media_pool)
+            tasks = [
+                asyncio.create_task(connector.fetch_video_async(video_url))
+                for _ in range(2)
+            ]
+            await asyncio.wait_for(decode_started.wait(), timeout=2)
+
+            sentinel = loop.run_in_executor(media_pool, lambda: "available")
+            assert await asyncio.wait_for(sentinel, timeout=1) == "available"
+
+            release_decode.set()
+            videos = await asyncio.wait_for(asyncio.gather(*tasks), timeout=5)
+
+        assert decode_threads == ["vllm-nvimagecodec_0"] * 2
+        for video in videos:
+            frames, metadata = video
+            assert frames.shape == (2, 2, 2, 3)
+            assert frames[0, 0, 0, 0] > frames[0, 0, 0, 1]
+            assert frames[1, 0, 0, 1] > frames[1, 0, 0, 0]
+            assert metadata["frames_indices"] == [0, 1]
+            assert video.io_config == {
+                "frame_io_configs": [
+                    {"backend": "nvimagecodec"},
+                    {"backend": "nvimagecodec"},
+                ]
+            }
+        stats = get_nvimagecodec_decode_service_stats()
+        assert stats.submitted_images == 4
+        assert stats.direct_jobs == 2
+    finally:
+        release_decode.set()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        shutdown_nvimagecodec_decode_service()
 
 
 @pytest.mark.asyncio

@@ -351,6 +351,10 @@ class MediaConnector:
         url: str,
         media_io: MediaIO[_M],
     ) -> _M:  # type: ignore[type-var]
+        media_type, data = self._parse_data_url(url)
+        return media_io.load_base64(media_type, data)
+
+    def _parse_data_url(self, url: str) -> tuple[str, str]:
         # Format per RFC 2397:
         # data:[<mediatype>][;<param>=<value>]*[;base64],<data>
         data_spec, sep, data = url[5:].partition(",")
@@ -364,7 +368,7 @@ class MediaConnector:
             raise NotImplementedError(msg)
 
         media_type = media_type.partition(";")[0]
-        return media_io.load_base64(media_type, data)
+        return media_type, data
 
     def _load_file_url(
         self,
@@ -452,6 +456,16 @@ class MediaConnector:
         loop = asyncio.get_running_loop()
 
         if url[:5].lower() == "data:":
+            if isinstance(media_io, VideoMediaIO):
+                media_type, base64_data = self._parse_data_url(url)
+                return cast(
+                    _M,
+                    await media_io.load_base64_async(
+                        media_type,
+                        base64_data,
+                        executor=global_thread_pool,
+                    ),
+                )
             future = loop.run_in_executor(
                 global_thread_pool, self._load_data_url, url, media_io
             )

@@ -12,13 +12,14 @@ import pybase64
 import pytest
 from PIL import Image
 
+import vllm.multimodal.media.video as video_module
 from vllm.assets.base import get_vllm_public_assets
 from vllm.assets.video import (
     video_get_metadata,
     video_to_ndarrays,
     video_to_pil_images_list,
 )
-from vllm.multimodal.media import ImageMediaIO, VideoMediaIO
+from vllm.multimodal.media import ImageMediaIO, MediaWithBytes, VideoMediaIO
 from vllm.multimodal.video import (
     PYNVVIDEOCODEC_VIDEO_BACKEND,
     VIDEO_LOADER_REGISTRY,
@@ -339,6 +340,38 @@ def test_load_base64_jpeg_preserves_frame_io_config(monkeypatch):
     loaded = videoio.load_base64("video/jpeg", ",".join(b64_frames))
 
     assert calls == [[pybase64.b64decode(frame) for frame in b64_frames]]
+    assert loaded.io_config == {
+        "frame_io_configs": [
+            {"backend": "nvimagecodec"},
+            {"backend": "nvimagecodec"},
+        ]
+    }
+
+
+def test_load_base64_jpeg_nvimagecodec_uses_decode_service(monkeypatch):
+    b64_frames = _make_jpeg_b64_frames(2)
+    encoded_frames = [pybase64.b64decode(frame) for frame in b64_frames]
+    calls = []
+
+    def load_with_service(image_io, items):
+        calls.append((image_io, list(items)))
+        return [
+            MediaWithBytes(
+                Image.open(io.BytesIO(item)).copy(),
+                item,
+                {"backend": "nvimagecodec"},
+            )
+            for item in items
+        ]
+
+    monkeypatch.setattr(video_module, "load_images_with_service", load_with_service)
+    imageio = ImageMediaIO(backend="nvimagecodec")
+    videoio = VideoMediaIO(imageio, num_frames=2)
+
+    loaded = videoio.load_base64("video/jpeg", ",".join(b64_frames))
+
+    assert calls == [(imageio, encoded_frames)]
+    assert loaded.media[0].shape == (2, 8, 8, 3)
     assert loaded.io_config == {
         "frame_io_configs": [
             {"backend": "nvimagecodec"},
