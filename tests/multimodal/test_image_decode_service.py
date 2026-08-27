@@ -11,8 +11,9 @@ import pytest
 from PIL import Image
 
 import vllm.multimodal.image_decoders.nvimagecodec as nvimagecodec
+import vllm.multimodal.media.image as image_module
 import vllm.multimodal.media.image_decode_service as image_decode_service
-from vllm.multimodal.media import ImageBatchItemError
+from vllm.multimodal.media import ImageBatchItemError, ImageMediaIO
 from vllm.multimodal.media.base import MediaWithBytes
 from vllm.multimodal.media.image_decode_service import (
     ImageDecodeServiceConfig,
@@ -201,6 +202,43 @@ def test_systemic_failure_with_index_attributes_is_not_retried():
             future.result(timeout=2)
         assert exc_info.value is original
     assert calls == [encoded]
+
+
+def test_image_normalization_memory_error_is_not_retried(monkeypatch):
+    source = Image.new("RGB", (8, 4), (10, 20, 30))
+    exif = Image.Exif()
+    exif[Image.ExifTags.Base.Orientation] = 6
+    with BytesIO() as buffer:
+        source.save(buffer, "JPEG", exif=exif)
+        encoded = buffer.getvalue()
+
+    decode_widths: list[int] = []
+
+    def decode(items, **kwargs):
+        decode_widths.append(len(items))
+        return [source.copy() for _ in items]
+
+    original = MemoryError("host image allocation failed")
+
+    def fail_normalize(_image):
+        raise original
+
+    monkeypatch.setattr(image_module, "decode_images_nvimagecodec", decode)
+    monkeypatch.setattr(image_module, "normalize_image", fail_normalize)
+    image_io = ImageMediaIO(
+        backend="nvimagecodec",
+        decoders=1,
+        batch_size=5,
+        coalesce_timeout_ms=1000,
+    )
+    service = get_nvimagecodec_decode_service(image_io)
+    futures = [service.submit(image_io, [encoded]) for _ in range(5)]
+
+    for future in futures:
+        with pytest.raises(MemoryError) as exc_info:
+            future.result(timeout=2)
+        assert exc_info.value is original
+    assert decode_widths == [5]
 
 
 def test_process_configuration_is_immutable_until_shutdown():

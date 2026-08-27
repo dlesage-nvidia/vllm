@@ -20,6 +20,7 @@ from vllm.multimodal.image_decoders import (
     NVIMAGECODEC_IMAGE_BACKEND,
     PILLOW_IMAGE_BACKEND,
     NvImageCodecBatchItemError,
+    NvImageCodecServiceError,
     decode_images_nvimagecodec,
     validate_nvimagecodec_batch_size,
     validate_nvimagecodec_decoders,
@@ -62,6 +63,8 @@ class ImageBatchItemError(ValueError):
 
 
 def _indexed_image_error(index: int, error: Exception) -> ImageBatchItemError:
+    if isinstance(error, (MemoryError, NvImageCodecServiceError)):
+        raise error
     if isinstance(error, OSError):
         error = ValueError(f"Failed to load image: {error}")
     return ImageBatchItemError(index, error)
