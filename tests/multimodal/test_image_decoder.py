@@ -547,6 +547,40 @@ def test_pipeline_depth_one_uses_legacy_conversion_path(monkeypatch):
     )
 
 
+def test_pipeline_stages_a_single_native_chunk_in_pinned_memory(monkeypatch):
+    data = [bytes([index]) for index in range(5)]
+    nvimgcodec = _fake_nvimgcodec(
+        {item: _metadata("jpeg") for item in data},
+    )
+    _install_fake_backend(monkeypatch, nvimgcodec)
+    set_mm_gpu_ipc_pool(MultiModalGPUMemoryPool(4096))
+    staged: list[int] = []
+
+    def stage(output, item):
+        staged.append(item.index)
+        return output, np.zeros((item.height, item.width, 3), dtype=np.uint8)
+
+    monkeypatch.setattr(
+        NvImageCodecBackend,
+        "_decoded_to_pillow",
+        staticmethod(lambda *_args: pytest.fail("depth four used pageable staging")),
+    )
+    monkeypatch.setattr(
+        NvImageCodecBackend,
+        "_decoded_to_pinned",
+        staticmethod(stage),
+    )
+
+    results = NvImageCodecBackend.decode_many(
+        data,
+        batch_size=5,
+        pipeline_depth=4,
+    )
+
+    assert all(result is not None for result in results)
+    assert staged == list(range(5))
+
+
 def test_pipeline_systemic_submission_failure_releases_leases_and_invalidates_slot(
     monkeypatch,
 ):
