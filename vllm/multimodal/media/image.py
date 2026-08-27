@@ -67,11 +67,48 @@ def _indexed_image_error(index: int, error: Exception) -> ImageBatchItemError:
     return ImageBatchItemError(index, error)
 
 
+def _jpeg_has_end_of_image(data: bytes) -> bool:
+    """Reject streams nvJPEG may conceal as a successful partial decode."""
+    if not data.startswith(b"\xff\xd8"):
+        return False
+
+    position = 2
+    while position < len(data):
+        if data[position] != 0xFF:
+            return False
+        while position < len(data) and data[position] == 0xFF:
+            position += 1
+        if position >= len(data):
+            return False
+
+        marker = data[position]
+        position += 1
+        if marker == 0xD9:
+            return False
+        if marker == 0xDA:
+            if position + 2 > len(data):
+                return False
+            segment_length = int.from_bytes(data[position : position + 2], "big")
+            scan_start = position + segment_length
+            return segment_length >= 2 and data.rfind(b"\xff\xd9", scan_start) >= 0
+        if marker == 0x01 or 0xD0 <= marker <= 0xD8:
+            continue
+        if position + 2 > len(data):
+            return False
+        segment_length = int.from_bytes(data[position : position + 2], "big")
+        if segment_length < 2 or position + segment_length > len(data):
+            return False
+        position += segment_length
+    return False
+
+
 def _nvimagecodec_output_mode(
-    image: Image.Image, target_mode: str | None
+    image: Image.Image, target_mode: str | None, data: bytes
 ) -> _NvImageCodecOutputMode | None:
     image_format = image.format
     if image_format not in _NVIMAGECODEC_PIL_FORMATS:
+        return None
+    if image_format == "JPEG" and not _jpeg_has_end_of_image(data):
         return None
 
     # nvImageCodec scales higher precision samples to uint8, while Pillow's
@@ -91,9 +128,10 @@ def _nvimagecodec_output_mode(
         return None
 
     if target_mode == "RGB":
-        # Retain alpha until _convert_image_mode composites the configured
-        # background color.
-        return "RGBA" if has_transparency else "RGB"
+        # Pillow preserves the keyed color of truecolor PNG tRNS sources when
+        # the requested mode is already RGB. Other transparent sources are
+        # expanded so _convert_image_mode can composite the configured color.
+        return "RGBA" if has_transparency and image.mode != "RGB" else "RGB"
     if target_mode == "RGBA":
         # The GPU JPEG, JPEG 2000, and TIFF backends reject channel expansion.
         # Decode opaque sources as RGB and add the opaque alpha channel in PIL.
@@ -252,7 +290,9 @@ class ImageMediaIO(MediaIO[Image.Image]):
             if self.backend == NVIMAGECODEC_IMAGE_BACKEND:
                 for index, image in enumerate(images):
                     try:
-                        output_mode = _nvimagecodec_output_mode(image, self.image_mode)
+                        output_mode = _nvimagecodec_output_mode(
+                            image, self.image_mode, encoded_images[index]
+                        )
                     except Exception as e:
                         raise _indexed_image_error(index, e) from e
                     if output_mode is not None:
@@ -306,6 +346,9 @@ class ImageMediaIO(MediaIO[Image.Image]):
                             images[index] = decoded
                             decoded.info.update(source_info)
                             if isinstance(orientation, int) and 2 <= orientation <= 8:
+                                decoded.getexif()[Image.ExifTags.Base.Orientation] = (
+                                    orientation
+                                )
                                 normalized = normalize_image(decoded)
                                 images[index] = normalized
                                 if normalized is not decoded:

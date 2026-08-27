@@ -611,6 +611,27 @@ def test_nvimagecodec_preserves_alpha_for_background_composite(monkeypatch):
         }
 
 
+def test_nvimagecodec_truecolor_png_transparency_matches_pillow(monkeypatch):
+    source = Image.new("RGB", (2, 1))
+    source.putdata([(10, 20, 30), (200, 100, 50)])
+    data = _encode_test_image(source, "PNG", transparency=(10, 20, 30))
+    expected = ImageMediaIO(backend="pillow").load_bytes(data).media
+    calls = []
+
+    def fake_decode(encoded, *, output_modes, **kwargs):
+        calls.append(output_modes)
+        with Image.open(BytesIO(encoded[0])) as image:
+            return [image.convert(output_modes[0])]
+
+    monkeypatch.setattr(
+        "vllm.multimodal.media.image.decode_images_nvimagecodec", fake_decode
+    )
+    actual = ImageMediaIO(backend="nvimagecodec").load_bytes(data).media
+
+    assert calls == [["RGB"]]
+    np.testing.assert_array_equal(np.asarray(actual), np.asarray(expected))
+
+
 def test_nvimagecodec_known_semantic_traps_stay_on_pillow(monkeypatch):
     alpha_tiff = _encode_test_image(Image.new("RGBA", (2, 2)), "TIFF")
     high_depth_png = _encode_test_image(
@@ -708,6 +729,40 @@ def test_nvimagecodec_applies_exif_orientation_once(monkeypatch):
     assert actual.size == expected.size == (4, 6)
     np.testing.assert_array_equal(np.asarray(actual), np.asarray(expected))
     assert actual.getexif() == expected.getexif()
+
+
+@pytest.mark.parametrize("orientation", range(2, 9))
+def test_nvimagecodec_applies_tiff_exif_orientation_once(monkeypatch, orientation):
+    source = Image.new("RGB", (6, 4))
+    source.putdata([(x * 30, y * 50, (x + y) * 20) for y in range(4) for x in range(6)])
+    exif = Image.Exif()
+    exif[Image.ExifTags.Base.Orientation] = orientation
+    data = _encode_test_image(source, "TIFF", compression="raw", exif=exif)
+    expected = ImageMediaIO(backend="pillow").load_bytes(data).media
+
+    monkeypatch.setattr(
+        "vllm.multimodal.media.image.decode_images_nvimagecodec",
+        lambda *args, **kwargs: [source.copy()],
+    )
+    actual = ImageMediaIO(backend="nvimagecodec").load_bytes(data).media
+
+    assert actual.size == expected.size
+    np.testing.assert_array_equal(np.asarray(actual), np.asarray(expected))
+
+
+def test_nvimagecodec_truncated_jpeg_uses_pillow_validation(monkeypatch):
+    source = Image.new("RGB", (32, 16), (10, 20, 30))
+    data = _encode_test_image(source, "JPEG", quality=95)[:-2]
+
+    monkeypatch.setattr(
+        "vllm.multimodal.media.image.decode_images_nvimagecodec",
+        lambda *args, **kwargs: pytest.fail(
+            "JPEG without an end-of-image marker reached nvImageCodec"
+        ),
+    )
+
+    with pytest.raises(ValueError, match="Failed to load image"):
+        ImageMediaIO(backend="nvimagecodec").load_bytes(data)
 
 
 def test_image_merge_kwargs_strips_unconfigured_gpu_backend(monkeypatch):

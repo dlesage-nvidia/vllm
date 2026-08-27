@@ -165,6 +165,7 @@ def test_nvimagecodec_real_jpeg_native_batches_match_pillow():
             _encode(rgb, "JPEG", quality=85, subsampling=1),
             _encode(rgb, "JPEG", quality=90, subsampling=0),
             _encode(grayscale, "JPEG", quality=85, progressive=True),
+            _encode(rgb, "JPEG", quality=92, subsampling=2) + b"trailing-bytes",
         ]
     )
     data.extend(data[:10])
@@ -214,6 +215,29 @@ def test_nvimagecodec_real_jpeg_native_batches_match_pillow():
         set_mm_gpu_ipc_pool(None)
 
 
+@requires_cuda
+def test_nvimagecodec_real_jpeg_with_trailing_bytes_stays_native():
+    pytest.importorskip("nvidia.nvimgcodec")
+
+    source = Image.new("RGB", (193, 97), (10, 20, 30))
+    data = _encode(source, "JPEG", quality=95, subsampling=2) + b"trailing-bytes"
+    expected = ImageMediaIO(backend="pillow").load_bytes(data)
+
+    set_mm_gpu_ipc_pool(MultiModalGPUMemoryPool(source.width * source.height * 3 + 1))
+    try:
+        with _fresh_decoder_pool():
+            actual = ImageMediaIO(backend="nvimagecodec").load_bytes(data)
+    finally:
+        set_mm_gpu_ipc_pool(None)
+
+    assert actual.io_config == {"backend": "nvimagecodec"}
+    np.testing.assert_allclose(
+        np.asarray(actual.media, dtype=np.int16),
+        np.asarray(expected.media, dtype=np.int16),
+        atol=6,
+    )
+
+
 def test_nvimagecodec_real_cpu_codec_batch_preserves_rgb_and_rgba():
     pytest.importorskip("nvidia.nvimgcodec")
 
@@ -259,6 +283,21 @@ def test_nvimagecodec_real_cpu_codec_batch_preserves_rgb_and_rgba():
         assert decoded is not None
         expected = _pillow_decode(encoded, mode)
         np.testing.assert_array_equal(np.asarray(decoded), np.asarray(expected))
+
+
+def test_nvimagecodec_real_truecolor_png_trns_matches_pillow():
+    pytest.importorskip("nvidia.nvimgcodec")
+
+    source = Image.new("RGB", (4, 1))
+    source.putdata([(10, 20, 30), (200, 100, 50), (10, 20, 30), (7, 8, 9)])
+    data = _encode(source, "PNG", transparency=(10, 20, 30))
+
+    with _fresh_decoder_pool():
+        actual = ImageMediaIO(backend="nvimagecodec").load_bytes(data)
+    expected = ImageMediaIO(backend="pillow").load_bytes(data)
+
+    assert actual.io_config == {"backend": "nvimagecodec"}
+    np.testing.assert_array_equal(np.asarray(actual.media), np.asarray(expected.media))
 
 
 @requires_cuda
@@ -503,6 +542,49 @@ def test_nvimagecodec_real_tiff_batch_uses_first_page():
             np.asarray(decoded, dtype=np.int16),
             np.asarray(expected, dtype=np.int16),
             atol=6,
+        )
+
+
+@requires_cuda
+@pytest.mark.skipif(
+    not _has_distribution(
+        "nvidia-nvtiff-cu12",
+        "nvidia-nvtiff-cu13",
+        "nvidia-nvtiff-tegra-cu12",
+    ),
+    reason="nvTIFF optional dependency is not installed",
+)
+def test_nvimagecodec_real_tiff_exif_orientations_match_pillow():
+    pytest.importorskip("nvidia.nvimgcodec")
+
+    height, width = 31, 53
+    y, x = np.mgrid[:height, :width]
+    source = Image.fromarray(
+        np.stack(
+            ((x * 5) % 256, (y * 7) % 256, (x * 3 + y * 11) % 256),
+            axis=-1,
+        ).astype(np.uint8)
+    )
+    data = []
+    for orientation in range(2, 9):
+        exif = Image.Exif()
+        exif[Image.ExifTags.Base.Orientation] = orientation
+        data.append(_encode(source, "TIFF", compression="raw", exif=exif))
+    expected = [ImageMediaIO(backend="pillow").load_bytes(item) for item in data]
+
+    set_mm_gpu_ipc_pool(MultiModalGPUMemoryPool(len(data) * width * height * 3 + 1))
+    try:
+        with _fresh_decoder_pool():
+            actual = ImageMediaIO(backend="nvimagecodec").load_bytes_many(data)
+    finally:
+        set_mm_gpu_ipc_pool(None)
+
+    assert all(item.io_config == {"backend": "nvimagecodec"} for item in actual)
+    for decoded, pillow in zip(actual, expected):
+        assert decoded.media.size == pillow.media.size
+        np.testing.assert_array_equal(
+            np.asarray(decoded.media),
+            np.asarray(pillow.media),
         )
 
 
