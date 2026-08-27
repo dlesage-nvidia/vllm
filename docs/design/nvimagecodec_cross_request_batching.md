@@ -2,7 +2,7 @@
 
 Status: implemented and benchmarked.
 
-Reviewed and updated on 2026-08-26.
+Reviewed and updated on 2026-08-27.
 
 ## Summary
 
@@ -276,6 +276,62 @@ was 0.79 GiB and 1.55 GiB on A100, and 0.97 GiB and 1.79 GiB on RTX PRO 6000,
 at 1080p and 4K respectively; these are post-run compute-process snapshots, not
 peak allocations.
 
+A separate three-fresh-server depth-one control used the same concurrency-256
+workload:
+
+| GPU | Resolution | Depth one | Depth four | Nominal depth-four change |
+| --- | --- | ---: | ---: | ---: |
+| A100 | 1920x1080 | 48.26 ± 0.25 requests/s | 48.78 ± 0.25 requests/s | +1.08% |
+| A100 | 3840x2160 | 20.69 ± 0.17 requests/s | 20.84 ± 0.10 requests/s | +0.72% |
+| RTX PRO 6000 | 1920x1080 | 71.60 ± 0.15 requests/s | 71.70 ± 0.06 requests/s | +0.14% |
+| RTX PRO 6000 | 3840x2160 | 32.01 ± 0.18 requests/s | 31.86 ± 0.54 requests/s | -0.47% |
+
+These depth-one runs were not interleaved with the final matched campaign, so
+the last column is a nominal comparison rather than a paired estimate. It
+establishes no additional ring-specific OSL-128 inference gain: the final
+nvImageCodec-versus-Pillow improvement comes primarily from hardware decoding
+and cross-request batching. The ring remains supported by the decode-only
+depth sweep, where sustained multi-chunk claims can overlap useful work.
+
+A separate benchmark-only experiment measured the value of bypassing Pillow at
+the image-processor boundary. It used Qwen3-VL-2B at immutable model revision
+`89644892e4d85e24eaac8bacfd4f463576704203`, one image per request, exactly 128
+output tokens, concurrency 256, 768 warmup requests plus 4,096 measured requests
+per fresh-server cell, and three counterbalanced repetitions. Setting
+`min_pixels=max_pixels=50176` produced 45 image tokens and 63 total prompt
+tokens per request; multimodal and prefix caches were disabled. The three arms
+were current Pillow, current nvImageCodec returning Pillow, and a benchmark
+patch returning an owned C-contiguous `uint8` CHW array. Throughput values and
+paired changes are means ± sample standard deviation:
+
+| GPU | Resolution | Pillow (requests/s) | nvIC→Pillow (requests/s) | nvIC→CHW (requests/s) | CHW vs nvIC→Pillow | CHW vs Pillow | CPU cores P/nvP/CHW | NVJPG nvP/CHW |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| A100 | 1920x1080 | 45.813 ± 0.021 | 48.841 ± 0.163 | 64.061 ± 0.956 | +31.16% ± 2.08% | +39.83% ± 2.04% | 2.547/2.274/2.258 | 3.564%/3.753% |
+| A100 | 3840x2160 | 19.721 ± 0.073 | 20.693 ± 0.337 | 37.303 ± 0.241 | +80.30% ± 2.48% | +89.15% ± 1.23% | 2.715/2.389/2.872 | 10.209%/13.131% |
+| RTX PRO 6000 | 1920x1080 | 67.689 ± 0.546 | 70.357 ± 0.229 | 92.342 ± 0.516 | +31.25% ± 1.15% | +36.42% ± 0.55% | 2.697/2.432/2.358 | 4.781%/4.508% |
+| RTX PRO 6000 | 3840x2160 | 28.255 ± 0.568 | 30.672 ± 0.288 | 53.888 ± 0.498 | +75.71% ± 3.06% | +90.79% ± 4.88% | 2.837/2.427/3.155 | 9.337%/14.181% |
+
+Across both GPUs, all 36 cells passed; each GPU's six cross-variant groups also
+passed request, image-order, prompt-token, completion-token, and service-
+accounting checks. Each nvImageCodec cell submitted, accounted for, and
+natively decoded all 4,864 warmup-plus-measured images with zero fallback. A
+separate exact processor parity check matched the decoded raster, full
+`[180, 1536]` processor tensor,
+`[[1, 10, 18]]` grid, prompt tokens, and 45 placeholders for all 32 images in
+each resolution corpus. A fresh-server, deterministic concurrency-one check
+also produced byte-identical generated text for all measured requests.
+
+This is evidence for a separate output-contract optimization, not a result of
+the current Pillow-returning change. The benchmark patch still requested
+nvImageCodec `I_RGB` HWC output and performed a CPU transpose/copy into owned
+CHW; it did not use production, capability-gated `P_RGB` plumbing. The gain is
+also specific to this pixel budget. The earlier processor-only experiment used
+2,040 image tokens at 1080p and 8,160 at 4K, while this inference run capped
+both resolutions at 45. Removing full-raster Pillow materialization therefore
+occupied a much larger fraction of the critical path and increased request
+turnover and native claim width. These percentages must not be generalized to
+other processor pixel budgets.
+
 ## Review Disposition
 
 ### Must Be Fixed Before Cross-Request Batching
@@ -372,7 +428,9 @@ peak allocations.
 | Stage a single native chunk through the pinned ring | Reject. A controlled A100/RTX A/B regressed all four decode-only cells, including stable A100 losses of 11.35% at 1080p and 30.92% at 4K. A lone chunk has no following decode to overlap, so keep the cheaper synchronous path. |
 | Partition one ready queue across idle workers | Reject. It improved moderate-concurrency 1080p throughput, but matched five-pair tests regressed 4K by 5.80% on A100 and 8.67% on RTX and the policy was neutral once sustained backlog occupied both workers. |
 | Reuse native output images | Separate optimization PR. The isolated batch-five/depth-four-equivalent A/B improved A100 throughput by 16-23% and RTX throughput by 2.5-2.8%, so it is worth pursuing. Reuse retains shape-dependent GPU buffers at each ring position outside the current per-call raster lease; safe integration needs explicit high-water accounting, mixed-resolution growth and eviction policy, and cancellation tests. |
-| Raise `max_num_cpu_threads` above one | Reject for this library version. A local GPU without a usable hardware-only path benefited in an isolated hybrid-backend probe, but the first two-thread cells on both A100 and RTX PRO 6000 stopped making forward progress with the GPU idle. Retain one helper per decoder until a library update or a reduced reproducer resolves that failure. |
+| Raise the GPU decoder's `max_num_cpu_threads` above one | Reject for this library version. A local GPU without a usable hardware-only path benefited in an isolated hybrid-backend probe, but the first two-thread cells on both A100 and RTX PRO 6000 stopped making forward progress with the GPU idle. Retain one helper per decoder until a library update or a reduced reproducer resolves that failure. |
+| Raise nvImageCodec `num_cuda_streams` | Reject as a ring optimization. The measured 1/2/4/8 sweep was within noise, while vLLM already supplies explicit ring streams; retain one internal stream per decoder. |
+| Log the backend that actually decoded a batch | Blocked by nvImageCodec 0.9's public Python API. `Decoder` accepts an ordered backend configuration, but neither it nor the returned `Image` exposes the selected backend or plugin. Do not infer attribution from configured order or use unsupported internals; revisit when NVIDIA exposes it. |
 | Raise or arbitrarily cap the decoder count | Keep two as the product default and leave the validator resource-accounted rather than imposing an unevidenced ceiling. Exploratory A100 decode-only sweeps peaked at eight decoders for 1080p and ten for 4K, but consumed substantially more CPU and GPU memory. Revisit the default only after a separate host-materialization optimization changes the bottleneck. |
 | Avoid both Pillow and nvImageCodec header parsing | Defer. Pillow supplies animation, transparency, EXIF, and source metadata that `CodeStream` does not. Measured header work is small relative to raster transfer. |
 | Group every native call by exact codec | Benchmark first. It can fragment batches and has no effect on the all-JPEG target workload. Cross-request v1 deliberately queues only JPEG. |
@@ -413,9 +471,35 @@ it is either implemented with evidence or moved to the decision table above.
   and cleanup after every injected ring failure. Lightweight pre-fetch request
   waiters are intentionally allowed to park without owning encoded bytes; their
   count is not part of the bounded active-decode tiers.
+- [x] Release completed service jobs without relying on cyclic garbage
+  collection. Commit `44655c82b3` changed both cancellation callback
+  registrations to weakly reference `_DecodeJob`; deterministic direct-submit
+  and asynchronous-admission tests prove the job becomes unreachable with
+  cyclic GC disabled.
 
 ### Separate Optimization PRs
 
+- [x] Assess the latest independent performance refinements before changing
+  the selected defaults. Retain the single-chunk synchronous gate: the new
+  pinned-transfer stage timing does not override the matched A100/RTX
+  full-path regression and A-B-A revert evidence, and claims must not be split
+  merely to force ring overlap. Treat the independently reproduced roughly
+  1.3x two-to-four-decoder gain as an opt-in decode-throughput tradeoff, not a
+  new default, because it reserves another 2.33 GiB of KV capacity per API
+  server. Discard the invalid `GPU_ONLY` result that timed `None` outputs, and
+  revisit resolved-backend logging only through a supported nvImageCodec API.
+- [x] Sweep `max_num_cpu_threads` independently on the `CPU_ONLY` decoder using
+  native PNG, BMP, PNM, and WebP batches. A bounded local sweep tested one, two,
+  four, and eight helpers at 1080p and 4K, including both PPM and one-bit PBM
+  fixtures for PNM. All 40 cells completed without a plugin miss or hang and
+  matched Pillow over the full raster. Four helpers improved native throughput
+  over one by 35-117% in every cell; eight helped some codecs further but
+  regressed 1080p BMP. This is evidence for a separate CPU-plugin setting, not
+  for raising the GPU decoder's helper count.
+- [ ] Benchmark one versus four `CPU_ONLY` helpers through the complete adapter
+  output path before changing its product default. Include Pillow
+  materialization, mixed-codec positional fallback, and process-level CPU use;
+  the native-only sweep does not measure those costs.
 - [ ] Keep decoded pixels on the GPU through resize, normalization, and tensor
   conversion, using the
   [CV-CUDA interop pattern](https://docs.nvidia.com/cuda/nvimagecodec/samples/cvcuda_sample.html).
@@ -451,22 +535,49 @@ it is either implemented with evidence or moved to the decision table above.
 - [ ] Mechanically deduplicate the two ring-refill loops. Consider collapsing
   the legacy and pipelined GPU conversion paths only after rebenchmarking
   single-chunk staging and preserving the depth-one revert lever.
-- [ ] Prototype a Pillow-free CPU-array output for the semantically simple
-  JPEG/RGB path in a separate PR. A local materialization microbenchmark shows
-  that it can remove two full-raster host copies, but it is not a contract-free
-  change: image/video hashing must distinguish 3-D and 4-D arrays, every
-  cancellation and cleanup owner must tolerate arrays without `close()`, and
-  model-specific processors that require Pillow need a capability-gated
-  fallback. Re-run decode-only and inference A/Bs on both A100 and RTX rather
-  than transferring absolute results from a GPU without hardware-only decode.
+- [ ] Bound or validate the product of decoder slots and ring depth against
+  PyTorch's finite CUDA-stream pool. The selected two-by-four default uses only
+  eight explicit streams, but extreme supported settings can alias pooled
+  streams and silently serialize work; add a real-CUDA uniqueness/timeline
+  test before imposing a product limit.
+- [x] Prototype owned CPU-array output for the semantically simple JPEG/RGB
+  path without changing the production contract. Exact full-raster
+  decode-plus-materialization tests favored HWC arrays over Pillow by 15.4% on
+  A100 and 34.4% on RTX at 1080p, and by 160.4% and 129.8% at 4K. A real
+  Qwen3-VL processor/no-inference test then compared Pillow, HWC, and CHW in
+  six counterbalanced in-process blocks. Owned contiguous CHW won every paired
+  block: 7.75% on A100 and 10.45% on RTX at 1080p, and 6.10% and 10.28% at 4K.
+  All processor-output hashes, service accounting, fallback, and lifetime
+  gates passed. These are processor-path results, not OSL-128 inference data.
+- [ ] Integrate owned contiguous `uint8` CHW output behind an exact
+  model-processor capability and validate it in a separate PR. The first
+  implementation should use nvImageCodec `P_RGB` only for complete,
+  non-oriented RGB JPEGs consumed by standard Qwen3-VL; preserve Pillow for
+  public scalar fetches, video-frame contracts, unified vision chunks, and all
+  unsupported cases. Image hashing, parse-size logic, service coalescing keys,
+  cleanup, and renderer boundaries must distinguish this 3-D CHW result from
+  HWC images, THWC video, tensors, and Pillow objects.
+- [x] Run fresh-process, one-image-per-request, OSL-128 inference A/Bs for the
+  benchmark-only owned-CHW prototype at 1080p and 4K on both A100 and RTX PRO
+  6000. The concurrency-256 campaign used three counterbalanced repetitions,
+  collected CPU and NVJPG utilization, and passed all request, token, and decode
+  service invariants; see the separate evidence above. This does not complete
+  the production capability-gated `P_RGB` integration.
+- [x] Validate the benchmark-owned CHW boundary at the exact inference pixel
+  budget. All 32 images at each resolution matched nvImageCodec-to-Pillow on
+  full processor tensor, grid, prompt-token, placeholder, and decoded-raster
+  hashes. A fresh-server deterministic concurrency-one check also produced
+  byte-identical generated text and exact decode-service accounting.
+- [ ] Before promoting native `P_RGB` CHW output, repeat processor and
+  deterministic-inference parity through the production capability gate; fix
+  cache hashing and type discrimination for 3-D CHW arrays; and prove bounded
+  weak-reference/RSS lifetime over a sustained run. Attribute the gain with
+  renderer/processor timing and running-batch-size telemetry, reporting steady
+  state separately from ramp and drain.
 - [x] Partition a synchronized ready queue across currently idle decoder
   workers and test it on both target GPUs. The five-pair experiment improved
   1080p but regressed 4K throughput by 5.80% on A100 and 8.67% on RTX, while a
   concurrency-64 screen was neutral; the isolated implementation was reverted.
-- [ ] Investigate whether nvImageCodec exposes reliable attribution for the
-  backend that actually decoded a batch. Log it once per retained decoder slot
-  if the API supports that without synchronizing or decoding twice; configured
-  backend order alone is not resolved-backend observability.
 - [ ] Measure Pillow's process-global block cache only if the Pillow-returning
   path remains after the CPU-array experiment. Any change needs a process-wide
   memory bound and Pillow-baseline tests because it affects more than the
@@ -780,6 +891,8 @@ restartable. Reconfiguration within a live generation remains an error.
 - Setup, submission, event, pinned-copy, and Pillow-conversion failures
   synchronize submitted work, drop device references before releasing leases,
   close earlier Pillow results, and invalidate the affected decoder slot.
+- Completed jobs and decoded results become unreachable with cyclic GC disabled
+  on both direct-submit and asynchronous-admission paths.
 - Last renderer release permits a clean new generation in the same process.
 - Pillow backend execution never touches the nvImageCodec decode service.
 
