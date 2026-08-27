@@ -340,14 +340,15 @@ it is either implemented with evidence or moved to the decision table above.
 - [x] Finish matched A100 and RTX PRO 6000 decode-only and OSL-128 inference
   measurements at 1080p and 4K. Report throughput, server-plus-MPS CPU use,
   NVJPG utilization, and exact service accounting from fresh-process runs.
-- [x] A/B-test the decoder's `max_num_cpu_threads` setting at one, two, and four
-  threads, capped to avoid oversubscribing the API server. NVIDIA's
+- [x] Attempt a bounded sweep of the decoder's `max_num_cpu_threads` setting,
+  starting at one and then two helper threads. NVIDIA's
   [DataLoader sample](https://docs.nvidia.com/cuda/nvimagecodec/samples/torch_dataloader.html)
   gives a batched decoder multiple CPU threads for parsing and dispatch. On
   both A100 and RTX PRO 6000, the first one-decoder/two-helper cell failed to
   make forward progress: one helper spun at a full CPU core while the GPU
-  remained idle, and the campaigns had to be interrupted. Retain one helper
-  thread per decoder and do not expose this unsafe setting.
+  remained idle, and the campaigns had to be interrupted before attempting
+  four. Retain one helper thread per decoder and do not expose this unsafe
+  setting.
 - [x] Re-run a multi-wave CUDA ring stress after the final tuning choice. The
   real-library test now runs 32 JPEGs at three resolutions as seven native
   chunks through a depth-four ring, repeats that sequence eight times, checks

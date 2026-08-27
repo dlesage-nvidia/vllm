@@ -919,7 +919,8 @@ RUN --mount=type=cache,target=/opt/uv/cache \
             && uv pip install --system -r requirements/dev.txt \
             --extra-index-url ${PYTORCH_CUDA_INDEX_BASE_URL}/cu$(echo $CUDA_VERSION | cut -d. -f1,2 | tr -d '.'); \
         fi \
-        && if [ "$TARGETPLATFORM" = "linux/amd64" ]; then \
+        && if [ "$TARGETPLATFORM" = "linux/amd64" ] \
+            && [ "$CUDA_MAJOR" -le 13 ]; then \
             uv pip install --system \
             "nvidia-nvimgcodec-cu${CUDA_MAJOR}[all]==${NVIMAGECODEC_VERSION}"; \
         fi; \

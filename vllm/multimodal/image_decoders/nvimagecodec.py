@@ -137,10 +137,9 @@ def _load_nvimgcodec():
         from nvidia import nvimgcodec
     except ImportError as exc:
         raise RuntimeError(
-            "The nvImageCodec image backend requires the CUDA-major-matched "
-            "nvidia-nvimgcodec package. On x86-64, install vLLM's "
-            "'nvimagecodec' extra; on Arm, install the platform-appropriate "
-            "NVIDIA package."
+            "The nvImageCodec image backend requires x86-64 with CUDA 12 or "
+            "13 and the CUDA-major-matched nvidia-nvimgcodec package. Install "
+            "vLLM's 'nvimagecodec' extra. Arm is not currently supported."
         ) from exc
     return nvimgcodec
 
