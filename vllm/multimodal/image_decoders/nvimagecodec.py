@@ -1033,7 +1033,7 @@ class NvImageCodecBackend:
                             max_raw_bytes=max_gpu_raw_bytes,
                         )
                     )
-                    if pipeline_depth > 1 and chunks:
+                    if pipeline_depth > 1 and len(chunks) > 1:
                         with cls._borrow_decoder_slot() as slot:
                             cls._decode_gpu_chunks_pipelined(
                                 slot,
