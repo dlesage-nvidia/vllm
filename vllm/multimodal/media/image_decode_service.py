@@ -723,16 +723,7 @@ class NvImageCodecDecodeService:
             assert batch_candidate is not None
             spec = batch_candidate[1]
             queue = self._batch_queues[spec]
-            claim_capacity = self.config.batch_size * self.config.pipeline_depth
-            max_claim_size = claim_capacity
-            if direct_sequence is None and len(batch_candidates) == 1:
-                idle_workers = self.config.decoders - self._in_flight
-                if idle_workers > 1:
-                    fair_share = (len(queue) + idle_workers - 1) // idle_workers
-                    max_claim_size = min(
-                        claim_capacity,
-                        max(self.config.batch_size, fair_share),
-                    )
+            max_claim_size = self.config.batch_size * self.config.pipeline_depth
             jobs = [queue.popleft() for _ in range(min(len(queue), max_claim_size))]
             if not queue:
                 self._batch_queues.pop(spec)
