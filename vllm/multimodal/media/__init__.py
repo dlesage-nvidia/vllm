@@ -3,7 +3,7 @@
 from .audio import AudioEmbeddingMediaIO, AudioMediaIO
 from .base import MediaIO, MediaWithBytes
 from .connector import MEDIA_CONNECTOR_REGISTRY, MediaBatchError, MediaConnector
-from .image import ImageEmbeddingMediaIO, ImageMediaIO
+from .image import ImageBatchItemError, ImageEmbeddingMediaIO, ImageMediaIO
 from .video import VIDEO_LOADER_REGISTRY, VideoMediaIO
 
 __all__ = [
@@ -12,6 +12,7 @@ __all__ = [
     "AudioEmbeddingMediaIO",
     "AudioMediaIO",
     "ImageEmbeddingMediaIO",
+    "ImageBatchItemError",
     "ImageMediaIO",
     "VIDEO_LOADER_REGISTRY",
     "VideoMediaIO",

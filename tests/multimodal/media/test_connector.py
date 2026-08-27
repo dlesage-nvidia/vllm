@@ -24,12 +24,12 @@ from vllm.assets.base import VLLM_S3_BUCKET_URL
 from vllm.multimodal.image import convert_image_mode
 from vllm.multimodal.inputs import PlaceholderRange
 from vllm.multimodal.media import (
+    ImageBatchItemError,
     ImageMediaIO,
     MediaBatchError,
     MediaConnector,
     MediaWithBytes,
 )
-from vllm.multimodal.media.image import _ImageBatchItemError
 from vllm.multimodal.media.image_decode_service import (
     get_nvimagecodec_decode_service_stats,
     shutdown_nvimagecodec_decode_service,
@@ -351,7 +351,7 @@ async def test_fetch_images_async_preserves_indexed_decode_error(monkeypatch):
     original_error = ValueError("corrupt image at index 1")
 
     def fail_batch(self, encoded_images):
-        raise _ImageBatchItemError(1, original_error)
+        raise ImageBatchItemError(1, original_error)
 
     monkeypatch.setattr(ImageMediaIO, "load_bytes_many", fail_batch)
     connector = MediaConnector(media_io_kwargs={"image": {"backend": "nvimagecodec"}})

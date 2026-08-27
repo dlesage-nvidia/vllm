@@ -37,7 +37,7 @@ from vllm.utils.registry import ExtensionManager
 
 from .audio import AudioEmbeddingMediaIO, AudioMediaIO
 from .base import MediaIO, MediaWithBytes
-from .image import ImageEmbeddingMediaIO, ImageMediaIO, _ImageBatchItemError
+from .image import ImageBatchItemError, ImageEmbeddingMediaIO, ImageMediaIO
 from .image_decode_service import (
     load_images_with_service,
     load_images_with_service_async,
@@ -636,7 +636,7 @@ class MediaConnector:
 
         try:
             return load_images_with_service(image_io, encoded_images)
-        except _ImageBatchItemError as e:
+        except ImageBatchItemError as e:
             raise MediaBatchError(e.index, e.error) from None
         except Exception as e:
             if len(encoded_images) == 1:
@@ -668,7 +668,7 @@ class MediaConnector:
             encoded_images = [cast(bytes, result) for result in results]
             try:
                 return await load_images_with_service_async(image_io, encoded_images)
-            except _ImageBatchItemError as e:
+            except ImageBatchItemError as e:
                 raise MediaBatchError(e.index, e.error) from None
             except Exception as e:
                 if len(encoded_images) == 1:

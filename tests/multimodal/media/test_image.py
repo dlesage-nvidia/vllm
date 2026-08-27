@@ -8,8 +8,7 @@ import pytest
 from PIL import Image
 
 from vllm.multimodal.image_decoders import NvImageCodecBatchItemError
-from vllm.multimodal.media import ImageMediaIO
-from vllm.multimodal.media.image import _ImageBatchItemError
+from vllm.multimodal.media import ImageBatchItemError, ImageMediaIO
 
 pytestmark = pytest.mark.cpu_test
 
@@ -199,7 +198,7 @@ def test_image_media_io_load_bytes_many_reports_open_error_index(tmp_path):
     valid_path = tmp_path / "valid.png"
     valid_image.save(valid_path)
 
-    with pytest.raises(_ImageBatchItemError) as exc_info:
+    with pytest.raises(ImageBatchItemError) as exc_info:
         ImageMediaIO().load_bytes_many(
             [valid_path.read_bytes(), b"not an image", valid_path.read_bytes()]
         )
@@ -238,7 +237,7 @@ def test_image_media_io_load_bytes_many_reports_load_error_index(tmp_path, monke
         "vllm.multimodal.media.image.normalize_image", lambda image: image
     )
 
-    with pytest.raises(_ImageBatchItemError) as exc_info:
+    with pytest.raises(ImageBatchItemError) as exc_info:
         ImageMediaIO().load_bytes_many([encoded, encoded, encoded])
 
     assert exc_info.value.index == 1
@@ -269,7 +268,7 @@ def test_image_media_io_load_bytes_many_reports_conversion_error_index(
 
     monkeypatch.setattr(ImageMediaIO, "_convert_image_mode", fail_second_conversion)
 
-    with pytest.raises(_ImageBatchItemError) as exc_info:
+    with pytest.raises(ImageBatchItemError) as exc_info:
         ImageMediaIO(image_mode="RGBA").load_bytes_many([encoded, encoded, encoded])
 
     assert exc_info.value.index == 1
@@ -309,7 +308,7 @@ def test_nvimagecodec_candidate_failure_reports_original_batch_index(monkeypatch
         decode_only_candidate,
     )
 
-    with pytest.raises(_ImageBatchItemError) as exc_info:
+    with pytest.raises(ImageBatchItemError) as exc_info:
         ImageMediaIO(backend="nvimagecodec").load_bytes_many([gif_data, jpeg_data])
 
     assert exc_info.value.index == 1
@@ -336,7 +335,7 @@ def test_nvimagecodec_native_item_error_maps_to_original_batch_index(monkeypatch
         fail_native_candidate,
     )
 
-    with pytest.raises(_ImageBatchItemError) as exc_info:
+    with pytest.raises(ImageBatchItemError) as exc_info:
         ImageMediaIO(backend="nvimagecodec").load_bytes_many([gif_data, jpeg_data])
 
     assert exc_info.value.index == 1

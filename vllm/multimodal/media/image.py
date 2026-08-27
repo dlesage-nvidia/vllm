@@ -52,7 +52,7 @@ _NVIMAGECODEC_PIL_FORMATS = frozenset(
 _NVIMAGECODEC_ALPHA_FORMATS = frozenset({"PNG", "WEBP"})
 
 
-class _ImageBatchItemError(ValueError):
+class ImageBatchItemError(ValueError):
     """An image-batch failure whose position must survive async batching."""
 
     def __init__(self, index: int, error: Exception) -> None:
@@ -61,10 +61,10 @@ class _ImageBatchItemError(ValueError):
         self.error = error
 
 
-def _indexed_image_error(index: int, error: Exception) -> _ImageBatchItemError:
+def _indexed_image_error(index: int, error: Exception) -> ImageBatchItemError:
     if isinstance(error, OSError):
         error = ValueError(f"Failed to load image: {error}")
-    return _ImageBatchItemError(index, error)
+    return ImageBatchItemError(index, error)
 
 
 def _nvimagecodec_output_mode(
@@ -362,7 +362,7 @@ class ImageMediaIO(MediaIO[Image.Image]):
     def load_bytes(self, data: bytes) -> MediaWithBytes[Image.Image]:
         try:
             return self.load_bytes_many([data])[0]
-        except _ImageBatchItemError as e:
+        except ImageBatchItemError as e:
             raise e.error from None
 
     def load_base64(self, media_type: str, data: str) -> MediaWithBytes[Image.Image]:
