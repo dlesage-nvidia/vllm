@@ -23,11 +23,14 @@ default backend. It does not recursively submit work to `global_thread_pool`
 from `load_bytes_many`: that method already runs in the same pool, so nested
 submission and waiting can deadlock when all workers are occupied.
 
-The fourth, independently revertible change adds a bounded decode ring. It
-copies decoded pixels asynchronously into pinned host buffers, submits another
-native batch before materializing the ready Pillow images, and releases each GPU
-lease as soon as its copy event completes. It still returns Pillow images;
-keeping pixels GPU-resident for downstream preprocessing remains separate work.
+The fourth, independently revertible change adds a bounded decode ring. When a
+worker claim spans at least two native chunks, it copies decoded pixels
+asynchronously into pinned host buffers, submits a following native chunk before
+materializing the ready Pillow images, and releases each GPU lease as soon as
+its copy event completes. A one-chunk claim keeps the synchronous path; one
+native chunk has no following chunk to overlap. The backend still returns
+Pillow images; keeping pixels GPU-resident for downstream preprocessing remains
+separate work.
 
 ## Goals
 
@@ -42,8 +45,9 @@ keeping pixels GPU-resident for downstream preprocessing remains separate work.
 - Bound decode-queue entries, pending encoded bytes owned by the service,
   decoder concurrency, and GPU memory use.
 - Make the achieved native batch widths and queue delay observable.
-- Overlap native decode and device-to-host copies with Pillow materialization
-  without weakening GPU-memory accounting or positional fallback.
+- Overlap successive native chunks and their device-to-host copies with Pillow
+  materialization without weakening GPU-memory accounting or positional
+  fallback.
 
 ## Non-goals
 
@@ -165,7 +169,7 @@ the optimization is promising, but it does not include host transfer or Pillow
 materialization and cannot supply the retained-memory ownership policy required
 by the serving adapter.
 
-An earlier ring-isolation end-to-end run used one image per request, output
+An earlier depth-comparison end-to-end run used one image per request, output
 length 128, concurrency 16, 256 measured requests after 48 warmup requests,
 and a fresh Qwen3-VL-2B server for every cell. Three counterbalanced
 repetitions produced the following means ± sample standard deviation:
@@ -183,11 +187,14 @@ Depth four improved throughput over Pillow by a paired 4.59% ± 0.89% at
 1080p and 5.15% ± 2.90% at 4K. Its incremental paired change over depth one
 was 1.37% ± 2.13% and -0.47% ± 1.22%, respectively, so this inference workload
 does not demonstrate an additional ring-specific gain. Decode-service claims
-averaged only 2.51 images at 1080p and 1.10 at 4K; inference did not build the
-sustained backlog that made depth four effective in decode-only testing. Input
-ordering and prompt/completion token counts matched across variants. Generated
-text hashes were diagnostic rather than equivalent; pixel fidelity is covered
-by the dedicated CUDA decoder suite.
+averaged only 2.51 images at 1080p and 1.10 at 4K, and the dominant claims fit
+one native chunk. Those claims take the synchronous no-ring path even when
+depth is four; one native chunk cannot overlap itself. The incremental depth
+figures therefore do not isolate the ring and must not be cited as ring-path
+evidence. Inference did not build the sustained backlog that made depth four
+effective in decode-only testing. Input ordering and prompt/completion token
+counts matched across variants. Generated text hashes were diagnostic rather
+than equivalent; pixel fidelity is covered by the dedicated CUDA decoder suite.
 
 The latest matched campaign then tested the selected two-decoder, native-width-
 five, depth-four configuration at higher concurrency. Decode-only used a fresh
@@ -310,8 +317,6 @@ peak allocations.
 - Make import plus JPEG, JPEG 2000/HTJ2K, and TIFF decoding mandatory in NVIDIA
   wheel/image smoke tests. Developer and non-NVIDIA lanes may still skip an
   unavailable optional backend.
-- Remove the duplicate `candidate_output_modes` declaration and unreachable
-  `UnidentifiedImageError` catches while touching those functions.
 
 ### Explicitly Deferred or Rejected
 
@@ -325,6 +330,7 @@ peak allocations.
 | Group every native call by exact codec | Benchmark first. It can fragment batches and has no effect on the all-JPEG target workload. Cross-request v1 deliberately queues only JPEG. |
 | Merge the GPU and CPU chunk loops | Reject for now. Their memory leases, fallback behavior, and failure handling differ, and combined CPU/GPU decoder use has deadlocked. |
 | Consolidate the Pillow and nvImageCodec codec tables | Defer. They encode different semantic and plugin-routing policies. Add consistency tests instead. |
+| JPEG-sequence video bypasses the image decode service | Stale finding. Synchronous and asynchronous `video/jpeg` inputs route their frame chunks through the same process-local service; the asynchronous path also reserves pre-fetch request capacity. |
 | Optimize no-EXIF Pillow normalization | Worth a standalone Pillow PR. It predates this feature and should be measured independently. |
 | Parallelize synchronous URL fetching | Follow-up. It is useful for offline callers but is not required for cross-request server batching. |
 | Remove scalar decoder wrappers | Optional cleanup before feature merge; it does not affect this design. |
@@ -382,10 +388,22 @@ it is either implemented with evidence or moved to the decision table above.
   shared server as the sole cause; reproduce the mode change with a dedicated
   endurance harness, collect CUDA/NVJPG timelines, and keep daemon lifecycle
   control outside this feature PR.
-- [ ] Benchmark early GPU-lease release for depth one and single-chunk calls.
-  They intentionally retain the synchronous no-ring path today; changing them
-  to pinned/event drainage must preserve depth-one equivalence and account for
-  retained pinned memory before the optimization is generalized.
+- [ ] Instrument the fraction of worker claims that actually enter the ring
+  (at least two native chunks). Separately benchmark pinned/event staging for a
+  single-chunk claim at depth greater than one, including latency, early-lease
+  release, and retained pinned memory. Do not attribute overlap to that path: a
+  single native chunk cannot overlap itself. Keep depth one as the exact
+  synchronous no-ring baseline.
+- [ ] Measure poison-image retry amplification. The bounded remove-one-and-retry
+  policy can re-decode successful survivors on each indexed failure; evaluate a
+  partial-result or survivor-reuse contract that preserves ordering, exception
+  identity, and cleanup without retaining unaccounted buffers.
+- [ ] Benchmark bounded parallel Pillow fallbacks inside an opt-in nvImageCodec
+  direct multi-image job. Preserve positional errors and ordering, and keep the
+  default Pillow connector path independent of the decode service.
+- [ ] Mechanically deduplicate the two ring-refill loops. Consider collapsing
+  the legacy and pipelined GPU conversion paths only after rebenchmarking
+  single-chunk staging and preserving the depth-one revert lever.
 
 ### Reviewed and Already Accounted For
 
@@ -523,11 +541,13 @@ intentional low-QPS delay.
 ### Decode Ring and Buffer Ownership
 
 `pipeline_depth` bounds the number of native GPU batches associated with one
-decoder worker call. Depth one preserves the pre-ring pageable-copy path. The
-default depth four keeps a wider bounded work window: while completed batches
-are converted to Pillow images on the CPU, a following batch can decode and
-copy on a distinct external CUDA stream. Other depths remain available for
-measurement but change the maximum live decoded and pinned-host raster bytes.
+decoder worker call. Depth one preserves the pre-ring pageable-copy path. At
+depth greater than one, only a call that splits into at least two native chunks
+enters the ring: while a completed chunk is converted to Pillow images on the
+CPU, a following chunk can decode and copy on a distinct external CUDA stream.
+A single-chunk call remains on the same synchronous path as depth one. Other
+depths remain available for measurement but change the maximum live decoded
+and pinned-host raster bytes when the ring is exercised.
 
 Each ring submission follows this ownership sequence:
 
@@ -557,10 +577,17 @@ single process-wide cap across every compatibility and direct queue:
 - `max_pending_encoded_bytes = max(4, pipeline_depth) * decoders *
   NVIMAGECODEC_MAX_ENCODED_BYTES`.
 
-The first implementation can revise the multiplier only with memory and overload
-measurements. Submission must never wait on a `threading.Condition` on the
-event-loop thread. The service therefore has a second FIFO admission backlog,
-with the same item and byte caps, and promotes it as capacity becomes available.
+These are per-service-job caps, not a cap on the number of images in one
+logical request. A larger direct multi-image or JPEG-sequence-video request is
+segmented into ordered jobs that each fit both admission dimensions. Segment
+results retain their original request positions, and results completed before a
+later segment failure are closed.
+
+The first implementation can revise the multiplier only with memory and
+overload measurements. Submission must never wait on a `threading.Condition`
+on the event-loop thread. The service therefore has a second FIFO admission
+backlog, with the same item and byte caps, and promotes it as capacity becomes
+available.
 The asynchronous connector first limits active fetch/decode work to the two
 tiers' combined item capacity. Excess requests park on lightweight FIFO tickets
 before URL, file, or base64 fetching begins. If exact encoded-byte pressure
@@ -578,6 +605,8 @@ futures. The internal nvImageCodec `None` result continues to make
 `ImageMediaIO` decode only that item with Pillow before the service receives the
 final `MediaWithBytes` value. Successful values keep their original encoded
 bytes and effective `io_config`, so multimodal hashing remains backend-sensitive.
+For a segmented logical request, indexed failures are offset back to the
+original request position rather than the segment-local position.
 
 Define exception types before adding retries:
 
@@ -650,6 +679,9 @@ restartable. Reconfiguration within a live generation remains an error.
   number of images allowed to fetch or decode; excess online requests park
   before fetching. Exact-byte FIFO tickets handle residual pressure, and both
   layers recover after completion or cancellation.
+- A direct logical request larger than one admission tier is segmented, returns
+  results in original order, maps indexed errors back to original positions, and
+  closes results from earlier segments if a later segment fails.
 - Cancellation races at enqueue, claim, and result publication either skip work
   or close an undeliverable `MediaWithBytes.media` exactly once.
 - Startup configuration cannot be overridden by request kwargs or reconfigured

@@ -836,10 +836,11 @@ You can also select the backend with
 `--mm-ipc-gpu-memory-gb` value is required. vLLM subtracts this budget from
 the engine's KV-cache headroom and uses it as a byte-counting semaphore for
 decoded GPU images. The budget must fit the largest native GPU batch, including
-three bytes per RGB pixel or four bytes per RGBA pixel. Keeping every decoder
-slot and pipeline entry occupied can require that amount multiplied by
-`decoders * pipeline_depth`; a smaller budget safely limits actual concurrency.
-With multiple API server processes, vLLM divides the budget evenly among them.
+three bytes per RGB pixel or four bytes per RGBA pixel. A sustained
+multi-native-chunk workload that occupies every decoder slot and ring entry can
+require that amount multiplied by `decoders * pipeline_depth`; a smaller budget
+safely limits actual concurrency. With multiple API server processes, vLLM
+divides the budget evenly among them.
 CPU-plugin batches do not acquire this decoded-raster GPU budget, but the
 positive reservation is still required because one backend instance can receive
 both CPU- and GPU-capable formats. A single image whose decoded raster exceeds
@@ -858,7 +859,10 @@ still applies to fallback decoding.
 Native batches are split before they exceed the configured `batch_size`, the
 available decoded-raster GPU budget, or 64 MiB of encoded input. An individual
 input larger than 64 MiB falls back to Pillow. These bounds limit the
-compressed-stream and output storage retained in each decoder slot.
+compressed-stream and output storage retained in each decoder slot. A logical
+multi-image request that is larger than one service admission tier is segmented
+into ordered jobs rather than rejected for its total image count or encoded
+bytes; results and indexed errors retain their original request positions.
 
 The `decoders` setting is the maximum number of concurrent decoder slots
 retained by each API server process. It must be a positive integer, defaults
@@ -872,20 +876,21 @@ batches. Direct multi-image and non-JPEG work uses the same process-local
 service and counts against the same `decoders` limit.
 
 `pipeline_depth` controls how many native batch results each decoder slot can
-stage while decoded pixels are copied to the host and converted to Pillow
-images. It defaults to `4`, must be between `1` and `8`, and is fixed at
-startup. Once at least `batch_size` compatible singleton JPEG requests are
-ready, the service can claim up to `batch_size * pipeline_depth` requests for
-one pipelined worker call without waiting for the larger number to arrive.
-The decode-service shutdown statistic named `batch_widths` reports these claim
-widths, not the widths of the individual native decode calls.
+stage when one worker claim splits into multiple native chunks. It defaults to
+`4`, must be between `1` and `8`, and is fixed at startup. Once at least
+`batch_size` compatible singleton JPEG requests are ready, the service can
+claim up to `batch_size * pipeline_depth` requests for one worker call without
+waiting for the larger number to arrive. Only a claim that requires at least
+two native chunks enters the pinned staging ring. The decode-service shutdown
+statistic named `batch_widths` reports these claim widths, not the widths of the
+individual native decode calls.
 
 The default was selected on an A100 with enough request concurrency to keep two
-decoder workers supplied. A deeper ring can consume proportionally more pinned
-host memory and decoded-raster GPU budget, and it is not automatically faster
-when the workload cannot fill its wider service claims. Depth one remains the
-latency- and memory-conservative setting for workloads that do not build a
-sustained decode backlog.
+decoder workers supplied. When exercised by multi-chunk claims, a deeper ring
+can consume proportionally more pinned host memory and decoded-raster GPU
+budget, and it is not automatically faster when the workload cannot fill its
+wider service claims. Depth one remains the latency- and memory-conservative
+setting for workloads that do not build a sustained decode backlog.
 
 `coalesce_timeout_ms` is the maximum intentional wait for a partial
 cross-request JPEG batch. It defaults to `0`, which adds no low-QPS delay but
@@ -899,16 +904,20 @@ In an A100 decode-bottleneck sweep, `0.25` ms was the best tested high-QPS
 setting for both 1080p and 4K JPEGs. Keep the zero default when minimizing
 low-QPS latency is more important, and retune for the deployment workload.
 
-Active decode entries and their owned encoded bytes are bounded. An
-asynchronous request beyond those bounds parks in FIFO order before fetching or
-owning encoded image bytes, then resumes when capacity is available. These
-lightweight pre-fetch waiters are not capped. Synchronous submission cannot
-park its caller and instead returns an overload error when admission is full.
+Active decode entries and their owned encoded bytes are bounded. A large
+logical multi-image request is segmented into bounded service jobs. Under
+capacity pressure, an asynchronous request parks in FIFO order before fetching
+or owning encoded image bytes, then its segments proceed as capacity becomes
+available. These lightweight pre-fetch waiters are not capped. Synchronous
+segment submission cannot park its caller and instead returns an overload error
+when admission is full.
 
-With `pipeline_depth=1`, each decoded image follows the original synchronous
-pageable-host copy path. At depth two or greater, GPU batches use pinned host
-buffers and CUDA events so the next native batch can run while ready pixels are
-copied into Pillow-owned memory. The decoded-raster GPU lease is released after
+With `pipeline_depth=1`, every decoded image follows the original synchronous
+pageable-host copy path. At depth two or greater, only a worker claim that
+splits into at least two native chunks uses pinned host buffers and CUDA events;
+a following chunk can run while ready pixels are copied into Pillow-owned
+memory. A single native chunk remains on the synchronous path because it cannot
+overlap itself. On the ring path, the decoded-raster GPU lease is released after
 the event completes and before Pillow materialization. The pinned buffer is
 released after Pillow takes its copy; downstream preprocessing still receives a
 CPU-resident Pillow image.
