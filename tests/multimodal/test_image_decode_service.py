@@ -2,8 +2,10 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import asyncio
+import gc
 import json
 import threading
+import weakref
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from types import SimpleNamespace
@@ -352,6 +354,60 @@ async def test_async_cancellation_closes_claimed_result():
     # close() is idempotent; accessing the core after close raises ValueError.
     with pytest.raises(ValueError):
         created[0].getpixel((0, 0))
+
+
+@pytest.mark.parametrize("through_async_admission", [False, True])
+def test_completed_jobs_are_released_without_cyclic_gc(
+    monkeypatch, through_async_admission: bool
+):
+    original_decode_job = image_decode_service._DecodeJob
+    job_refs: list[weakref.ReferenceType[object]] = []
+
+    def record_decode_job(*args, **kwargs):
+        job = original_decode_job(*args, **kwargs)
+        job_refs.append(weakref.ref(job))
+        return job
+
+    monkeypatch.setattr(image_decode_service, "_DecodeJob", record_decode_job)
+    config = ImageDecodeServiceConfig(
+        decoders=1,
+        batch_size=1,
+        pipeline_depth=1,
+        coalesce_timeout_ms=0,
+        max_pending_items=1,
+        max_pending_encoded_bytes=1,
+    )
+    service = NvImageCodecDecodeService(config)
+    image_io = _FakeImageIO(
+        lambda items: [_result(item) for item in items],
+        batch_size=1,
+        coalesce_timeout_ms=0,
+    )
+
+    gc_was_enabled = gc.isenabled()
+    gc.collect()
+    gc.disable()
+    try:
+        if through_async_admission:
+            ticket = service._begin_async_admission(image_io, (b"a",))
+            ticket.ready.result(timeout=0)
+            future = service._consume_async_admission(ticket, image_io, (b"a",))
+        else:
+            future = service.submit(image_io, [b"a"])
+
+        result = future.result(timeout=2)
+        result[0].media.close()
+        service.shutdown(log_stats=False)
+        del result
+        del future
+
+        assert len(job_refs) == 1
+        assert job_refs[0]() is None
+    finally:
+        service.shutdown(log_stats=False)
+        if gc_was_enabled:
+            gc.enable()
+        gc.collect()
 
 
 def test_non_jpeg_and_plural_inputs_are_direct_jobs():

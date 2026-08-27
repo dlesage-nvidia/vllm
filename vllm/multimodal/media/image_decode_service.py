@@ -10,6 +10,7 @@ import json
 import os
 import threading
 import time
+import weakref
 from collections import Counter, deque
 from collections.abc import AsyncIterator, Iterator, Sequence
 from concurrent.futures import Executor, Future, ThreadPoolExecutor
@@ -402,14 +403,18 @@ class NvImageCodecDecodeService:
 
     def _notify_if_cancelled(
         self,
-        job: _DecodeJob,
+        job_ref: weakref.ReferenceType[_DecodeJob],
         future: Future[list[MediaWithBytes[Image.Image]]],
     ) -> None:
-        if future.cancelled():
-            with self._cond:
-                self._release_accounting_locked(job)
-                self._advance_admission_locked()
-                self._cond.notify_all()
+        if not future.cancelled():
+            return
+        job = job_ref()
+        if job is None:
+            return
+        with self._cond:
+            self._release_accounting_locked(job)
+            self._advance_admission_locked()
+            self._cond.notify_all()
 
     def submit(
         self,
@@ -463,7 +468,9 @@ class NvImageCodecDecodeService:
             self._submitted_images += len(data)
             if not coalesce:
                 self._direct_jobs += 1
-            future.add_done_callback(partial(self._notify_if_cancelled, job))
+            future.add_done_callback(
+                partial(self._notify_if_cancelled, weakref.ref(job))
+            )
             self._cond.notify()
         return future
 
@@ -596,7 +603,9 @@ class NvImageCodecDecodeService:
             self._submitted_images += ticket.item_count
             if ticket.kind == "direct":
                 self._direct_jobs += 1
-            future.add_done_callback(partial(self._notify_if_cancelled, job))
+            future.add_done_callback(
+                partial(self._notify_if_cancelled, weakref.ref(job))
+            )
             self._advance_admission_locked()
             self._cond.notify_all()
             return future
