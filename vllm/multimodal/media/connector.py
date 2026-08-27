@@ -5,6 +5,7 @@ import asyncio
 import atexit
 import contextlib
 import hashlib
+import inspect
 import os
 import tempfile
 import time
@@ -56,6 +57,16 @@ global_thread_pool = ThreadPoolExecutor(
 atexit.register(global_thread_pool.shutdown)
 
 MEDIA_CONNECTOR_REGISTRY = ExtensionManager()
+
+
+def _accepts_image_mode(callback: Any) -> bool:
+    """Whether a scalar connector override accepts ``image_mode``."""
+    try:
+        inspect.signature(callback).bind_partial("", image_mode=None)
+    except (TypeError, ValueError):
+        return False
+    return True
+
 
 MODALITY_IO_MAP: dict[str, type[MediaIO]] = {
     "audio": AudioMediaIO,
@@ -723,10 +734,13 @@ class MediaConnector:
             # Registered connectors historically customized scalar fetching.
             # Preserve those semantics instead of bypassing the override through
             # this newly inherited raw-byte batch implementation.
+            image_kwargs = (
+                {"image_mode": image_mode} if _accepts_image_mode(fetch_image) else {}
+            )
             images = []
             for index, image_url in enumerate(image_urls):
                 try:
-                    images.append(fetch_image(image_url))
+                    images.append(fetch_image(image_url, **image_kwargs))
                 except Exception as e:
                     raise MediaBatchError(index, e) from e
             return cast(list[MediaWithBytes[Image.Image]], images)
@@ -756,8 +770,16 @@ class MediaConnector:
             getattr(fetch_image_async, "__func__", None)
             is not MediaConnector.fetch_image_async
         ):
+            image_kwargs = (
+                {"image_mode": image_mode}
+                if _accepts_image_mode(fetch_image_async)
+                else {}
+            )
             results = await asyncio.gather(
-                *(fetch_image_async(image_url) for image_url in image_urls),
+                *(
+                    fetch_image_async(image_url, **image_kwargs)
+                    for image_url in image_urls
+                ),
                 return_exceptions=True,
             )
             for index, result in enumerate(results):

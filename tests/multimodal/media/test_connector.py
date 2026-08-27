@@ -322,16 +322,83 @@ async def test_fetch_images_delegates_to_overridden_scalar_methods():
 
     connector = ScalarConnector()
 
-    assert connector.fetch_images(["one", "two"]) == ["sync:one", "sync:two"]
+    assert connector.fetch_images(["one", "two"], image_mode=None) == [
+        "sync:one",
+        "sync:two",
+    ]
     assert connector.sync_calls == ["one", "two"]
 
     with pytest.raises(MediaBatchError) as exc_info:
-        await connector.fetch_images_async(["bad", "slow"])
+        await connector.fetch_images_async(["bad", "slow"], image_mode="RGBA")
     assert exc_info.value.index == 0
     assert type(exc_info.value.error) is ValueError
     assert str(exc_info.value.error) == "scalar image failure"
     assert connector.async_calls == ["bad", "slow"]
     assert connector.completed == ["slow"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_images_passes_mode_to_compatible_scalar_overrides():
+    class ScalarConnector(MediaConnector):
+        def __init__(self):
+            super().__init__()
+            self.sync_modes = []
+            self.async_modes = []
+
+        def fetch_image(self, image_url, **kwargs):
+            self.sync_modes.append(kwargs["image_mode"])
+            return f"sync:{image_url}"
+
+        async def fetch_image_async(self, image_url, *, image_mode="RGB"):
+            self.async_modes.append(image_mode)
+            return f"async:{image_url}"
+
+    connector = ScalarConnector()
+
+    assert connector.fetch_images(["one", "two"], image_mode=None) == [
+        "sync:one",
+        "sync:two",
+    ]
+    assert await connector.fetch_images_async(["one", "two"], image_mode="RGBA") == [
+        "async:one",
+        "async:two",
+    ]
+    assert connector.sync_modes == [None, None]
+    assert connector.async_modes == ["RGBA", "RGBA"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_images_does_not_retry_scalar_body_type_error():
+    sync_error = TypeError("sync callback body failed")
+    async_error = TypeError("async callback body failed")
+
+    class ScalarConnector(MediaConnector):
+        def __init__(self):
+            super().__init__()
+            self.sync_calls = []
+            self.async_calls = []
+
+        def fetch_image(self, image_url, *, image_mode="RGB"):
+            self.sync_calls.append((image_url, image_mode))
+            raise sync_error
+
+        async def fetch_image_async(self, image_url, *, image_mode="RGB"):
+            self.async_calls.append((image_url, image_mode))
+            raise async_error
+
+    connector = ScalarConnector()
+
+    with pytest.raises(MediaBatchError) as sync_exc_info:
+        connector.fetch_images(["one"], image_mode=None)
+    assert sync_exc_info.value.error is sync_error
+    assert sync_exc_info.value.index == 0
+    assert connector.sync_calls == [("one", None)]
+
+    with pytest.raises(MediaBatchError) as async_exc_info:
+        await connector.fetch_images_async(["one"], image_mode="RGBA")
+    assert async_exc_info.value.error is async_error
+    assert async_exc_info.value.index == 0
+    assert connector.async_calls == [("one", "RGBA")]
 
 
 @pytest.mark.asyncio
