@@ -168,15 +168,29 @@ def test_nvimagecodec_real_jpeg_native_batches_match_pillow():
         ]
     )
     data.extend(data[:10])
+    for mixed_size in ((127, 61), (257, 131)):
+        mixed_rgb = rgb.resize(mixed_size)
+        data.extend(
+            _encode(mixed_rgb, "JPEG", quality=quality, subsampling=subsampling)
+            for quality, subsampling in (
+                (80, 2),
+                (85, 1),
+                (90, 0),
+                (92, 2),
+                (95, 1),
+            )
+        )
     expected = [
         np.array(_pillow_decode(encoded, "RGB"), dtype=np.int16) for encoded in data
     ]
-    memory_pool = MultiModalGPUMemoryPool(len(data) * width * height * 3 + 1)
+    memory_pool = MultiModalGPUMemoryPool(
+        sum(expected_pixels.size for expected_pixels in expected) + 1
+    )
     set_mm_gpu_ipc_pool(memory_pool)
     try:
         with _fresh_decoder_pool():
-            # Reuse the retained decoder and its four ring streams across more
-            # than one ringful of chunks, repeatedly. nvImageCodec has fixed
+            # Reuse the retained decoder and its four ring streams across
+            # multiple mixed-resolution ringfuls. nvImageCodec has fixed
             # back-to-back parameter races in the past, so a single decode call
             # is not sufficient lifetime coverage for the serving path.
             for _ in range(8):

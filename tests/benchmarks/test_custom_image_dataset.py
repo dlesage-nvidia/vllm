@@ -252,10 +252,11 @@ def test_custom_image_dataset_wraps_interleaved_content_for_multimodal_chat(
 
 
 @pytest.mark.benchmark
-def test_custom_image_dataset_encodes_image_media_when_requested(
+def test_custom_image_dataset_encodes_image_media_with_nvimagecodec_env(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setenv("VLLM_IMAGE_LOADER_BACKEND", "nvimagecodec")
     image_a = tmp_path / "chart_a.png"
     image_b = tmp_path / "chart b.png"
     _write_png(image_a, color=(255, 0, 0))
@@ -263,6 +264,14 @@ def test_custom_image_dataset_encodes_image_media_when_requested(
     data_url = "data:image/png;base64,Zm9v"
     remote_url = "https://example.com/chart.png"
     original_fetch_image = datasets_module.fetch_image
+
+    def fail_nvimagecodec_decode(*args, **kwargs):
+        pytest.fail("dataset client-side encoding must fetch through Pillow")
+
+    monkeypatch.setattr(
+        "vllm.multimodal.media.image.decode_images_nvimagecodec",
+        fail_nvimagecodec_decode,
+    )
 
     def fake_fetch_image(image_url: str) -> Image.Image:
         if image_url == remote_url:
