@@ -800,20 +800,20 @@ modes that cannot be represented as RGB or RGBA. This preserves vLLM's
 existing image-mode, alpha-compositing, EXIF-orientation, and first-frame
 behavior.
 
-nvImageCodec is an optional dependency. On x86-64, install the extra that
-matches the CUDA major used by the vLLM wheel:
+nvImageCodec is an optional dependency. This integration is currently
+validated on x86-64 with CUDA 12 and CUDA 13. Install the extra that matches
+the CUDA major used by the vLLM wheel:
 
 ```bash
 uv pip install 'vllm[nvimagecodec]'
 ```
 
-Generic Arm wheels do not install an nvImageCodec distribution automatically,
-because the same Python wheel tag covers two incompatible NVIDIA package
-families. Install `nvidia-nvimgcodec-cu12[all]` or
-`nvidia-nvimgcodec-cu13[all]` on an SBSA system, and
-`nvidia-nvimgcodec-tegra-cu12[all]` on a supported Tegra system. Follow the
-[nvImageCodec installation guide](https://docs.nvidia.com/cuda/nvimagecodec/installation.html)
-for the platform and CUDA versions supported by each package.
+Arm support is deferred until vLLM has decode smoke coverage for SBSA and
+Tegra across their supported CUDA versions. Generic Arm wheels therefore do
+not install an nvImageCodec distribution, and the backend is not currently a
+supported vLLM configuration on Arm. NVIDIA publishes different nvImageCodec
+package families for SBSA and Tegra under the same generic Python architecture
+tag, so selecting one automatically would be unsafe.
 
 !!! warning
     Configure [CUDA Multi-Process Service
@@ -899,9 +899,11 @@ In an A100 decode-bottleneck sweep, `0.25` ms was the best tested high-QPS
 setting for both 1080p and 4K JPEGs. Keep the zero default when minimizing
 low-QPS latency is more important, and retune for the deployment workload.
 
-Pending encoded inputs and admission waiters are bounded. When both bounds are
-full, the backend returns an overload error instead of growing frontend memory
-without limit.
+Active decode entries and their owned encoded bytes are bounded. An
+asynchronous request beyond those bounds parks in FIFO order before fetching or
+owning encoded image bytes, then resumes when capacity is available. These
+lightweight pre-fetch waiters are not capped. Synchronous submission cannot
+park its caller and instead returns an overload error when admission is full.
 
 With `pipeline_depth=1`, each decoded image follows the original synchronous
 pageable-host copy path. At depth two or greater, GPU batches use pinned host

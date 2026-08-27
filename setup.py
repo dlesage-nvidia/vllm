@@ -1361,8 +1361,8 @@ def get_nvimagecodec_requirements() -> list[str]:
     import platform
 
     # A generic aarch64 wheel cannot distinguish SBSA from Tegra, which use
-    # different nvImageCodec distributions. Arm users install the appropriate
-    # NVIDIA package explicitly as documented in multimodal_inputs.md.
+    # different nvImageCodec distributions. Keep Arm disabled until vLLM has
+    # a platform-specific package and decode smoke-test matrix.
     if platform.machine() not in ("x86_64", "AMD64"):
         return []
 

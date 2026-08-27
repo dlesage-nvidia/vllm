@@ -143,17 +143,32 @@ The ring does not make the current Pillow-output adapter saturate A100 NVJPG.
 Scaling the same depth-four workload to six decoder workers reached 890.9
 images/s and 41.2% mean NVJPG at 1080p. Eight workers reached 416.1 images/s
 and 48.6% mean NVJPG at 4K. A standalone nvImageCodec probe that reused GPU
-outputs reached 2824.1 images/s and 96.8% mean NVJPG at 1080p, and 809.3
-images/s and 91.0% at 4K. Increasing the vLLM native batch ceiling from five
-to 32 did not improve throughput at either resolution, so larger native calls
-alone do not close the gap. Device-to-host transfer, Pillow materialization,
-and request feeding remain contributors to the hardware-idle intervals.
-Removing that CPU-image contract remains a separate change.
+outputs and preallocated their storage was repeated with one explicit CUDA
+stream. It reached 2800.7 ± 5.9 images/s and 96.10% mean NVJPG on A100, and
+3497.4 ± 3.5 images/s and 98.90% on RTX PRO 6000, at 1080p. An earlier A100
+4K probe reached 809.3 images/s and 91.0% mean NVJPG. This proves the hardware
+and library can remain nearly saturated without multiple explicit streams.
+Increasing the vLLM native batch ceiling from five to 32 did not improve
+throughput at either resolution, so larger native calls alone do not close the
+adapter gap. Device-to-host transfer, Pillow materialization, and request
+feeding remain contributors to the hardware-idle intervals. Removing that
+CPU-image contract remains a separate change.
 
-The final end-to-end run used one image per request, output length 128,
-concurrency 16, 256 measured requests after 48 warmup requests, and a fresh
-Qwen3-VL-2B server for every cell. Three counterbalanced repetitions produced
-the following means ± sample standard deviation:
+An isolated one-decoder, native-width-five, depth-four-equivalent probe then
+compared fresh native outputs with nvImageCodec output-image reuse. Reuse
+improved throughput by 23.16% ± 0.15% at 1080p and 16.05% ± 1.95% at 4K on
+A100, and by 2.81% ± 0.06% and 2.53% ± 0.04% on RTX PRO 6000. Peak device
+memory was unchanged because the fresh path reached the same high-water mark,
+while reuse raised mean resident memory by 10-57 MiB across the four cells.
+All pixel and progressive-negative controls passed. This GPU-only probe proves
+the optimization is promising, but it does not include host transfer or Pillow
+materialization and cannot supply the retained-memory ownership policy required
+by the serving adapter.
+
+An earlier ring-isolation end-to-end run used one image per request, output
+length 128, concurrency 16, 256 measured requests after 48 warmup requests,
+and a fresh Qwen3-VL-2B server for every cell. Three counterbalanced
+repetitions produced the following means ± sample standard deviation:
 
 | Resolution | Variant | Requests/s | Mean latency | CPU cores | NVJPG mean |
 | ---------- | ------- | ---------: | -----------: | --------: | -----------: |
@@ -173,6 +188,43 @@ sustained backlog that made depth four effective in decode-only testing. Input
 ordering and prompt/completion token counts matched across variants. Generated
 text hashes were diagnostic rather than equivalent; pixel fidelity is covered
 by the dedicated CUDA decoder suite.
+
+The latest matched campaign then tested the selected two-decoder, native-width-
+five, depth-four configuration at higher concurrency. Decode-only used a fresh
+direct CUDA context for every cell. Values are means ± sample standard
+deviation over three repetitions:
+
+| GPU | Resolution / concurrency | Pillow | nvImageCodec | Paired change | NVJPG mean |
+| --- | --- | ---: | ---: | ---: | ---: |
+| A100 | 1920x1080 / c512 | 489.33 ± 2.13 images/s | 523.35 ± 17.30 images/s | +6.95% ± 3.20% | 24.07% |
+| A100 | 3840x2160 / c1024 | 142.15 ± 0.73 images/s | 191.25 ± 2.34 images/s | +34.54% ± 1.93% | 22.30% |
+| RTX PRO 6000 | 1920x1080 / c128 | 719.49 ± 6.77 images/s | 631.87 ± 76.87 images/s | -12.19% ± 10.46% | 27.10% |
+| RTX PRO 6000 | 3840x2160 / c1024 | 191.79 ± 1.10 images/s | 185.86 ± 17.30 images/s | -3.09% ± 9.04% | 25.76% |
+
+All 96 decode cells passed source, correctness, fallback, lease, and service-
+accounting checks. The RTX nvImageCodec results remained bimodal even with MPS
+bypassed, unchanged clocks, and no throttle reason, so those throughput means
+are diagnostic rather than a publication-grade speedup claim. The A100 gains
+were stable. In the displayed A100 cells, nvImageCodec used 1.85-1.96 CPU cores
+versus 6.05-6.29 for Pillow.
+
+The stable matched inference campaign used Qwen3-VL-2B, one image per request,
+output length 128, concurrency 256, and 12,288 measured requests per
+resolution/backend group:
+
+| GPU | Resolution | Pillow | nvImageCodec | Paired change | CPU cores, Pillow → nvImageCodec | NVJPG mean |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| A100 | 1920x1080 | 45.52 ± 0.62 requests/s | 48.78 ± 0.25 requests/s | +7.18% ± 1.69% | 2.529 → 2.254 | 3.63% |
+| A100 | 3840x2160 | 19.46 ± 0.14 requests/s | 20.84 ± 0.10 requests/s | +7.10% ± 1.26% | 2.693 → 2.354 | 10.28% |
+| RTX PRO 6000 | 1920x1080 | 69.68 ± 0.33 requests/s | 71.70 ± 0.06 requests/s | +2.91% ± 0.56% | 2.716 → 2.415 | 5.47% |
+| RTX PRO 6000 | 3840x2160 | 29.53 ± 0.15 requests/s | 31.86 ± 0.54 requests/s | +7.89% ± 2.22% | 2.852 → 2.386 | 9.81% |
+
+All 24 inference cells and cross-variant request, image-order, prompt-token, and
+completion-token invariants passed. The nvImageCodec service had zero fallback
+or accounting gaps. The process-memory snapshot overhead relative to Pillow
+was 0.79 GiB and 1.55 GiB on A100, and 0.97 GiB and 1.79 GiB on RTX PRO 6000,
+at 1080p and 4K respectively; these are post-run compute-process snapshots, not
+peak allocations.
 
 ## Review Disposition
 
@@ -227,19 +279,16 @@ by the dedicated CUDA decoder suite.
    filtering, and async tracker interleaving of pending and callable items.
    Assert the original exception object and original request position survive.
 
-8. **Make dependency behavior explicit on Arm.** Version `0.9.0.20` and its
-   `[all]` plugin wheels have SBSA `aarch64` artifacts for CUDA 12 and CUDA 13.
-   [NVIDIA's installation guide](https://docs.nvidia.com/cuda/nvimagecodec/installation.html)
-   documents a different `nvidia-nvimgcodec-tegra-cu12` package for Tegra,
-   however, while vLLM's Arm release matrix includes Orin and Thor. A generic
-   `aarch64` wheel tag cannot distinguish those platforms. The recommended
-   policy is to remove nvImageCodec from unconditional `install_requires` and
-   require an explicit platform-appropriate `[all]` installation when the
-   backend is enabled. Official images may install it only where their target is
-   known. At minimum, never pull the generic SBSA package automatically from a
-   generic aarch64 vLLM wheel. Add resolution, import, and decode smoke tests for
-   x86-64 and SBSA on both CUDA majors, plus an explicit Tegra image/runtime
-   gate. Do not treat a generic Arm container build as Tegra validation.
+8. **Make dependency behavior explicit on Arm.** Resolved by scoping the
+   current integration to x86-64 CUDA 12 and CUDA 13. Version `0.9.0.20` has
+   SBSA `aarch64` wheels while NVIDIA documents a different
+   `nvidia-nvimgcodec-tegra-cu12` family for Tegra; the generic architecture
+   tag cannot distinguish them. The optional extra and official test image
+   therefore install nvImageCodec only on x86-64, and the user documentation
+   marks Arm unsupported. Enabling SBSA or Tegra is a follow-up that requires
+   platform-specific package resolution plus mandatory import and decode smoke
+   tests on each supported CUDA version. A generic Arm container build is not
+   Tegra validation.
 
 9. **Test HTJ2K through the production gate.** The CUDA test currently skips
    native HTJ2K when Pillow lacks its JPEG 2000 pixel decoder, even though the
@@ -271,6 +320,7 @@ by the dedicated CUDA decoder suite.
 | Share image and video decoder slots | Reject. The resource types, factories, configuration, invalidation, and retained memory are different. A generic implementation helper can be a later refactor, without sharing slots or capacity. |
 | Fall back when one image exceeds the configured GPU pool | Keep the current hard admission error. The operator explicitly chose an insufficient budget; silently using Pillow would hide capacity misconfiguration. Coalescing must isolate the error to that request. |
 | Shorten the GPU lease | Implemented for multi-chunk depth-two-or-greater ring execution in the fourth, independently revertible change. An event proves the pinned copy complete before device images and DLPack views are dropped and the lease is released. The depth-one and single-chunk synchronous path remains the exact no-ring baseline and is tracked below. |
+| Reuse native output images | Separate optimization PR. The isolated batch-five/depth-four-equivalent A/B improved A100 throughput by 16-23% and RTX throughput by 2.5-2.8%, so it is worth pursuing. Reuse retains shape-dependent GPU buffers at each ring position outside the current per-call raster lease; safe integration needs explicit high-water accounting, mixed-resolution growth and eviction policy, and cancellation tests. |
 | Avoid both Pillow and nvImageCodec header parsing | Defer. Pillow supplies animation, transparency, EXIF, and source metadata that `CodeStream` does not. Measured header work is small relative to raster transfer. |
 | Group every native call by exact codec | Benchmark first. It can fragment batches and has no effect on the all-JPEG target workload. Cross-request v1 deliberately queues only JPEG. |
 | Merge the GPU and CPU chunk loops | Reject for now. Their memory leases, fallback behavior, and failure handling differ, and combined CPU/GPU decoder use has deadlocked. |
@@ -287,26 +337,26 @@ it is either implemented with evidence or moved to the decision table above.
 
 ### Before Final Review of This Change
 
-- [ ] Finish matched A100 and RTX PRO 6000 decode-only and OSL-128 inference
+- [x] Finish matched A100 and RTX PRO 6000 decode-only and OSL-128 inference
   measurements at 1080p and 4K. Report throughput, server-plus-MPS CPU use,
   NVJPG utilization, and exact service accounting from fresh-process runs.
-- [ ] A/B-test the decoder's `max_num_cpu_threads` setting at one, two, and four
+- [x] A/B-test the decoder's `max_num_cpu_threads` setting at one, two, and four
   threads, capped to avoid oversubscribing the API server. NVIDIA's
   [DataLoader sample](https://docs.nvidia.com/cuda/nvimagecodec/samples/torch_dataloader.html)
-  gives a batched decoder multiple CPU threads for parsing and dispatch, but
-  this change should retain one unless the serving benchmarks show a repeatable
-  throughput benefit without a material CPU or memory regression.
-- [ ] Benchmark reusable native output images with the bounded ring, following
-  NVIDIA's
-  [resource-reuse sample](https://docs.nvidia.com/cuda/nvimagecodec/samples/reuse_resources.html).
-  Record allocation savings, retained GPU memory, cancellation behavior, and
-  mixed-resolution growth before deciding whether it is safe for this change
-  or belongs in a follow-up PR.
-- [ ] Re-run a multi-wave CUDA ring stress with more than `pipeline_depth`
-  back-to-back chunks, mixed resolutions, and cancellation after the final
-  tuning choice. Prove that native-image and DLPack lifetimes remain valid and
-  that service-owned encoded bytes, raster leases, pinned staging buffers, and
-  parked request metadata remain within their separate bounds.
+  gives a batched decoder multiple CPU threads for parsing and dispatch. On
+  both A100 and RTX PRO 6000, the first one-decoder/two-helper cell failed to
+  make forward progress: one helper spun at a full CPU core while the GPU
+  remained idle, and the campaigns had to be interrupted. Retain one helper
+  thread per decoder and do not expose this unsafe setting.
+- [x] Re-run a multi-wave CUDA ring stress after the final tuning choice. The
+  real-library test now runs 32 JPEGs at three resolutions as seven native
+  chunks through a depth-four ring, repeats that sequence eight times, checks
+  ordered Pillow parity, and returns every raster lease after each wave. It
+  passes on A100 and RTX PRO 6000. Deterministic service tests separately cover
+  cancellation, FIFO handoff, encoded-byte accounting, pinned-buffer lifetime,
+  and cleanup after every injected ring failure. Lightweight pre-fetch request
+  waiters are intentionally allowed to park without owning encoded bytes; their
+  count is not part of the bounded active-decode tiers.
 
 ### Separate Optimization PRs
 
@@ -315,9 +365,10 @@ it is either implemented with evidence or moved to the decision table above.
   [CV-CUDA interop pattern](https://docs.nvidia.com/cuda/nvimagecodec/samples/cvcuda_sample.html).
   This intentionally changes the downstream media contract and is not part of
   the batching/ring change.
-- [ ] If native output-image reuse is not included above, add it with explicit
-  per-slot retained-memory accounting and a policy for buffers that grew for an
-  unusually large image.
+- [ ] Add native output-image reuse, following NVIDIA's
+  [resource-reuse sample](https://docs.nvidia.com/cuda/nvimagecodec/samples/reuse_resources.html),
+  with explicit per-slot retained-memory accounting and a policy for buffers
+  that grew for an unusually large image.
 - [ ] Revisit duplicate Pillow and `CodeStream` header parsing only after real
   fixtures prove equivalent EXIF, animation, transparency, CMYK/YCCK, and
   malformed-input behavior.
@@ -352,6 +403,8 @@ it is either implemented with evidence or moved to the decision table above.
   depth remain independently measured resources.
 - [x] Isolate both standalone image and video helpers from the server-only
   nvImageCodec environment default.
+- [x] Route JPEG-sequence video frames through synchronous and asynchronous
+  service admission without parking the shared media executor during decode.
 - [x] Exercise palette PNG `tRNS` expansion and EXIF orientation through the
   real nvImageCodec library, in addition to fake-backend control-flow tests.
 - [x] Restore and measure the default Pillow eight-image path against the exact
