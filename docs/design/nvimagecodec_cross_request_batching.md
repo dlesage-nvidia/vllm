@@ -326,6 +326,8 @@ peak allocations.
 | Fall back when one image exceeds the configured GPU pool | Keep the current hard admission error. The operator explicitly chose an insufficient budget; silently using Pillow would hide capacity misconfiguration. Coalescing must isolate the error to that request. |
 | Shorten the GPU lease | Implemented for multi-chunk depth-two-or-greater ring execution in the fourth, independently revertible change. An event proves the pinned copy complete before device images and DLPack views are dropped and the lease is released. The depth-one and single-chunk synchronous path remains the exact no-ring baseline and is tracked below. |
 | Reuse native output images | Separate optimization PR. The isolated batch-five/depth-four-equivalent A/B improved A100 throughput by 16-23% and RTX throughput by 2.5-2.8%, so it is worth pursuing. Reuse retains shape-dependent GPU buffers at each ring position outside the current per-call raster lease; safe integration needs explicit high-water accounting, mixed-resolution growth and eviction policy, and cancellation tests. |
+| Raise `max_num_cpu_threads` above one | Reject for this library version. A local GPU without a usable hardware-only path benefited in an isolated hybrid-backend probe, but the first two-thread cells on both A100 and RTX PRO 6000 stopped making forward progress with the GPU idle. Retain one helper per decoder until a library update or a reduced reproducer resolves that failure. |
+| Raise or arbitrarily cap the decoder count | Keep two as the product default and leave the validator resource-accounted rather than imposing an unevidenced ceiling. Exploratory A100 decode-only sweeps peaked at eight decoders for 1080p and ten for 4K, but consumed substantially more CPU and GPU memory. Revisit the default after host materialization and worker-claim partitioning change the bottleneck. |
 | Avoid both Pillow and nvImageCodec header parsing | Defer. Pillow supplies animation, transparency, EXIF, and source metadata that `CodeStream` does not. Measured header work is small relative to raster transfer. |
 | Group every native call by exact codec | Benchmark first. It can fragment batches and has no effect on the all-JPEG target workload. Cross-request v1 deliberately queues only JPEG. |
 | Merge the GPU and CPU chunk loops | Reject for now. Their memory leases, fallback behavior, and failure handling differ, and combined CPU/GPU decoder use has deadlocked. |
@@ -404,6 +406,26 @@ it is either implemented with evidence or moved to the decision table above.
 - [ ] Mechanically deduplicate the two ring-refill loops. Consider collapsing
   the legacy and pipelined GPU conversion paths only after rebenchmarking
   single-chunk staging and preserving the depth-one revert lever.
+- [ ] Prototype a Pillow-free CPU-array output for the semantically simple
+  JPEG/RGB path in a separate PR. A local materialization microbenchmark shows
+  that it can remove two full-raster host copies, but it is not a contract-free
+  change: image/video hashing must distinguish 3-D and 4-D arrays, every
+  cancellation and cleanup owner must tolerate arrays without `close()`, and
+  model-specific processors that require Pillow need a capability-gated
+  fallback. Re-run decode-only and inference A/Bs on both A100 and RTX rather
+  than transferring absolute results from a GPU without hardware-only decode.
+- [ ] Partition a synchronized ready queue across currently idle decoder
+  workers while retaining full native batches, FIFO ownership, and the
+  per-worker ring bound. Benchmark burst and steady/Poisson arrivals; do not
+  change the claim policy from a latency-only microbenchmark.
+- [ ] Investigate whether nvImageCodec exposes reliable attribution for the
+  backend that actually decoded a batch. Log it once per retained decoder slot
+  if the API supports that without synchronizing or decoding twice; configured
+  backend order alone is not resolved-backend observability.
+- [ ] Measure Pillow's process-global block cache only if the Pillow-returning
+  path remains after the CPU-array experiment. Any change needs a process-wide
+  memory bound and Pillow-baseline tests because it affects more than the
+  nvImageCodec backend.
 
 ### Reviewed and Already Accounted For
 
