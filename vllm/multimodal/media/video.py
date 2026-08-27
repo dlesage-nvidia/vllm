@@ -220,7 +220,9 @@ class VideoMediaIO(MediaIO[MediaWithBytes[tuple[npt.NDArray, dict[str, Any]]]]):
                 executor, self.load_base64, media_type, data
             )
 
-        frame_count = self._jpeg_sequence_frame_count(data)
+        frame_count = await loop.run_in_executor(
+            executor, self._jpeg_sequence_frame_count, data
+        )
         async with reserve_image_decode_request_async(self.image_io, frame_count):
             frame_bytes = await loop.run_in_executor(
                 executor, self._decode_jpeg_sequence_base64, data

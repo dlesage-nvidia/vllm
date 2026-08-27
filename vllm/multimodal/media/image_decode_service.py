@@ -11,7 +11,7 @@ import os
 import threading
 import time
 from collections import Counter, deque
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from functools import partial
@@ -184,12 +184,12 @@ def _drain_asyncio_future(future: asyncio.Future[Any]) -> None:
         future.exception()
 
 
-def _indexed_error(error: BaseException) -> tuple[int, BaseException] | None:
-    index = getattr(error, "index", None)
-    cause = getattr(error, "error", None)
-    if isinstance(index, int) and isinstance(cause, BaseException):
-        return index, cause
-    return None
+def _indexed_error(error: BaseException) -> tuple[int, Exception] | None:
+    from .image import ImageBatchItemError
+
+    if not isinstance(error, ImageBatchItemError):
+        return None
+    return error.index, error.error
 
 
 def _is_jpeg(data: bytes) -> bool:
@@ -297,11 +297,11 @@ class NvImageCodecDecodeService:
                 raise RuntimeError("nvImageCodec decode service is shutting down")
             if item_count <= 0:
                 raise ValueError("nvImageCodec request item count must be positive")
-            if item_count > self.config.max_pending_items:
-                raise NvImageCodecQueueFullError(
-                    "nvImageCodec request exceeds one admission tier"
-                )
-            ticket = _AsyncRequestTicket(item_count=item_count, ready=Future())
+            # Large logical requests are segmented into bounded service jobs.
+            # Charge one full pre-fetch tier so they park without becoming a
+            # permanent admission failure.
+            admission_weight = min(item_count, self.config.max_pending_items)
+            ticket = _AsyncRequestTicket(item_count=admission_weight, ready=Future())
             self._async_request_waiters.append(ticket)
             self._grant_async_requests_locked()
             return ticket
@@ -966,12 +966,63 @@ def get_nvimagecodec_decode_service(
         return _decode_service
 
 
+def _iter_bounded_request_chunks(
+    encoded_images: Sequence[bytes],
+    config: ImageDecodeServiceConfig,
+) -> Iterator[tuple[int, tuple[bytes, ...]]]:
+    chunk: list[bytes] = []
+    chunk_bytes = 0
+    chunk_offset = 0
+    for index, encoded in enumerate(encoded_images):
+        encoded_bytes = len(encoded)
+        if encoded_bytes > config.max_pending_encoded_bytes:
+            raise NvImageCodecQueueFullError(
+                "one encoded image exceeds the nvImageCodec admission byte tier"
+            )
+        if chunk and (
+            len(chunk) >= config.max_pending_items
+            or chunk_bytes + encoded_bytes > config.max_pending_encoded_bytes
+        ):
+            yield chunk_offset, tuple(chunk)
+            chunk = []
+            chunk_bytes = 0
+            chunk_offset = index
+        chunk.append(encoded)
+        chunk_bytes += encoded_bytes
+    if chunk:
+        yield chunk_offset, tuple(chunk)
+
+
+def _offset_indexed_error(error: BaseException, offset: int) -> BaseException:
+    indexed = _indexed_error(error)
+    if indexed is None:
+        return error
+    from .image import ImageBatchItemError
+
+    return ImageBatchItemError(offset + indexed[0], indexed[1])
+
+
 def load_images_with_service(
     image_io: ImageMediaIO,
     encoded_images: list[bytes] | tuple[bytes, ...],
 ) -> list[MediaWithBytes[Image.Image]]:
     service = get_nvimagecodec_decode_service(image_io)
-    return service.submit(image_io, encoded_images).result()
+    results: list[MediaWithBytes[Image.Image]] = []
+    try:
+        for offset, chunk in _iter_bounded_request_chunks(
+            encoded_images, service.config
+        ):
+            try:
+                results.extend(service.submit(image_io, chunk).result())
+            except BaseException as error:
+                mapped = _offset_indexed_error(error, offset)
+                if mapped is error:
+                    raise
+                raise mapped from error
+    except BaseException:
+        _close_loaded_images(results)
+        raise
+    return results
 
 
 async def load_images_with_service_async(
@@ -979,7 +1030,22 @@ async def load_images_with_service_async(
     encoded_images: list[bytes] | tuple[bytes, ...],
 ) -> list[MediaWithBytes[Image.Image]]:
     service = get_nvimagecodec_decode_service(image_io)
-    return await service.submit_async(image_io, encoded_images)
+    results: list[MediaWithBytes[Image.Image]] = []
+    try:
+        for offset, chunk in _iter_bounded_request_chunks(
+            encoded_images, service.config
+        ):
+            try:
+                results.extend(await service.submit_async(image_io, chunk))
+            except BaseException as error:
+                mapped = _offset_indexed_error(error, offset)
+                if mapped is error:
+                    raise
+                raise mapped from error
+    except BaseException:
+        _close_loaded_images(results)
+        raise
+    return results
 
 
 @contextlib.asynccontextmanager

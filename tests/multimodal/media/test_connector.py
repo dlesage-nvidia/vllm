@@ -29,6 +29,7 @@ from vllm.multimodal.media import (
     MediaBatchError,
     MediaConnector,
     MediaWithBytes,
+    VideoMediaIO,
 )
 from vllm.multimodal.media.image_decode_service import (
     get_nvimagecodec_decode_service_stats,
@@ -117,6 +118,67 @@ async def test_fetch_images_nvimagecodec_decodes_request_as_one_batch(monkeypatc
         (255, 0, 0),
         (0, 255, 0),
     ]
+
+
+@pytest.mark.asyncio
+async def test_nvimagecodec_segments_large_request_before_fetch(monkeypatch):
+    shutdown_nvimagecodec_decode_service()
+    image_urls = [f"image-{index}" for index in range(9)]
+    fetched = 0
+    decode_fetch_counts: list[int] = []
+
+    def load_bytes_many(self, items):
+        decode_fetch_counts.append(fetched)
+        return [MediaWithBytes(Image.new("RGB", (1, 1)), item) for item in items]
+
+    monkeypatch.setattr(ImageMediaIO, "load_bytes_many", load_bytes_many)
+    connector = MediaConnector(
+        media_io_kwargs={
+            "image": {
+                "backend": "nvimagecodec",
+                "decoders": 1,
+                "batch_size": 1,
+                "pipeline_depth": 1,
+                "coalesce_timeout_ms": 0,
+            }
+        }
+    )
+
+    def load_from_url(url, media_io, *, fetch_timeout):
+        nonlocal fetched
+        fetched += 1
+        return url.encode()
+
+    async def load_from_url_async(url, media_io, *, fetch_timeout):
+        nonlocal fetched
+        fetched += 1
+        return url.encode()
+
+    monkeypatch.setattr(connector, "load_from_url", load_from_url)
+    monkeypatch.setattr(connector, "load_from_url_async", load_from_url_async)
+
+    try:
+        sync_images = connector.fetch_images(image_urls)
+        assert decode_fetch_counts == [4, 8, 9]
+        assert [item.original_bytes for item in sync_images] == [
+            url.encode() for url in image_urls
+        ]
+        for item in sync_images:
+            item.media.close()
+
+        shutdown_nvimagecodec_decode_service()
+        fetched = 0
+        decode_fetch_counts.clear()
+
+        async_images = await connector.fetch_images_async(image_urls)
+        assert decode_fetch_counts == [4, 8, 9]
+        assert [item.original_bytes for item in async_images] == [
+            url.encode() for url in image_urls
+        ]
+        for item in async_images:
+            item.media.close()
+    finally:
+        shutdown_nvimagecodec_decode_service()
 
 
 @pytest.mark.asyncio
@@ -556,6 +618,34 @@ async def test_fetch_image_data_url_with_params():
     image_sync = connector.fetch_image(data_url)
     image_async = await connector.fetch_image_async(data_url)
     assert _image_equals(image_sync, image_async)
+
+
+@pytest.mark.asyncio
+async def test_fetch_video_data_url_parsing_runs_off_event_loop(monkeypatch):
+    event_loop_thread = threading.get_ident()
+    parse_threads: list[int] = []
+    original_parse = MediaConnector._parse_data_url
+
+    def recording_parse(self, url):
+        parse_threads.append(threading.get_ident())
+        return original_parse(self, url)
+
+    sentinel = object()
+
+    async def fake_load_base64_async(self, media_type, data, *, executor):
+        assert self.image_io.backend == "pillow"
+        assert media_type == "video/jpeg"
+        assert data == "Zm9v"
+        return sentinel
+
+    monkeypatch.setattr(MediaConnector, "_parse_data_url", recording_parse)
+    monkeypatch.setattr(VideoMediaIO, "load_base64_async", fake_load_base64_async)
+
+    result = await MediaConnector().fetch_video_async("data:video/jpeg;base64,Zm9v")
+
+    assert result is sentinel
+    assert len(parse_threads) == 1
+    assert parse_threads[0] != event_loop_thread
 
 
 def test_fetch_image_data_url_malformed():

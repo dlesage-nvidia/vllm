@@ -3,6 +3,9 @@
 import binascii
 import io
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -20,6 +23,9 @@ from vllm.assets.video import (
     video_to_pil_images_list,
 )
 from vllm.multimodal.media import ImageMediaIO, MediaWithBytes, VideoMediaIO
+from vllm.multimodal.media.image_decode_service import (
+    shutdown_nvimagecodec_decode_service,
+)
 from vllm.multimodal.video import (
     PYNVVIDEOCODEC_VIDEO_BACKEND,
     VIDEO_LOADER_REGISTRY,
@@ -378,6 +384,88 @@ def test_load_base64_jpeg_nvimagecodec_uses_decode_service(monkeypatch):
             {"backend": "nvimagecodec"},
         ]
     }
+
+
+@pytest.mark.asyncio
+async def test_nvimagecodec_large_jpeg_sequence_is_segmented(monkeypatch):
+    shutdown_nvimagecodec_decode_service()
+    b64_frames = _make_jpeg_b64_frames(9)
+    calls: list[list[bytes]] = []
+    imageio = ImageMediaIO(
+        backend="nvimagecodec",
+        decoders=1,
+        batch_size=1,
+        pipeline_depth=1,
+        coalesce_timeout_ms=0,
+    )
+
+    def load_bytes_many(items):
+        calls.append(list(items))
+        return [
+            MediaWithBytes(Image.open(io.BytesIO(item)).copy(), item) for item in items
+        ]
+
+    monkeypatch.setattr(imageio, "load_bytes_many", load_bytes_many)
+    videoio = VideoMediaIO(imageio, num_frames=9)
+    data = ",".join(b64_frames)
+
+    try:
+        sync_loaded = videoio.load_base64("video/jpeg", data)
+        assert [len(call) for call in calls] == [4, 4, 1]
+        assert sync_loaded.media[0].shape == (9, 8, 8, 3)
+
+        shutdown_nvimagecodec_decode_service()
+        calls.clear()
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            async_loaded = await videoio.load_base64_async(
+                "video/jpeg", data, executor=executor
+            )
+        assert [len(call) for call in calls] == [4, 4, 1]
+        assert async_loaded.media[0].shape == (9, 8, 8, 3)
+    finally:
+        shutdown_nvimagecodec_decode_service()
+
+
+@pytest.mark.asyncio
+async def test_load_base64_jpeg_nvimagecodec_counts_frames_off_event_loop(
+    monkeypatch,
+):
+    event_loop_thread = threading.get_ident()
+    count_threads: list[int] = []
+    data = ",".join(_make_jpeg_b64_frames(2))
+    videoio = VideoMediaIO(ImageMediaIO(backend="nvimagecodec"), num_frames=2)
+    original_count = videoio._jpeg_sequence_frame_count
+
+    def recording_count(data):
+        count_threads.append(threading.get_ident())
+        return original_count(data)
+
+    @asynccontextmanager
+    async def reserve_request(image_io, item_count):
+        assert image_io is videoio.image_io
+        assert item_count == 2
+        yield
+
+    async def load_with_service(image_io, items):
+        assert image_io is videoio.image_io
+        return [
+            MediaWithBytes(Image.open(io.BytesIO(item)).copy(), item) for item in items
+        ]
+
+    monkeypatch.setattr(videoio, "_jpeg_sequence_frame_count", recording_count)
+    monkeypatch.setattr(
+        video_module, "reserve_image_decode_request_async", reserve_request
+    )
+    monkeypatch.setattr(
+        video_module, "load_images_with_service_async", load_with_service
+    )
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        loaded = await videoio.load_base64_async("video/jpeg", data, executor=executor)
+
+    assert loaded.media[0].shape == (2, 8, 8, 3)
+    assert len(count_threads) == 1
+    assert count_threads[0] != event_loop_thread
 
 
 def test_load_base64_jpeg_strictly_decodes_only_selected_frames():

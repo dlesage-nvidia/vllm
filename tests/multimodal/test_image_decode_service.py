@@ -12,6 +12,7 @@ from PIL import Image
 
 import vllm.multimodal.image_decoders.nvimagecodec as nvimagecodec
 import vllm.multimodal.media.image_decode_service as image_decode_service
+from vllm.multimodal.media import ImageBatchItemError
 from vllm.multimodal.media.base import MediaWithBytes
 from vllm.multimodal.media.image_decode_service import (
     ImageDecodeServiceConfig,
@@ -20,6 +21,7 @@ from vllm.multimodal.media.image_decode_service import (
     acquire_nvimagecodec_decode_service_lease,
     get_nvimagecodec_decode_service,
     get_nvimagecodec_decode_service_stats,
+    load_images_with_service,
     load_images_with_service_async,
     release_nvimagecodec_decode_service_lease,
     shutdown_nvimagecodec_decode_service,
@@ -51,13 +53,6 @@ class _FakeImageIO:
 
     def load_bytes_many(self, encoded_images):
         return self._load(list(encoded_images))
-
-
-class _IndexedError(ValueError):
-    def __init__(self, index: int, error: Exception) -> None:
-        super().__init__(str(error))
-        self.index = index
-        self.error = error
 
 
 def _result(data: bytes) -> MediaWithBytes[Image.Image]:
@@ -165,7 +160,7 @@ def test_indexed_failure_does_not_poison_other_requests():
     def load(items: list[bytes]):
         calls.append(items)
         if bad in items:
-            raise _IndexedError(items.index(bad), original)
+            raise ImageBatchItemError(items.index(bad), original)
         return [_result(item) for item in items]
 
     image_io = _FakeImageIO(load)
@@ -184,6 +179,28 @@ def test_indexed_failure_does_not_poison_other_requests():
         encoded[3:]
     )
     assert calls == [encoded, encoded[:2] + encoded[3:]]
+
+
+def test_systemic_failure_with_index_attributes_is_not_retried():
+    calls: list[list[bytes]] = []
+    original = MemoryError("host allocation failed")
+    original.index = 2  # type: ignore[attr-defined]
+    original.error = ValueError("not an item error")  # type: ignore[attr-defined]
+
+    def load(items: list[bytes]):
+        calls.append(items)
+        raise original
+
+    image_io = _FakeImageIO(load)
+    encoded = [b"\xff\xd8" + bytes([index]) for index in range(5)]
+    service = get_nvimagecodec_decode_service(image_io)
+    futures = [service.submit(image_io, [item]) for item in encoded]
+
+    for future in futures:
+        with pytest.raises(MemoryError) as exc_info:
+            future.result(timeout=2)
+        assert exc_info.value is original
+    assert calls == [encoded]
 
 
 def test_process_configuration_is_immutable_until_shutdown():
@@ -594,7 +611,7 @@ def test_async_request_gate_rejects_nonpositive_item_count():
 
 
 @pytest.mark.asyncio
-async def test_async_request_larger_than_one_admission_tier_is_rejected():
+async def test_async_service_job_larger_than_one_admission_tier_is_rejected():
     config = ImageDecodeServiceConfig(
         decoders=1,
         batch_size=1,
@@ -617,6 +634,106 @@ async def test_async_request_larger_than_one_admission_tier_is_rejected():
     service.shutdown()
     with pytest.raises(RuntimeError, match="shutting down"):
         await service.submit_async(image_io, [b"too large"])
+
+
+def test_large_logical_request_is_segmented_in_order():
+    calls: list[list[bytes]] = []
+
+    def load(items: list[bytes]):
+        calls.append(items)
+        return [_result(item) for item in items]
+
+    image_io = _FakeImageIO(
+        load,
+        batch_size=1,
+        pipeline_depth=1,
+        coalesce_timeout_ms=0,
+    )
+    encoded = [bytes([index]) for index in range(9)]
+
+    results = load_images_with_service(image_io, encoded)
+
+    assert calls == [encoded[:4], encoded[4:8], encoded[8:]]
+    assert [result.original_bytes for result in results] == encoded
+    for result in results:
+        result.media.close()
+
+
+@pytest.mark.asyncio
+async def test_large_async_logical_request_is_segmented_in_order():
+    calls: list[list[bytes]] = []
+
+    def load(items: list[bytes]):
+        calls.append(items)
+        return [_result(item) for item in items]
+
+    image_io = _FakeImageIO(
+        load,
+        batch_size=1,
+        pipeline_depth=1,
+        coalesce_timeout_ms=0,
+    )
+    encoded = [bytes([index]) for index in range(9)]
+
+    results = await load_images_with_service_async(image_io, encoded)
+
+    assert calls == [encoded[:4], encoded[4:8], encoded[8:]]
+    assert [result.original_bytes for result in results] == encoded
+    for result in results:
+        result.media.close()
+
+
+def test_segmented_request_offsets_item_error_and_closes_prior_results():
+    original = ValueError("bad image")
+    created: list[Image.Image] = []
+
+    def load(items: list[bytes]):
+        if b"bad" in items:
+            raise ImageBatchItemError(items.index(b"bad"), original)
+        results = []
+        for item in items:
+            image = Image.new("RGB", (1, 1))
+            created.append(image)
+            results.append(MediaWithBytes(image, item))
+        return results
+
+    image_io = _FakeImageIO(
+        load,
+        batch_size=1,
+        pipeline_depth=1,
+        coalesce_timeout_ms=0,
+    )
+    encoded = [b"0", b"1", b"2", b"3", b"4", b"bad", b"6"]
+
+    with pytest.raises(ImageBatchItemError) as exc_info:
+        load_images_with_service(image_io, encoded)
+
+    assert exc_info.value.index == 5
+    assert exc_info.value.error is original
+    assert len(created) == 4
+    for image in created:
+        with pytest.raises(ValueError):
+            image.getpixel((0, 0))
+
+
+def test_request_chunks_are_bounded_by_items_and_encoded_bytes():
+    config = ImageDecodeServiceConfig(
+        decoders=1,
+        batch_size=1,
+        pipeline_depth=1,
+        coalesce_timeout_ms=0,
+        max_pending_items=3,
+        max_pending_encoded_bytes=3,
+    )
+
+    assert list(
+        image_decode_service._iter_bounded_request_chunks(
+            [b"aa", b"b", b"cc", b"d"], config
+        )
+    ) == [(0, (b"aa", b"b")), (2, (b"cc", b"d"))]
+
+    with pytest.raises(NvImageCodecQueueFullError, match="one encoded image"):
+        list(image_decode_service._iter_bounded_request_chunks([b"xxxx"], config))
 
 
 @pytest.mark.asyncio
