@@ -472,6 +472,8 @@ class NvImageCodecBackend:
             height = int(code_stream.height)
             precision = int(code_stream.precision)
             num_channels = int(code_stream.num_channels)
+        except MemoryError:
+            raise
         except Exception:
             logger.warning_once(
                 "nvImageCodec could not read image metadata; falling back to Pillow."

@@ -129,29 +129,25 @@ class VideoMediaIO(MediaIO[MediaWithBytes[tuple[npt.NDArray, dict[str, Any]]]]):
             return min(self.num_frames, available_frames)
         return available_frames
 
-    def _decode_jpeg_sequence_base64(self, data: str) -> list[bytes]:
+    def _jpeg_sequence_parts(self, data: str) -> list[str]:
         if self.num_frames > 0:
-            frame_parts = data.split(",", self.num_frames)[: self.num_frames]
+            return data.split(",", self.num_frames)[: self.num_frames]
         elif self.num_frames == 0:
             raise ValueError("num_frames must be greater than 0 or -1")
-        else:
-            frame_parts = data.split(",")
+        return data.split(",")
 
+    def _decode_jpeg_sequence_base64(self, data: str) -> list[bytes]:
         return [
-            pybase64.b64decode(frame_data, validate=True) for frame_data in frame_parts
+            pybase64.b64decode(frame_data, validate=True)
+            for frame_data in self._jpeg_sequence_parts(data)
         ]
 
-    def _finalize_jpeg_sequence(
+    def _build_jpeg_sequence_result(
         self,
         data: str,
-        loaded_frames: list[MediaWithBytes[Image.Image]],
+        frames: npt.NDArray,
+        frame_io_configs: list[dict[str, Any] | None],
     ) -> MediaWithBytes[tuple[npt.NDArray, dict[str, Any]]]:
-        try:
-            frames = np.stack([np.asarray(frame) for frame in loaded_frames])
-            frame_io_configs = [frame.io_config for frame in loaded_frames]
-        finally:
-            _close_loaded_frames(loaded_frames)
-
         total = int(frames.shape[0])
         fps = float(self.kwargs.get("fps", 1))
 
@@ -204,6 +200,36 @@ class VideoMediaIO(MediaIO[MediaWithBytes[tuple[npt.NDArray, dict[str, Any]]]]):
         )
         return MediaWithBytes((frames, metadata), data.encode(), io_config)
 
+    def _finalize_jpeg_sequence(
+        self,
+        data: str,
+        loaded_frames: list[MediaWithBytes[Image.Image]],
+    ) -> MediaWithBytes[tuple[npt.NDArray, dict[str, Any]]]:
+        try:
+            frames = np.stack([np.asarray(frame.media) for frame in loaded_frames])
+            frame_io_configs = [frame.io_config for frame in loaded_frames]
+        finally:
+            _close_loaded_frames(loaded_frames)
+        return self._build_jpeg_sequence_result(data, frames, frame_io_configs)
+
+    def _load_jpeg_sequence_pillow(
+        self, data: str
+    ) -> MediaWithBytes[tuple[npt.NDArray, dict[str, Any]]]:
+        frame_arrays: list[npt.NDArray] = []
+        frame_io_configs: list[dict[str, Any] | None] = []
+        for frame_data in self._jpeg_sequence_parts(data):
+            loaded_frame = self.image_io.load_base64("image/jpeg", frame_data)
+            try:
+                # Copy each frame before closing it so only one Pillow raster
+                # needs to be live in addition to the final NumPy video.
+                frame_arrays.append(np.array(loaded_frame.media, copy=True))
+                frame_io_configs.append(loaded_frame.io_config)
+            finally:
+                loaded_frame.media.close()
+
+        frames = np.stack(frame_arrays)
+        return self._build_jpeg_sequence_result(data, frames, frame_io_configs)
+
     async def load_base64_async(
         self,
         media_type: str,
@@ -228,7 +254,7 @@ class VideoMediaIO(MediaIO[MediaWithBytes[tuple[npt.NDArray, dict[str, Any]]]]):
                 executor, self._decode_jpeg_sequence_base64, data
             )
             loaded_frames = await load_images_with_service_async(
-                self.image_io, frame_bytes
+                self.image_io, frame_bytes, executor=executor
             )
             try:
                 finalizer = loop.run_in_executor(
@@ -252,12 +278,11 @@ class VideoMediaIO(MediaIO[MediaWithBytes[tuple[npt.NDArray, dict[str, Any]]]]):
         self, media_type: str, data: str
     ) -> MediaWithBytes[tuple[npt.NDArray, dict[str, Any]]]:
         if media_type.lower() == "video/jpeg":
-            frame_bytes = self._decode_jpeg_sequence_base64(data)
             if self.image_io.backend == NVIMAGECODEC_IMAGE_BACKEND:
+                frame_bytes = self._decode_jpeg_sequence_base64(data)
                 loaded_frames = load_images_with_service(self.image_io, frame_bytes)
-            else:
-                loaded_frames = self.image_io.load_bytes_many(frame_bytes)
-            return self._finalize_jpeg_sequence(data, loaded_frames)
+                return self._finalize_jpeg_sequence(data, loaded_frames)
+            return self._load_jpeg_sequence_pillow(data)
 
         return self.load_bytes(pybase64.b64decode(data))
 

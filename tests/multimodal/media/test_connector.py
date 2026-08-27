@@ -347,7 +347,8 @@ async def test_nvimagecodec_scalar_super_delegation_does_not_recurse(monkeypatch
             MediaWithBytes(Image.new("RGB", (1, 1)), item) for item in encoded_images
         ]
 
-    async def fake_load_images_async(image_io, encoded_images):
+    async def fake_load_images_async(image_io, encoded_images, *, executor):
+        assert executor is connector_module.global_thread_pool
         async_batches.append(list(encoded_images))
         return [
             MediaWithBytes(Image.new("RGB", (1, 1)), item) for item in encoded_images

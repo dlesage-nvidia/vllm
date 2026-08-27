@@ -4,7 +4,9 @@
 import asyncio
 import json
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -239,6 +241,48 @@ def test_image_normalization_memory_error_is_not_retried(monkeypatch):
             future.result(timeout=2)
         assert exc_info.value is original
     assert decode_widths == [5]
+
+
+def test_metadata_memory_error_is_not_retried_or_fallen_back(monkeypatch):
+    source = Image.new("RGB", (8, 4), (10, 20, 30))
+    with BytesIO() as buffer:
+        source.save(buffer, "JPEG")
+        encoded = buffer.getvalue()
+
+    original = MemoryError("metadata allocation failed")
+
+    class FailingCodeStream:
+        def __init__(self, _data):
+            raise original
+
+    fallback_calls = 0
+
+    def record_fallback(image):
+        nonlocal fallback_calls
+        fallback_calls += 1
+        return image
+
+    monkeypatch.setattr(
+        nvimagecodec,
+        "_load_nvimgcodec",
+        lambda: SimpleNamespace(CodeStream=FailingCodeStream),
+    )
+    monkeypatch.setattr(image_module, "normalize_image", record_fallback)
+    image_io = ImageMediaIO(
+        backend="nvimagecodec",
+        decoders=1,
+        batch_size=5,
+        coalesce_timeout_ms=1000,
+    )
+    service = get_nvimagecodec_decode_service(image_io)
+    futures = [service.submit(image_io, [encoded]) for _ in range(5)]
+
+    for future in futures:
+        with pytest.raises(MemoryError) as exc_info:
+            future.result(timeout=2)
+        assert exc_info.value is original
+    assert service.snapshot_stats().batch_widths == {5: 1}
+    assert fallback_calls == 0
 
 
 def test_process_configuration_is_immutable_until_shutdown():
@@ -770,8 +814,117 @@ def test_request_chunks_are_bounded_by_items_and_encoded_bytes():
         )
     ) == [(0, (b"aa", b"b")), (2, (b"cc", b"d"))]
 
-    with pytest.raises(NvImageCodecQueueFullError, match="one encoded image"):
-        list(image_decode_service._iter_bounded_request_chunks([b"xxxx"], config))
+    assert list(
+        image_decode_service._iter_bounded_request_chunks([b"a", b"xxxx", b"b"], config)
+    ) == [(0, (b"a",)), (1, (b"xxxx",)), (2, (b"b",))]
+
+
+def test_oversized_singleton_uses_pillow_fallback_with_global_index(monkeypatch):
+    monkeypatch.setattr(image_decode_service, "NVIMAGECODEC_MAX_ENCODED_BYTES", 1)
+    oversized = b"oversized"
+    original = ValueError("bad oversized image")
+    calls: list[list[bytes]] = []
+    created: list[Image.Image] = []
+
+    def load(items: list[bytes]):
+        calls.append(items)
+        if items == [oversized]:
+            raise ImageBatchItemError(0, original)
+        results = []
+        for item in items:
+            image = Image.new("RGB", (1, 1))
+            created.append(image)
+            results.append(MediaWithBytes(image, item))
+        return results
+
+    image_io = _FakeImageIO(
+        load,
+        batch_size=1,
+        pipeline_depth=1,
+        coalesce_timeout_ms=0,
+    )
+    with pytest.raises(ImageBatchItemError) as exc_info:
+        load_images_with_service(image_io, [b"a", b"b", oversized])
+
+    assert exc_info.value.index == 2
+    assert exc_info.value.error is original
+    assert calls == [[b"a", b"b"], [oversized]]
+    assert get_nvimagecodec_decode_service_stats().submitted_images == 2
+    for image in created:
+        with pytest.raises(ValueError):
+            image.getpixel((0, 0))
+
+
+@pytest.mark.asyncio
+async def test_async_oversized_singleton_fallback_runs_in_supplied_executor(
+    monkeypatch,
+):
+    monkeypatch.setattr(image_decode_service, "NVIMAGECODEC_MAX_ENCODED_BYTES", 1)
+    event_loop_thread = threading.get_ident()
+    oversized = b"oversized"
+    fallback_threads: list[int] = []
+
+    def load(items: list[bytes]):
+        if items == [oversized]:
+            fallback_threads.append(threading.get_ident())
+        return [_result(item) for item in items]
+
+    image_io = _FakeImageIO(
+        load,
+        batch_size=1,
+        pipeline_depth=1,
+        coalesce_timeout_ms=0,
+    )
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        results = await load_images_with_service_async(
+            image_io, [oversized], executor=executor
+        )
+
+    assert fallback_threads and fallback_threads[0] != event_loop_thread
+    assert get_nvimagecodec_decode_service_stats().submitted_images == 0
+    results[0].media.close()
+
+
+@pytest.mark.asyncio
+async def test_cancelled_oversized_singleton_closes_late_fallback_result(monkeypatch):
+    monkeypatch.setattr(image_decode_service, "NVIMAGECODEC_MAX_ENCODED_BYTES", 1)
+    started = threading.Event()
+    release = threading.Event()
+    returned = threading.Event()
+    created: list[Image.Image] = []
+
+    def load(items: list[bytes]):
+        started.set()
+        assert release.wait(timeout=2)
+        image = Image.new("RGB", (1, 1))
+        created.append(image)
+        returned.set()
+        return [MediaWithBytes(image, items[0])]
+
+    image_io = _FakeImageIO(
+        load,
+        batch_size=1,
+        pipeline_depth=1,
+        coalesce_timeout_ms=0,
+    )
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        task = asyncio.create_task(
+            load_images_with_service_async(image_io, [b"oversized"], executor=executor)
+        )
+        assert await asyncio.to_thread(started.wait, 2)
+        task.cancel()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert await asyncio.to_thread(returned.wait, 2)
+        for _ in range(100):
+            try:
+                created[0].getpixel((0, 0))
+            except ValueError:
+                break
+            await asyncio.sleep(0.001)
+        else:
+            pytest.fail("late Pillow fallback result was not closed")
 
 
 @pytest.mark.asyncio

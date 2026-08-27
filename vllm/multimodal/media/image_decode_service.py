@@ -12,7 +12,7 @@ import threading
 import time
 from collections import Counter, deque
 from collections.abc import AsyncIterator, Iterator, Sequence
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Executor, Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from functools import partial
 from typing import TYPE_CHECKING, Any, Literal
@@ -168,6 +168,16 @@ def _close_loaded_images(items: list[MediaWithBytes[Image.Image]]) -> None:
 
 def _dispose_future_result(
     future: Future[list[MediaWithBytes[Image.Image]]],
+) -> None:
+    try:
+        items = future.result()
+    except BaseException:
+        return
+    _close_loaded_images(items)
+
+
+def _dispose_asyncio_future_result(
+    future: asyncio.Future[list[MediaWithBytes[Image.Image]]],
 ) -> None:
     try:
         items = future.result()
@@ -976,9 +986,17 @@ def _iter_bounded_request_chunks(
     for index, encoded in enumerate(encoded_images):
         encoded_bytes = len(encoded)
         if encoded_bytes > config.max_pending_encoded_bytes:
-            raise NvImageCodecQueueFullError(
-                "one encoded image exceeds the nvImageCodec admission byte tier"
-            )
+            if chunk:
+                yield chunk_offset, tuple(chunk)
+                chunk = []
+                chunk_bytes = 0
+            # The production admission tier is at least four times the
+            # native encoded-size limit, so this singleton is guaranteed to
+            # take ImageMediaIO's documented Pillow fallback. Keep it outside
+            # the service because it can never fit either byte tier.
+            yield index, (encoded,)
+            chunk_offset = index + 1
+            continue
         if chunk and (
             len(chunk) >= config.max_pending_items
             or chunk_bytes + encoded_bytes > config.max_pending_encoded_bytes
@@ -1013,7 +1031,10 @@ def load_images_with_service(
             encoded_images, service.config
         ):
             try:
-                results.extend(service.submit(image_io, chunk).result())
+                if len(chunk[0]) > service.config.max_pending_encoded_bytes:
+                    results.extend(image_io.load_bytes_many(chunk))
+                else:
+                    results.extend(service.submit(image_io, chunk).result())
             except BaseException as error:
                 mapped = _offset_indexed_error(error, offset)
                 if mapped is error:
@@ -1028,15 +1049,29 @@ def load_images_with_service(
 async def load_images_with_service_async(
     image_io: ImageMediaIO,
     encoded_images: list[bytes] | tuple[bytes, ...],
+    *,
+    executor: Executor | None = None,
 ) -> list[MediaWithBytes[Image.Image]]:
     service = get_nvimagecodec_decode_service(image_io)
+    loop = asyncio.get_running_loop()
     results: list[MediaWithBytes[Image.Image]] = []
     try:
         for offset, chunk in _iter_bounded_request_chunks(
             encoded_images, service.config
         ):
             try:
-                results.extend(await service.submit_async(image_io, chunk))
+                if len(chunk[0]) > service.config.max_pending_encoded_bytes:
+                    direct_future = loop.run_in_executor(
+                        executor, image_io.load_bytes_many, chunk
+                    )
+                    try:
+                        direct_results = await asyncio.shield(direct_future)
+                    except asyncio.CancelledError:
+                        direct_future.add_done_callback(_dispose_asyncio_future_result)
+                        raise
+                    results.extend(direct_results)
+                else:
+                    results.extend(await service.submit_async(image_io, chunk))
             except BaseException as error:
                 mapped = _offset_indexed_error(error, offset)
                 if mapped is error:

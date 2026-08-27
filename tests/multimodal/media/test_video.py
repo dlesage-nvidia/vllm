@@ -328,28 +328,37 @@ def test_load_base64_jpeg_returns_metadata():
     assert metadata["duration"] == float(num_test_frames)
 
 
-def test_load_base64_jpeg_preserves_frame_io_config(monkeypatch):
+def test_load_base64_jpeg_pillow_streams_and_preserves_frame_io_config(
+    monkeypatch,
+):
     b64_frames = _make_jpeg_b64_frames(2)
     imageio = ImageMediaIO()
-    original_load = imageio.load_bytes_many
-    calls = []
+    original_load = imageio.load_base64
+    calls: list[tuple[str, str]] = []
+    loaded_frames: list[MediaWithBytes[Image.Image]] = []
 
-    def load_with_backend_config(encoded_frames):
-        calls.append(encoded_frames)
-        frames = original_load(encoded_frames)
-        for frame in frames:
-            frame.io_config = {"backend": "nvimagecodec"}
-        return frames
+    def load_with_backend_config(media_type, frame_data):
+        for prior in loaded_frames:
+            with pytest.raises(ValueError):
+                prior.media.getpixel((0, 0))
+        calls.append((media_type, frame_data))
+        frame = original_load(media_type, frame_data)
+        frame.io_config = {"frame": len(calls) - 1}
+        loaded_frames.append(frame)
+        return frame
 
-    monkeypatch.setattr(imageio, "load_bytes_many", load_with_backend_config)
+    monkeypatch.setattr(imageio, "load_base64", load_with_backend_config)
     videoio = VideoMediaIO(imageio, num_frames=2)
     loaded = videoio.load_base64("video/jpeg", ",".join(b64_frames))
 
-    assert calls == [[pybase64.b64decode(frame) for frame in b64_frames]]
+    assert calls == [("image/jpeg", frame) for frame in b64_frames]
+    for frame in loaded_frames:
+        with pytest.raises(ValueError):
+            frame.media.getpixel((0, 0))
     assert loaded.io_config == {
         "frame_io_configs": [
-            {"backend": "nvimagecodec"},
-            {"backend": "nvimagecodec"},
+            {"frame": 0},
+            {"frame": 1},
         ]
     }
 
@@ -446,8 +455,9 @@ async def test_load_base64_jpeg_nvimagecodec_counts_frames_off_event_loop(
         assert item_count == 2
         yield
 
-    async def load_with_service(image_io, items):
+    async def load_with_service(image_io, items, *, executor):
         assert image_io is videoio.image_io
+        assert executor is not None
         return [
             MediaWithBytes(Image.open(io.BytesIO(item)).copy(), item) for item in items
         ]

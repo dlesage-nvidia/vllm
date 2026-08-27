@@ -695,7 +695,9 @@ class MediaConnector:
                     try:
                         loaded_images.extend(
                             await load_images_with_service_async(
-                                image_io, encoded_images
+                                image_io,
+                                encoded_images,
+                                executor=global_thread_pool,
                             )
                         )
                     except ImageBatchItemError as e:
