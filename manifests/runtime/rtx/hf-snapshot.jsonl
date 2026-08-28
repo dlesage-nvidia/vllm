@@ -1,0 +1,12 @@
+{"bytes":1519,"path":".gitattributes","sha256":"11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361","symlink_target_basename":"a6344aac8c09253b3b630fb776ae94478aa0275b"}
+{"bytes":7136,"path":"README.md","sha256":"5fc5be1ca9a3910399bd6239ee5086ab5d82a2a59c5d2b00e887a8835cc110e4","symlink_target_basename":"13afcb1d2c695b57ebe4ee740db48671069566ce"}
+{"bytes":5502,"path":"chat_template.json","sha256":"6f8a6a55027e3da5160105556cda5dd69f6423f1c32645f6730d32de7773d0c4","symlink_target_basename":"e49e75bdda104c8de941eb20e0b3765184fb27bc"}
+{"bytes":1505,"path":"config.json","sha256":"bec4b3d446efa05807365c9e1cec03ac590836879d02f3a6da879971154bdd3b","symlink_target_basename":"0cd8c646eb55794594b14fefcd1d3acea5cc000f"}
+{"bytes":269,"path":"generation_config.json","sha256":"1e241830b48b397cb0900101421df5450baddc7adf01e5fc86b5615865f3bae4","symlink_target_basename":"7bb37933d2d86e4ceaabcc6540be989658f238e9"}
+{"bytes":1671839,"path":"merges.txt","sha256":"599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3","symlink_target_basename":"20024bfe7c83998e9aeaf98a0cd6a2ce6306c2f0"}
+{"bytes":4255140312,"path":"model.safetensors","sha256":"7de1838c87a5349b016c26a1c3f7d2bc400a3d485f95ef39a7059ffd734977a0","symlink_target_basename":"7de1838c87a5349b016c26a1c3f7d2bc400a3d485f95ef39a7059ffd734977a0"}
+{"bytes":390,"path":"preprocessor_config.json","sha256":"27225450ac9c6529872ee1924fcb0962ff5634834f817040f444118116f4e516","symlink_target_basename":"2ea84a437d448ff71b08df68fdd949d5cc4ebb64"}
+{"bytes":7032403,"path":"tokenizer.json","sha256":"a5d85b6dcc535e6b93115a9ef287e6132fdbf30270da6218194ba742261173c7","symlink_target_basename":"c6cc1014128b19d1fc46b1d30a23e3b1d35db421"}
+{"bytes":10868,"path":"tokenizer_config.json","sha256":"c2da771801886ad9ae98181793ffd3dfb7f1af30f6f7c6a4e15d7dbba52e2399","symlink_target_basename":"d3d3763207692c78780f4bf42d4dadf49a5c8012"}
+{"bytes":385,"path":"video_preprocessor_config.json","sha256":"7768af27c1fafa9cc9011c1dc20067e03f8915e03b63504550e11d5066986d13","symlink_target_basename":"3ba673a5ad7d4d13f54155ecd38b2a94a6dac8fe"}
+{"bytes":2776833,"path":"vocab.json","sha256":"ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910","symlink_target_basename":"4783fe10ac3adce15ac8f358ef5462739852c569"}

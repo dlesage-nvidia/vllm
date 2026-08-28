@@ -1,0 +1,264 @@
+{
+  "schema": "pynv-public-artifact-slots-v1",
+  "slots": [
+    {
+      "files": [
+        {
+          "bytes": 111561,
+          "path": "benchmark_pynvvideocodec_e2e_persistent.py",
+          "sha256": "71adcc9ddb99e65e51d9531ed40728b8261f0f763c2fd1d89c2610a58fa3aa2b"
+        },
+        {
+          "bytes": 18387,
+          "path": "capture_runtime_tree_manifest.py",
+          "sha256": "d4edac7bc314aba8ceedc799b9d9b1c64ac880d340dff70b949db50066f1981a"
+        },
+        {
+          "bytes": 44002,
+          "path": "pynv_gpu_guard.py",
+          "sha256": "4a2910fee2810afdb42f2a74611808bc692482df2992a9ac0cd0c8dd0a1104fb"
+        },
+        {
+          "bytes": 50860,
+          "path": "run_with_gpu_monitor_refined.py",
+          "sha256": "239bcbbd0e635a8b44e46588142f336a8879067750aeee0d649faa8e62e950bc"
+        },
+        {
+          "bytes": 17800,
+          "path": "wait_for_exclusive_gpu_refined.py",
+          "sha256": "0a7119e7d0c40e3274ea9846db0b4e7213e7c1beeb4ddecce3a18d9641c5b02e"
+        }
+      ],
+      "id": "shared-harness",
+      "kind": "frozen-harness",
+      "source_manifest_sha256": "930da0b3ca9fe2712653c25bdcad1c4a65d8a0de3ba31324596bd9e88e5a9b60",
+      "status": "ready",
+      "target": "harness/shared",
+      "tree_sha256": "363af07e25f5bae22e1e64ddfaee4b5c2273b2536476710932f578c482ee5ee7"
+    },
+    {
+      "files": [
+        {
+          "bytes": 29564,
+          "path": "preflight_pynv_endpoint_pixel_parity.py",
+          "sha256": "e4cb333cd47f3015ccf3aa510e3f6c26364cc4947b63d89053decc0f8156addb"
+        },
+        {
+          "bytes": 233134,
+          "path": "run_pynv_endpoint_high_concurrency_matrix_refined.py",
+          "sha256": "7045f370bcdac85e82249f77193dcd0339cb4de3944d0084731013c3eeb93f57"
+        },
+        {
+          "bytes": 61777,
+          "path": "run_pynv_endpoint_persistent_preflight.py",
+          "sha256": "924f7a6cf445678bc872ff5aa4d4cedfaac8db69ccf03fe7869ef0ba74b08636"
+        }
+      ],
+      "id": "rtx-harness",
+      "kind": "frozen-harness",
+      "source_manifest_sha256": "930da0b3ca9fe2712653c25bdcad1c4a65d8a0de3ba31324596bd9e88e5a9b60",
+      "status": "ready",
+      "target": "harness/rtx",
+      "tree_sha256": "6377a0a81e699d301675107ab48d27c1aab0bedc29d8a94375a72d27bdaa8748"
+    },
+    {
+      "files": [],
+      "id": "a100-harness",
+      "kind": "frozen-harness",
+      "source_manifest_sha256": null,
+      "status": "pending",
+      "target": "harness/a100",
+      "tree_sha256": null
+    },
+    {
+      "files": [
+        {
+          "bytes": 18003,
+          "path": "test_persistent_http_harness.py",
+          "sha256": "9dadac7a651efb770557d98372acea90fe58db0a8ecf46a4a65adc8497c1a26b"
+        },
+        {
+          "bytes": 33002,
+          "path": "test_refined_gpu_guards.py",
+          "sha256": "3cb113577694b1bd1a1fa02023827fc05a4331279ad6a16dc9339f49127c7d0b"
+        },
+        {
+          "bytes": 9936,
+          "path": "test_runtime_tree_manifest.py",
+          "sha256": "d0ab0fcf324f6bc1042610a0ac5a970fe5fcf3fe31927aa904d0bb0ea76e0366"
+        }
+      ],
+      "id": "shared-tests",
+      "kind": "frozen-tests",
+      "source_manifest_sha256": "930da0b3ca9fe2712653c25bdcad1c4a65d8a0de3ba31324596bd9e88e5a9b60",
+      "status": "ready",
+      "target": "tests/shared",
+      "tree_sha256": "a08a1ec957148e74675011005f0b1f86f0d121e1fac22d5ccd46e30c5a942218"
+    },
+    {
+      "files": [
+        {
+          "bytes": 98024,
+          "path": "test_rtx_endpoint_runner_contract.py",
+          "sha256": "3ab48e24ff146ade25ff64e0ab69265f888d55ea003d3f06706e4bff8ac22f03"
+        }
+      ],
+      "id": "rtx-tests",
+      "kind": "frozen-tests",
+      "source_manifest_sha256": "930da0b3ca9fe2712653c25bdcad1c4a65d8a0de3ba31324596bd9e88e5a9b60",
+      "status": "ready",
+      "target": "tests/rtx",
+      "tree_sha256": "0495f03cb157b715aab8d8010136bad17c74f356794a50aa5f5a9a65264b55df"
+    },
+    {
+      "files": [],
+      "id": "a100-tests",
+      "kind": "frozen-tests",
+      "source_manifest_sha256": null,
+      "status": "pending",
+      "target": "tests/a100",
+      "tree_sha256": null
+    },
+    {
+      "files": [
+        {
+          "bytes": 7997,
+          "path": "ARTIFACT_MANIFEST.json",
+          "sha256": "930da0b3ca9fe2712653c25bdcad1c4a65d8a0de3ba31324596bd9e88e5a9b60"
+        }
+      ],
+      "id": "shared-freeze-manifests",
+      "kind": "freeze-manifests",
+      "source_manifest_sha256": "930da0b3ca9fe2712653c25bdcad1c4a65d8a0de3ba31324596bd9e88e5a9b60",
+      "status": "ready",
+      "target": "manifests/freezes/shared",
+      "tree_sha256": "12fe3f9804f2612c137fbf81a312b1a2e6cfecc077d5fa351a764e7efe3f2043"
+    },
+    {
+      "files": [
+        {
+          "bytes": 7997,
+          "path": "ARTIFACT_MANIFEST.json",
+          "sha256": "930da0b3ca9fe2712653c25bdcad1c4a65d8a0de3ba31324596bd9e88e5a9b60"
+        }
+      ],
+      "id": "rtx-freeze-manifests",
+      "kind": "freeze-manifests",
+      "source_manifest_sha256": "930da0b3ca9fe2712653c25bdcad1c4a65d8a0de3ba31324596bd9e88e5a9b60",
+      "status": "ready",
+      "target": "manifests/freezes/rtx",
+      "tree_sha256": "12fe3f9804f2612c137fbf81a312b1a2e6cfecc077d5fa351a764e7efe3f2043"
+    },
+    {
+      "files": [],
+      "id": "a100-freeze-manifests",
+      "kind": "freeze-manifests",
+      "source_manifest_sha256": null,
+      "status": "pending",
+      "target": "manifests/freezes/a100",
+      "tree_sha256": null
+    },
+    {
+      "files": [
+        {
+          "bytes": 976,
+          "path": "ARTIFACT_MANIFEST.json",
+          "sha256": "0e9c78b8acc5e4e20ecf8bcb90ad997e3d99648738d4ce953441fb48cef15b4d"
+        },
+        {
+          "bytes": 2277,
+          "path": "hf-snapshot.jsonl",
+          "sha256": "5a2020450ee3804b0e3c5e8be0b1bf33eab679796706ca416e36517a10c3baf3"
+        },
+        {
+          "bytes": 1128,
+          "path": "hf-snapshot.summary.json",
+          "sha256": "c70933bf44fb8234afb551dab5d75991686197beb89835e53145591f849033b7"
+        },
+        {
+          "bytes": 418598,
+          "path": "transformers-overlay.jsonl",
+          "sha256": "91e8b5660cb228e78f48fe931bc28dd68f92d751475e9d76b93590246a255bb0"
+        },
+        {
+          "bytes": 1051,
+          "path": "transformers-overlay.summary.json",
+          "sha256": "6e5aeef9e9186b318b17fb31ee91c03a9c5808d0c8fbcdf99279b6a2cd4b6b15"
+        },
+        {
+          "bytes": 381637,
+          "path": "transformers.jsonl",
+          "sha256": "a33471c896d571395e22d4d4f1fa58f6b4fee7c0b66f281fceabaab1a804241a"
+        },
+        {
+          "bytes": 962,
+          "path": "transformers.summary.json",
+          "sha256": "93a063eabcc112dfbed898aecfc9dc03921363fc4d347a6100091768b43b986e"
+        }
+      ],
+      "id": "rtx-runtime-manifests",
+      "kind": "runtime-manifests",
+      "source_manifest_sha256": "0e9c78b8acc5e4e20ecf8bcb90ad997e3d99648738d4ce953441fb48cef15b4d",
+      "status": "ready",
+      "target": "manifests/runtime/rtx",
+      "tree_sha256": "b5c76d9d3633898498caac26618b2f95dc82565f85440af604aa4399717b3f12"
+    },
+    {
+      "files": [],
+      "id": "a100-runtime-manifests",
+      "kind": "runtime-manifests",
+      "source_manifest_sha256": null,
+      "status": "pending",
+      "target": "manifests/runtime/a100",
+      "tree_sha256": null
+    },
+    {
+      "files": [
+        {
+          "bytes": 1494,
+          "path": "README.md",
+          "sha256": "855cb898761028df12355e595c37e2045f7eb651f7dcaef0336ebee874944b56"
+        },
+        {
+          "bytes": 854,
+          "path": "commands.json",
+          "sha256": "220361a581509804b6be99c63f6448072c37246628e0b937fbbe35b54182162c"
+        },
+        {
+          "bytes": 8763,
+          "path": "run.sh",
+          "sha256": "9599690ecbd3b7c542a5fe91c7ac80622c3579c20058f67ab0e9774543326ac9"
+        },
+        {
+          "bytes": 666,
+          "path": "validate.sh",
+          "sha256": "3a322e4e37726649a3665dccf4feddf552372611e02c8d16fc3494087d540341"
+        }
+      ],
+      "id": "rtx-commands",
+      "kind": "exact-commands",
+      "source_manifest_sha256": "220361a581509804b6be99c63f6448072c37246628e0b937fbbe35b54182162c",
+      "status": "ready",
+      "target": "commands/rtx",
+      "tree_sha256": "e9b89205a15a83848f78707685a0f0b7557e2eba1196c3c66d3db91c23ccddef"
+    },
+    {
+      "files": [],
+      "id": "a100-commands",
+      "kind": "exact-commands",
+      "source_manifest_sha256": null,
+      "status": "pending",
+      "target": "commands/a100",
+      "tree_sha256": null
+    },
+    {
+      "files": [],
+      "id": "public-results",
+      "kind": "sanitized-results",
+      "source_manifest_sha256": null,
+      "status": "pending",
+      "target": "results/public",
+      "tree_sha256": null
+    }
+  ]
+}

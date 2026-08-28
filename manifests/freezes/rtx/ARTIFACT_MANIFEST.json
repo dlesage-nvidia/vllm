@@ -1,0 +1,215 @@
+{
+  "artifacts": [
+    {
+      "bytes": 111561,
+      "mode": "0444",
+      "path": "benchmark_pynvvideocodec_e2e_persistent.py",
+      "sha256": "71adcc9ddb99e65e51d9531ed40728b8261f0f763c2fd1d89c2610a58fa3aa2b"
+    },
+    {
+      "bytes": 18387,
+      "mode": "0444",
+      "path": "capture_runtime_tree_manifest.py",
+      "sha256": "d4edac7bc314aba8ceedc799b9d9b1c64ac880d340dff70b949db50066f1981a"
+    },
+    {
+      "bytes": 29564,
+      "mode": "0444",
+      "path": "preflight_pynv_endpoint_pixel_parity.py",
+      "sha256": "e4cb333cd47f3015ccf3aa510e3f6c26364cc4947b63d89053decc0f8156addb"
+    },
+    {
+      "bytes": 44002,
+      "mode": "0444",
+      "path": "pynv_gpu_guard.py",
+      "sha256": "4a2910fee2810afdb42f2a74611808bc692482df2992a9ac0cd0c8dd0a1104fb"
+    },
+    {
+      "bytes": 233134,
+      "mode": "0444",
+      "path": "run_pynv_endpoint_high_concurrency_matrix_refined.py",
+      "sha256": "7045f370bcdac85e82249f77193dcd0339cb4de3944d0084731013c3eeb93f57"
+    },
+    {
+      "bytes": 61777,
+      "mode": "0444",
+      "path": "run_pynv_endpoint_persistent_preflight.py",
+      "sha256": "924f7a6cf445678bc872ff5aa4d4cedfaac8db69ccf03fe7869ef0ba74b08636"
+    },
+    {
+      "bytes": 50860,
+      "mode": "0444",
+      "path": "run_with_gpu_monitor_refined.py",
+      "sha256": "239bcbbd0e635a8b44e46588142f336a8879067750aeee0d649faa8e62e950bc"
+    },
+    {
+      "bytes": 18003,
+      "mode": "0444",
+      "path": "test_persistent_http_harness.py",
+      "sha256": "9dadac7a651efb770557d98372acea90fe58db0a8ecf46a4a65adc8497c1a26b"
+    },
+    {
+      "bytes": 33002,
+      "mode": "0444",
+      "path": "test_refined_gpu_guards.py",
+      "sha256": "3cb113577694b1bd1a1fa02023827fc05a4331279ad6a16dc9339f49127c7d0b"
+    },
+    {
+      "bytes": 98024,
+      "mode": "0444",
+      "path": "test_rtx_endpoint_runner_contract.py",
+      "sha256": "3ab48e24ff146ade25ff64e0ab69265f888d55ea003d3f06706e4bff8ac22f03"
+    },
+    {
+      "bytes": 9936,
+      "mode": "0444",
+      "path": "test_runtime_tree_manifest.py",
+      "sha256": "d0ab0fcf324f6bc1042610a0ac5a970fe5fcf3fe31927aa904d0bb0ea76e0366"
+    },
+    {
+      "bytes": 17800,
+      "mode": "0444",
+      "path": "wait_for_exclusive_gpu_refined.py",
+      "sha256": "0a7119e7d0c40e3274ea9846db0b4e7213e7c1beeb4ddecce3a18d9641c5b02e"
+    }
+  ],
+  "bundle_file_graph": {
+    "directory_mode": "0555",
+    "manifest_mode": "0444",
+    "python_artifact_count": 12,
+    "python_artifact_mode": "0444",
+    "regular_file_count": 13,
+    "transient_cache_entries": 0
+  },
+  "endpoint_commits": {
+    "pr-head": "30d917599b104423e452fa718890af01c4ff4d39",
+    "upstream": "d1e5e66ee30ba4bc020ac8e14b05e7a8c41b9302"
+  },
+  "endpoint_trees": {
+    "pr-head": "66c4849eb21973b9ca391b7b0911968f4aa63dac",
+    "upstream": "9cc26997991af6f8f38150c9631d482d18b1bd2c"
+  },
+  "evidence_contract": {
+    "accepted_aggregate": "block aggregate equals measured aggregate; every published aggregate and latency field is independently rederived from raw monotonic request records and token arrays",
+    "contamination_retry": "retry requires wrapper rc 99 plus one shared strict validator binding status, child semantics, exact configuration and commands, script/helper hashes, nonempty foreign events, and rehashed JSONL samples",
+    "monitor_terminal_samples": "two final scheduled post-exit samples with exact ordinals 0 and 1, monotonic order, and a 0.19 to 1.0 second gap",
+    "preflight_replay": "pixel and pilot commands and all result/monitor/log/server-log/idle/worker/tensor paths are reconstructed under one fresh evidence namespace",
+    "raw_response": "exact upstream/pr-head model_dump schemas and fixed server-config values are enforced for response, choice, message, usage, and metrics; normalized hashes/counts/content are cross-linked to raw response data",
+    "request_records": "every passed record is reconstructed from trusted configuration and corpus provenance, including deterministic request/video identity, exact payload, independently derived video work, transport lifecycle, and globally unique response IDs",
+    "runtime_artifacts": "Python, torch, NumPy, Transformers origin, PyNv native files, vLLM native files, and nvcc when present are stable-open live-rehashed before and after every attempt",
+    "timing_nonintrusion": "response-body compression, byte evidence, and added wall-clock nanosecond probes are absent; request and batch monotonic timing boundaries retain the pre-audit harness path",
+    "wall_clock": "started_at and finished_at are informational aware-UTC schema/order evidence that bound the server-created timestamp; throughput and latency use only monotonic clocks"
+  },
+  "endpoint_protocol_contract": {
+    "chat_completion_protocol_sha256": "47e5d710fd66886bc25946414f5c8e6e3a665cee7910feb5eacd4a17f3331da7",
+    "chat_completion_serving_sha256": "9982953285e9df469032a82fffa4095d0e9d86278bede6e2b91d03d02373d182",
+    "identical_at_both_endpoint_commits": true
+  },
+  "guard_contract": {
+    "cell_idle_seconds": 30,
+    "cell_idle_timeout_seconds": 1800,
+    "idle_max_load_1m_per_cpu": 0.25,
+    "ingress_idle_seconds": 1200,
+    "ingress_idle_timeout_seconds": 21600,
+    "maximum_monitor_gap_seconds": 1.0,
+    "monitor_watchdog_pairs": [
+      [1200, 120],
+      [3600, 120]
+    ],
+    "physical_gpu_index": 0
+  },
+  "provenance_contract": {
+    "performance_environment": "all selected, secret-sanitized entries are hash-bound",
+    "python_native_modules": [
+      "numpy._core._multiarray_umath",
+      "torch._C"
+    ],
+    "server_log": "exclusive full append-only sidecar, SHA-256 bound and fully scanned",
+    "timing_clock": "monotonic_ns for batch boundaries, telemetry coverage, and VRAM windows"
+  },
+  "publication_state": "immutable_freeze_no_gpu_execution",
+  "runtime_tree_contracts": {
+    "hf_snapshot": {
+      "logical_total_bytes": 4266648961,
+      "manifest_bytes": 2277,
+      "regular_file_count": 12,
+      "sha256": "5a2020450ee3804b0e3c5e8be0b1bf33eab679796706ca416e36517a10c3baf3"
+    },
+    "transformers_overlay_parent": {
+      "logical_total_bytes": 51873110,
+      "manifest_bytes": 418598,
+      "regular_file_count": 2750,
+      "sha256": "91e8b5660cb228e78f48fe931bc28dd68f92d751475e9d76b93590246a255bb0"
+    },
+    "transformers_package": {
+      "logical_total_bytes": 51553351,
+      "manifest_bytes": 381637,
+      "regular_file_count": 2740,
+      "sha256": "a33471c896d571395e22d4d4f1fa58f6b4fee7c0b66f281fceabaab1a804241a"
+    }
+  },
+  "schedule": [
+    {
+      "concurrency_order": [8, 16, 32],
+      "endpoint_order": ["upstream", "pr-head"],
+      "rep": 1
+    },
+    {
+      "concurrency_order": [32, 16, 8],
+      "endpoint_order": ["pr-head", "upstream"],
+      "rep": 2
+    },
+    {
+      "concurrency_order": [16, 32, 8],
+      "endpoint_order": ["upstream", "pr-head"],
+      "rep": 3
+    },
+    {
+      "concurrency_order": [8, 32, 16],
+      "endpoint_order": ["pr-head", "upstream"],
+      "rep": 4
+    },
+    {
+      "concurrency_order": [32, 8, 16],
+      "endpoint_order": ["upstream", "pr-head"],
+      "rep": 5
+    },
+    {
+      "concurrency_order": [16, 8, 32],
+      "endpoint_order": ["pr-head", "upstream"],
+      "rep": 6
+    }
+  ],
+  "schema": "pynv-rtx-publication-candidate-v3",
+  "validation": {
+    "black_version": "26.5.1",
+    "python_3_10_12": {
+      "passed": 283,
+      "skipped": 0
+    },
+    "python_3_12_13_native_torch_2_13_0_cu132": {
+      "passed": 283,
+      "skipped": 0
+    },
+    "pyflakes_version": "3.4.0"
+  },
+  "workload": {
+    "concurrency_levels": [8, 16, 32],
+    "frame_count": 32,
+    "http": "non-streaming HTTP/1.1; exactly C persistent connections per block; no request retries",
+    "max_num_seqs": 32,
+    "max_pixels_per_frame": 589824,
+    "measured_requests": {
+      "8": 64,
+      "16": 128,
+      "32": 256
+    },
+    "output_length": 32,
+    "total_max_pixels": 18874368,
+    "warmup_requests": {
+      "8": 24,
+      "16": 48,
+      "32": 96
+    }
+  }
+}

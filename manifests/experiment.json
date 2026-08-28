@@ -1,0 +1,62 @@
+{
+  "comparison": {
+    "a100_roles": [
+      "upstream",
+      "pr-base",
+      "pr-head"
+    ],
+    "primary": [
+      "pr-base",
+      "pr-head"
+    ],
+    "rtx_roles": [
+      "upstream",
+      "pr-head"
+    ],
+    "secondary_cumulative": [
+      "upstream",
+      "pr-head"
+    ]
+  },
+  "pull_request": "dlesage-nvidia/vllm#1",
+  "roles": {
+    "pr-base": {
+      "commit": "bc8abf31fef015339473f6071eda0de0305dd9b2",
+      "tree": "09423356278c6c4bd871ccda98499474fad78bdd"
+    },
+    "pr-head": {
+      "commit": "30d917599b104423e452fa718890af01c4ff4d39",
+      "tree": "66c4849eb21973b9ca391b7b0911968f4aa63dac"
+    },
+    "upstream": {
+      "commit": "d1e5e66ee30ba4bc020ac8e14b05e7a8c41b9302",
+      "tree": "9cc26997991af6f8f38150c9631d482d18b1bd2c"
+    }
+  },
+  "schema": "pynv-qwen3vl-public-artifact-experiment-v1",
+  "workload": {
+    "clip": {
+      "duration_seconds": 30.498,
+      "encoded_frames": 914,
+      "height": 1080,
+      "sha256": "b5816375c491528f23799b1d1d67100355d1d43730db4898d480e4edb5065a5d",
+      "width": 1920
+    },
+    "concurrency": [
+      8,
+      16,
+      32
+    ],
+    "decoder_backend": "pynvvideocodec",
+    "max_pixels_total": 18874368,
+    "model": "Qwen/Qwen3-VL-2B-Instruct",
+    "model_revision": "89644892e4d85e24eaac8bacfd4f463576704203",
+    "output_tokens": 32,
+    "pixel_budget_per_frame": {
+      "height": 576,
+      "width": 1024
+    },
+    "prompt": "Describe this video concisely and factually.",
+    "sampled_frames": 32
+  }
+}

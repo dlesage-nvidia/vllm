@@ -1,0 +1,22 @@
+{
+  "authorization": {
+    "freeze_manifest_sha256": "930da0b3ca9fe2712653c25bdcad1c4a65d8a0de3ba31324596bd9e88e5a9b60",
+    "state": "frozen_before_collection"
+  },
+  "commands": [
+    {
+      "kind": "focused_validation",
+      "path": "validate.sh",
+      "sha256": "3a322e4e37726649a3665dccf4feddf552372611e02c8d16fc3494087d540341"
+    },
+    {
+      "kind": "preflight_then_timed_matrix",
+      "path": "run.sh",
+      "sha256": "9599690ecbd3b7c542a5fe91c7ac80622c3579c20058f67ab0e9774543326ac9"
+    }
+  ],
+  "path_policy": "collector absolute roots are replaced one-for-one by required environment variables; argv order, hashes, options, and result-root basename are unchanged",
+  "platform": "rtx-pro-6000-blackwell-server-edition",
+  "result_root_basename": "vllm-pynv-qwen3vl-rtx-final-20260828-v1",
+  "schema": "pynv-exact-command-record-v1"
+}
