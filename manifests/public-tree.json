@@ -12,19 +12,19 @@
       "sha256": "d1575ec2da3366d46d6bd4fb37730c08f4c54a8343eff303ca752c34c96cf93c"
     },
     {
-      "bytes": 1694,
+      "bytes": 1823,
       "path": "commands/a100/README.md",
-      "sha256": "9ed33e0eeb5ecfeb0157f7fa5da0cac81e02d3c4f0bae7d6d4792460d39208a6"
+      "sha256": "4f77b989a3636eea2e0bb3c8a03aaeee0a5f84a80fd291e8bb4308536e0805d9"
     },
     {
       "bytes": 1100,
       "path": "commands/a100/commands.json",
-      "sha256": "bf3c3caea71f63d6e21c5d4664ccabe499292595036fbd884d3310c0e5274e6e"
+      "sha256": "facbb4ebb566cd916fb36a963da5e9579b9dd026d94761b3c95d0b458669745f"
     },
     {
-      "bytes": 14454,
+      "bytes": 14457,
       "path": "commands/a100/run.sh",
-      "sha256": "90129e234573f81d923cf36b10407e19da88132342a403c4b84fb21314491bdc"
+      "sha256": "6b394d277cec095a685e9bce3a9717e26daf384c50c00bde45f3f6c8f4340491"
     },
     {
       "bytes": 1199,
@@ -214,7 +214,7 @@
     {
       "bytes": 12836,
       "path": "manifests/staging-slots.json",
-      "sha256": "80365752667e051f69aba484157e022f5efda30b1a2f7c3f761bd2ca29e4321f"
+      "sha256": "9de4078ae6693aca3525543ee1af45b1b95e4c0dd3443f39a2bb9f4ba389623c"
     },
     {
       "bytes": 74981,
@@ -253,7 +253,7 @@
     }
   ],
   "schema": "pynv-public-tree-manifest-v1",
-  "slot_registry_sha256": "80365752667e051f69aba484157e022f5efda30b1a2f7c3f761bd2ca29e4321f",
+  "slot_registry_sha256": "9de4078ae6693aca3525543ee1af45b1b95e4c0dd3443f39a2bb9f4ba389623c",
   "state": "staging",
-  "tree_sha256": "9a17025f844143d437e2a5dad47eb7e4f7a256424a17923328a9b4f8bbdcf5e7"
+  "tree_sha256": "2b684710241734cd114993fa38dba3001da63ca999920b12cbf056e768c3ae91"
 }

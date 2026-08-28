@@ -24,8 +24,10 @@ The collection used these root basenames:
 
 `HF_SNAPSHOT_ROOT` is the cached snapshot at revision
 `89644892e4d85e24eaac8bacfd4f463576704203`. The two controller-root variables
-identify the known, disjoint image-benchmark workspaces; a root may be absent,
-but its canonical parent and exact basename are checked. The guard independently
-rejects live benchmark entry points, vLLM processes, external GPU processes,
-and non-idle telemetry throughout the 1200-second ingress gate, the 30-second
-per-cell gates, and every measured cell.
+identify the known, disjoint `a100bench` and `vllm-nvimagecodec-bench`
+workspaces; a root may be absent, but its canonical parent and exact basename
+are checked. Validation exercises the live process guard and therefore must
+pass on a clean host before collection. The guard independently rejects live
+benchmark entry points, vLLM processes, external GPU processes, and non-idle
+telemetry throughout the 1200-second ingress gate, the 30-second per-cell
+gates, and every measured cell.

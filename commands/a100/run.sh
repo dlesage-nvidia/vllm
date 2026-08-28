@@ -161,12 +161,12 @@ require_exact_directory RUNTIME_MANIFEST_ROOT pynv-runtime-manifests-v3
 require_exact_directory TRANSFORMERS_ROOT vllm-pynv-e2e-transformers-5.14.1-20260827
 require_exact_directory HF_SNAPSHOT_ROOT 89644892e4d85e24eaac8bacfd4f463576704203
 require_exact_directory CORPUS_ROOT vllm-pynv-e2e-corpus-20260827
-require_expected_controller_root CONFLICTING_CONTROLLER_ROOT_1 rtxbench
+require_expected_controller_root CONFLICTING_CONTROLLER_ROOT_1 a100bench
 require_expected_controller_root CONFLICTING_CONTROLLER_ROOT_2 vllm-nvimagecodec-bench
 
 controller_basenames="$(basename -- "${CONFLICTING_CONTROLLER_ROOT_1}"):$(basename -- "${CONFLICTING_CONTROLLER_ROOT_2}")"
 case "${controller_basenames}" in
-    rtxbench:vllm-nvimagecodec-bench|vllm-nvimagecodec-bench:rtxbench) ;;
+    a100bench:vllm-nvimagecodec-bench|vllm-nvimagecodec-bench:a100bench) ;;
     *) fail "controller-root basenames changed" ;;
 esac
 

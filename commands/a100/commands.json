@@ -13,7 +13,7 @@
     {
       "kind": "preflight_then_timed_matrix",
       "path": "run.sh",
-      "sha256": "90129e234573f81d923cf36b10407e19da88132342a403c4b84fb21314491bdc"
+      "sha256": "6b394d277cec095a685e9bce3a9717e26daf384c50c00bde45f3f6c8f4340491"
     }
   ],
   "path_policy": "collector absolute roots are replaced one-for-one by required environment variables; argv order, hashes, options, and the two result-root basenames are unchanged",

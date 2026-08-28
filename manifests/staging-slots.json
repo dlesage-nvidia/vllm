@@ -324,19 +324,19 @@
     {
       "files": [
         {
-          "bytes": 1694,
+          "bytes": 1823,
           "path": "README.md",
-          "sha256": "9ed33e0eeb5ecfeb0157f7fa5da0cac81e02d3c4f0bae7d6d4792460d39208a6"
+          "sha256": "4f77b989a3636eea2e0bb3c8a03aaeee0a5f84a80fd291e8bb4308536e0805d9"
         },
         {
           "bytes": 1100,
           "path": "commands.json",
-          "sha256": "bf3c3caea71f63d6e21c5d4664ccabe499292595036fbd884d3310c0e5274e6e"
+          "sha256": "facbb4ebb566cd916fb36a963da5e9579b9dd026d94761b3c95d0b458669745f"
         },
         {
-          "bytes": 14454,
+          "bytes": 14457,
           "path": "run.sh",
-          "sha256": "90129e234573f81d923cf36b10407e19da88132342a403c4b84fb21314491bdc"
+          "sha256": "6b394d277cec095a685e9bce3a9717e26daf384c50c00bde45f3f6c8f4340491"
         },
         {
           "bytes": 1199,
@@ -346,10 +346,10 @@
       ],
       "id": "a100-commands",
       "kind": "exact-commands",
-      "source_manifest_sha256": "bf3c3caea71f63d6e21c5d4664ccabe499292595036fbd884d3310c0e5274e6e",
+      "source_manifest_sha256": "facbb4ebb566cd916fb36a963da5e9579b9dd026d94761b3c95d0b458669745f",
       "status": "ready",
       "target": "commands/a100",
-      "tree_sha256": "1a976f7fe60e8a23ad71737faedf6977add955b67870f25e707e132b8d83f98b"
+      "tree_sha256": "b4ad73cd292db093faa98431076f117b2696f1fab0aa8bc9cff87a254d1b3ec0"
     },
     {
       "files": [],
