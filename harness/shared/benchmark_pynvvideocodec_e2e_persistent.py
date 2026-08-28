@@ -753,7 +753,8 @@ print(json.dumps({
     artifact_candidates.update(
         Path(origin) for origin in native_module_origins.values()
     )
-    artifact_candidates.update((source_root / "vllm").glob("*.so"))
+    for pattern in ("*.so", "*.pyd"):
+        artifact_candidates.update((source_root / "vllm").rglob(pattern))
     pynvvideocodec_origin = module_origins.get("PyNvVideoCodec")
     if isinstance(pynvvideocodec_origin, str):
         package_dir = Path(pynvvideocodec_origin).parent

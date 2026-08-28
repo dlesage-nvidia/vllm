@@ -15,9 +15,9 @@ set -euo pipefail
 : "${CONFLICTING_CONTROLLER_ROOT_2:?set the second known foreign controller root}"
 
 PYTHON="${SOURCE_ROOT}/.venv/bin/python"
-HARNESS_SHA256="71adcc9ddb99e65e51d9531ed40728b8261f0f763c2fd1d89c2610a58fa3aa2b"
-DRIVER_SHA256="7045f370bcdac85e82249f77193dcd0339cb4de3944d0084731013c3eeb93f57"
-FREEZE_MANIFEST_SHA256="930da0b3ca9fe2712653c25bdcad1c4a65d8a0de3ba31324596bd9e88e5a9b60"
+HARNESS_SHA256="d6da18d1fd77df44476a66aadfb7767174906ce58b4da9b972b38d052255bcf6"
+DRIVER_SHA256="de1573ea884a11dce770b4fba2c322abe454c90c129836fbd576086551382b91"
+FREEZE_MANIFEST_SHA256="11915ea2ded0fcbaf73fcf4cfa5ba9acd8a81efb449ec4ba3ff9212840f64e76"
 
 fail() {
     echo "$*" >&2
@@ -54,7 +54,7 @@ check_sha256() {
 }
 
 require_exact_directory SOURCE_ROOT vllm-pynv-highc-rtx-20260828-v1
-require_exact_directory ASSET_ROOT pynv-rtx-publication-freeze-v3
+require_exact_directory ASSET_ROOT pynv-rtx-publication-freeze-v4
 require_exact_directory RUNTIME_MANIFEST_ROOT pynv-runtime-manifests-v3
 require_exact_directory TRANSFORMERS_ROOT vllm-pynv-e2e-transformers-5.14.1-20260827
 require_exact_directory HF_SNAPSHOT_ROOT 89644892e4d85e24eaac8bacfd4f463576704203
@@ -69,14 +69,14 @@ case "${controller_basenames}" in
 esac
 
 [[ "${RESULT_ROOT}" == /* ]] || fail "RESULT_ROOT must be absolute"
-[[ "$(basename -- "${RESULT_ROOT}")" == "vllm-pynv-qwen3vl-rtx-final-20260828-v1" ]] || \
+[[ "$(basename -- "${RESULT_ROOT}")" == "vllm-pynv-qwen3vl-rtx-final-20260828-v2" ]] || \
     fail "RESULT_ROOT basename changed"
 [[ ! -e "${RESULT_ROOT}" ]] || fail "RESULT_ROOT must not exist"
 result_parent="$(dirname -- "${RESULT_ROOT}")"
 [[ -d "${result_parent}" && ! -L "${result_parent}" ]] || \
     fail "RESULT_ROOT parent must be a real directory"
 result_parent="$(realpath -e -- "${result_parent}")"
-[[ "${RESULT_ROOT}" == "${result_parent}/vllm-pynv-qwen3vl-rtx-final-20260828-v1" ]] || \
+[[ "${RESULT_ROOT}" == "${result_parent}/vllm-pynv-qwen3vl-rtx-final-20260828-v2" ]] || \
     fail "RESULT_ROOT must be canonical and directly below its parent"
 
 protected_roots=(
@@ -106,7 +106,7 @@ check_sha256 "${ASSET_ROOT}/run_pynv_endpoint_persistent_preflight.py" "924f7a6c
 check_sha256 "${ASSET_ROOT}/run_with_gpu_monitor_refined.py" "239bcbbd0e635a8b44e46588142f336a8879067750aeee0d649faa8e62e950bc"
 check_sha256 "${ASSET_ROOT}/test_persistent_http_harness.py" "9dadac7a651efb770557d98372acea90fe58db0a8ecf46a4a65adc8497c1a26b"
 check_sha256 "${ASSET_ROOT}/test_refined_gpu_guards.py" "3cb113577694b1bd1a1fa02023827fc05a4331279ad6a16dc9339f49127c7d0b"
-check_sha256 "${ASSET_ROOT}/test_rtx_endpoint_runner_contract.py" "3ab48e24ff146ade25ff64e0ab69265f888d55ea003d3f06706e4bff8ac22f03"
+check_sha256 "${ASSET_ROOT}/test_rtx_endpoint_runner_contract.py" "296a42c744aea2830b5263125c9c41ef12ce81e9b93b13af963766942947ed11"
 check_sha256 "${ASSET_ROOT}/test_runtime_tree_manifest.py" "d0ab0fcf324f6bc1042610a0ac5a970fe5fcf3fe31927aa904d0bb0ea76e0366"
 check_sha256 "${ASSET_ROOT}/wait_for_exclusive_gpu_refined.py" "0a7119e7d0c40e3274ea9846db0b4e7213e7c1beeb4ddecce3a18d9641c5b02e"
 

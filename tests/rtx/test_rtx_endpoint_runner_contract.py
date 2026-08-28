@@ -60,6 +60,9 @@ def monitor():
 def test_schedule_and_endpoint_command_contract(
     runner, harness, tmp_path: Path
 ) -> None:
+    assert runner.CAMPAIGN_HARNESS_SHA256 == runner.sha256_file(
+        BUNDLE / "benchmark_pynvvideocodec_e2e_persistent.py"
+    )
     assert len(runner.SCHEDULE) == 6
     assert sum(len(variants) for _, _, variants in runner.SCHEDULE) == 12
     assert [variants for _, _, variants in runner.SCHEDULE] == [
@@ -2445,6 +2448,178 @@ def test_runtime_fingerprint_reads_server_environment_and_detects_drift(
     del missing["server"]["performance_environment"]
     with pytest.raises(RuntimeError, match="incomplete"):
         runner.canonical_runtime_fingerprint(missing)
+
+
+def test_runtime_manifest_accepts_source_native_symlink_to_precompiled_target(
+    runner, tmp_path: Path
+) -> None:
+    source_root = tmp_path / "source"
+    vllm_root = source_root / "vllm"
+    vllm_root.mkdir(parents=True)
+    precompiled_root = tmp_path / "zz-precompiled"
+    precompiled_root.mkdir()
+
+    files = {
+        "python": tmp_path / "python",
+        "torch": tmp_path / "torch.py",
+        "torch_native": tmp_path / "torch._C.so",
+        "numpy": tmp_path / "numpy.py",
+        "numpy_native": tmp_path / "numpy._multiarray_umath.so",
+        "transformers": tmp_path / "transformers.py",
+        "pynv": tmp_path / "PyNvVideoCodec" / "__init__.py",
+        "pynv_native": tmp_path / "PyNvVideoCodec" / "_PyNvVideoCodec.so",
+        "vllm_target": precompiled_root / "_C.abi3.so",
+    }
+    for name, path in files.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(name.encode())
+    vllm_link = vllm_root / "_C.abi3.so"
+    vllm_link.symlink_to(files["vllm_target"])
+    nested_target = (
+        tmp_path / "aa-precompiled" / "vllm_flash_attn" / "_vllm_fa2_C.abi3.so"
+    )
+    nested_target.parent.mkdir(parents=True)
+    nested_target.write_bytes(b"nested-vllm")
+    nested_link = vllm_root / "vllm_flash_attn" / "_vllm_fa2_C.abi3.so"
+    nested_link.parent.mkdir()
+    nested_link.symlink_to(nested_target)
+
+    def artifact(path: Path) -> dict[str, object]:
+        resolved = path.resolve(strict=True)
+        return {
+            "path": str(path),
+            "resolved_path": str(resolved),
+            "bytes": resolved.stat().st_size,
+            "sha256": runner.sha256_file(resolved),
+        }
+
+    provenance = {
+        "executable": str(files["python"]),
+        "implementation": "CPython",
+        "python_version": "3.12.0",
+        "packages": {
+            "vllm": "1",
+            "torch": "2",
+            "numpy": "3",
+            "transformers": "5.14.1",
+            "PyNvVideoCodec": "2.0.4",
+        },
+        "module_origins": {
+            "torch": str(files["torch"]),
+            "numpy": str(files["numpy"]),
+            "transformers": str(files["transformers"]),
+            "PyNvVideoCodec": str(files["pynv"]),
+        },
+        "native_module_origins": {
+            "torch._C": str(files["torch_native"]),
+            "numpy._core._multiarray_umath": str(files["numpy_native"]),
+        },
+        "runtime_artifacts": [
+            artifact(path)
+            for path in (
+                files["python"],
+                files["torch"],
+                files["torch_native"],
+                files["numpy"],
+                files["numpy_native"],
+                files["transformers"],
+                files["pynv"],
+                files["pynv_native"],
+                vllm_link,
+                nested_link,
+            )
+        ],
+        "torch_runtime": {
+            "torch_version": "2",
+            "compiled_cuda_version": "13.0",
+            "cudnn_version": 9000,
+            "nvcc": None,
+        },
+    }
+
+    manifest = runner.revalidate_runtime_artifact_manifest(
+        provenance, source_root=source_root
+    )
+    assert manifest["vllm_native_paths"] == sorted(
+        [str(files["vllm_target"].resolve()), str(nested_target.resolve())]
+    )
+    vllm_artifact = next(
+        item
+        for item in manifest["artifacts"]
+        if item["resolved_path"] == str(files["vllm_target"].resolve())
+    )
+    assert vllm_artifact["path"] == str(vllm_link)
+    assert vllm_artifact["path_identity_before_after"] is True
+    nested_artifact = next(
+        item
+        for item in manifest["artifacts"]
+        if item["resolved_path"] == str(nested_target.resolve())
+    )
+    assert nested_artifact["path"] == str(nested_link)
+    assert (
+        runner.revalidate_live_runtime_artifact_manifest_binding(
+            manifest, label="symlinked-precompiled-vllm"
+        )
+        == manifest
+    )
+    performance_environment = {
+        name: "1"
+        for name in (
+            "CUDA_VISIBLE_DEVICES",
+            "HF_HOME",
+            "HF_HUB_CACHE",
+            "HUGGINGFACE_HUB_CACHE",
+            "HF_HUB_OFFLINE",
+            "TRANSFORMERS_OFFLINE",
+            "PYTHONHASHSEED",
+            "PYTHONNOUSERSITE",
+            "PYTHONDONTWRITEBYTECODE",
+            "TOKENIZERS_PARALLELISM",
+            "VLLM_WORKER_MULTIPROC_METHOD",
+        )
+    }
+    result = {
+        "provenance": {
+            "source": {"root": str(source_root)},
+            "python": provenance,
+            "hardware": {
+                "nvidia_smi_output": (
+                    "0, NVIDIA RTX PRO 6000, GPU-fixture, 999.0, 98304 MiB, "
+                    "12.0, 0000:01:00.0, P0, 2100 MHz, 1593 MHz"
+                ),
+                "logical_cpus": 32,
+                "cuda_visible_devices": "0",
+            },
+        },
+        "server": {"performance_environment": performance_environment},
+    }
+    fingerprint = runner.canonical_runtime_fingerprint(result)
+    assert len(fingerprint["canonical"]["python"]["vllm_compiled_artifacts"]) == 2
+
+    traversal = copy.deepcopy(manifest)
+    traversal_artifact = next(
+        item
+        for item in traversal["artifacts"]
+        if item["resolved_path"] == str(files["vllm_target"].resolve())
+    )
+    traversal_artifact["path"] = str(
+        vllm_root / ".." / ".." / "precompiled" / files["vllm_target"].name
+    )
+    canonical = {
+        field: traversal[field]
+        for field in (
+            "artifacts",
+            "required_bindings",
+            "pynv_native_paths",
+            "vllm_native_paths",
+            "nvcc",
+        )
+    }
+    traversal["sha256"] = runner.sha256_json(canonical)
+    with pytest.raises(RuntimeError, match="not normalized"):
+        runner.revalidate_live_runtime_artifact_manifest_binding(
+            traversal, label="traversal-alias"
+        )
 
 
 def make_strict_audit_cells(runner, tmp_path: Path):

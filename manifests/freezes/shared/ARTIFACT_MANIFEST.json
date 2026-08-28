@@ -1,10 +1,10 @@
 {
   "artifacts": [
     {
-      "bytes": 111561,
+      "bytes": 111605,
       "mode": "0444",
       "path": "benchmark_pynvvideocodec_e2e_persistent.py",
-      "sha256": "71adcc9ddb99e65e51d9531ed40728b8261f0f763c2fd1d89c2610a58fa3aa2b"
+      "sha256": "d6da18d1fd77df44476a66aadfb7767174906ce58b4da9b972b38d052255bcf6"
     },
     {
       "bytes": 18387,
@@ -25,10 +25,10 @@
       "sha256": "4a2910fee2810afdb42f2a74611808bc692482df2992a9ac0cd0c8dd0a1104fb"
     },
     {
-      "bytes": 233134,
+      "bytes": 235684,
       "mode": "0444",
       "path": "run_pynv_endpoint_high_concurrency_matrix_refined.py",
-      "sha256": "7045f370bcdac85e82249f77193dcd0339cb4de3944d0084731013c3eeb93f57"
+      "sha256": "de1573ea884a11dce770b4fba2c322abe454c90c129836fbd576086551382b91"
     },
     {
       "bytes": 61777,
@@ -55,10 +55,10 @@
       "sha256": "3cb113577694b1bd1a1fa02023827fc05a4331279ad6a16dc9339f49127c7d0b"
     },
     {
-      "bytes": 98024,
+      "bytes": 104024,
       "mode": "0444",
       "path": "test_rtx_endpoint_runner_contract.py",
-      "sha256": "3ab48e24ff146ade25ff64e0ab69265f888d55ea003d3f06706e4bff8ac22f03"
+      "sha256": "296a42c744aea2830b5263125c9c41ef12ce81e9b93b13af963766942947ed11"
     },
     {
       "bytes": 9936,
@@ -96,7 +96,7 @@
     "preflight_replay": "pixel and pilot commands and all result/monitor/log/server-log/idle/worker/tensor paths are reconstructed under one fresh evidence namespace",
     "raw_response": "exact upstream/pr-head model_dump schemas and fixed server-config values are enforced for response, choice, message, usage, and metrics; normalized hashes/counts/content are cross-linked to raw response data",
     "request_records": "every passed record is reconstructed from trusted configuration and corpus provenance, including deterministic request/video identity, exact payload, independently derived video work, transport lifecycle, and globally unique response IDs",
-    "runtime_artifacts": "Python, torch, NumPy, Transformers origin, PyNv native files, vLLM native files, and nvcc when present are stable-open live-rehashed before and after every attempt",
+    "runtime_artifacts": "Python, torch, NumPy, Transformers origin, PyNv native files, vLLM logical source links and resolved native targets, and nvcc when present are stable-open live-rehashed before and after every attempt",
     "timing_nonintrusion": "response-body compression, byte evidence, and added wall-clock nanosecond probes are absent; request and batch monotonic timing boundaries retain the pre-audit harness path",
     "wall_clock": "started_at and finished_at are informational aware-UTC schema/order evidence that bound the server-created timestamp; throughput and latency use only monotonic clocks"
   },
@@ -180,15 +180,15 @@
       "rep": 6
     }
   ],
-  "schema": "pynv-rtx-publication-candidate-v3",
+  "schema": "pynv-rtx-publication-candidate-v4",
   "validation": {
     "black_version": "26.5.1",
     "python_3_10_12": {
-      "passed": 283,
+      "passed": 284,
       "skipped": 0
     },
     "python_3_12_13_native_torch_2_13_0_cu132": {
-      "passed": 283,
+      "passed": 284,
       "skipped": 0
     },
     "pyflakes_version": "3.4.0"

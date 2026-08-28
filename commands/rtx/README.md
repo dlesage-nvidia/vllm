@@ -14,11 +14,11 @@ hash, and every frozen program/test hash.
 The collection used these root basenames:
 
 - `SOURCE_ROOT`: `vllm-pynv-highc-rtx-20260828-v1`
-- `ASSET_ROOT`: `pynv-rtx-publication-freeze-v3`
+- `ASSET_ROOT`: `pynv-rtx-publication-freeze-v4`
 - `RUNTIME_MANIFEST_ROOT`: `pynv-runtime-manifests-v3`
 - `TRANSFORMERS_ROOT`: `vllm-pynv-e2e-transformers-5.14.1-20260827`
 - `CORPUS_ROOT`: `vllm-pynv-e2e-corpus-20260827`
-- `RESULT_ROOT`: `vllm-pynv-qwen3vl-rtx-final-20260828-v1`
+- `RESULT_ROOT`: `vllm-pynv-qwen3vl-rtx-final-20260828-v2`
 
 `HF_SNAPSHOT_ROOT` is the cached snapshot at revision
 `89644892e4d85e24eaac8bacfd4f463576704203`. The two controller-root variables

@@ -4,9 +4,9 @@
     {
       "files": [
         {
-          "bytes": 111561,
+          "bytes": 111605,
           "path": "benchmark_pynvvideocodec_e2e_persistent.py",
-          "sha256": "71adcc9ddb99e65e51d9531ed40728b8261f0f763c2fd1d89c2610a58fa3aa2b"
+          "sha256": "d6da18d1fd77df44476a66aadfb7767174906ce58b4da9b972b38d052255bcf6"
         },
         {
           "bytes": 18387,
@@ -31,10 +31,10 @@
       ],
       "id": "shared-harness",
       "kind": "frozen-harness",
-      "source_manifest_sha256": "930da0b3ca9fe2712653c25bdcad1c4a65d8a0de3ba31324596bd9e88e5a9b60",
+      "source_manifest_sha256": "11915ea2ded0fcbaf73fcf4cfa5ba9acd8a81efb449ec4ba3ff9212840f64e76",
       "status": "ready",
       "target": "harness/shared",
-      "tree_sha256": "363af07e25f5bae22e1e64ddfaee4b5c2273b2536476710932f578c482ee5ee7"
+      "tree_sha256": "04b6486af430bb310a61b784f17cf013639410e4bbedf8711ca8f2531d02ba10"
     },
     {
       "files": [
@@ -44,9 +44,9 @@
           "sha256": "e4cb333cd47f3015ccf3aa510e3f6c26364cc4947b63d89053decc0f8156addb"
         },
         {
-          "bytes": 233134,
+          "bytes": 235684,
           "path": "run_pynv_endpoint_high_concurrency_matrix_refined.py",
-          "sha256": "7045f370bcdac85e82249f77193dcd0339cb4de3944d0084731013c3eeb93f57"
+          "sha256": "de1573ea884a11dce770b4fba2c322abe454c90c129836fbd576086551382b91"
         },
         {
           "bytes": 61777,
@@ -56,10 +56,10 @@
       ],
       "id": "rtx-harness",
       "kind": "frozen-harness",
-      "source_manifest_sha256": "930da0b3ca9fe2712653c25bdcad1c4a65d8a0de3ba31324596bd9e88e5a9b60",
+      "source_manifest_sha256": "11915ea2ded0fcbaf73fcf4cfa5ba9acd8a81efb449ec4ba3ff9212840f64e76",
       "status": "ready",
       "target": "harness/rtx",
-      "tree_sha256": "6377a0a81e699d301675107ab48d27c1aab0bedc29d8a94375a72d27bdaa8748"
+      "tree_sha256": "9e33f86e396f8ba4e969aa6c7216609fd64cf580a726db79cd2729cfeb35cfa3"
     },
     {
       "files": [
@@ -106,7 +106,7 @@
       ],
       "id": "shared-tests",
       "kind": "frozen-tests",
-      "source_manifest_sha256": "930da0b3ca9fe2712653c25bdcad1c4a65d8a0de3ba31324596bd9e88e5a9b60",
+      "source_manifest_sha256": "11915ea2ded0fcbaf73fcf4cfa5ba9acd8a81efb449ec4ba3ff9212840f64e76",
       "status": "ready",
       "target": "tests/shared",
       "tree_sha256": "a08a1ec957148e74675011005f0b1f86f0d121e1fac22d5ccd46e30c5a942218"
@@ -114,17 +114,17 @@
     {
       "files": [
         {
-          "bytes": 98024,
+          "bytes": 104024,
           "path": "test_rtx_endpoint_runner_contract.py",
-          "sha256": "3ab48e24ff146ade25ff64e0ab69265f888d55ea003d3f06706e4bff8ac22f03"
+          "sha256": "296a42c744aea2830b5263125c9c41ef12ce81e9b93b13af963766942947ed11"
         }
       ],
       "id": "rtx-tests",
       "kind": "frozen-tests",
-      "source_manifest_sha256": "930da0b3ca9fe2712653c25bdcad1c4a65d8a0de3ba31324596bd9e88e5a9b60",
+      "source_manifest_sha256": "11915ea2ded0fcbaf73fcf4cfa5ba9acd8a81efb449ec4ba3ff9212840f64e76",
       "status": "ready",
       "target": "tests/rtx",
-      "tree_sha256": "0495f03cb157b715aab8d8010136bad17c74f356794a50aa5f5a9a65264b55df"
+      "tree_sha256": "59d0dd1118e0439db7ab8e66de0ec6044032223c6170e3ccd1e458bdb0c92fe2"
     },
     {
       "files": [
@@ -144,32 +144,32 @@
     {
       "files": [
         {
-          "bytes": 7997,
+          "bytes": 8034,
           "path": "ARTIFACT_MANIFEST.json",
-          "sha256": "930da0b3ca9fe2712653c25bdcad1c4a65d8a0de3ba31324596bd9e88e5a9b60"
+          "sha256": "11915ea2ded0fcbaf73fcf4cfa5ba9acd8a81efb449ec4ba3ff9212840f64e76"
         }
       ],
       "id": "shared-freeze-manifests",
       "kind": "freeze-manifests",
-      "source_manifest_sha256": "930da0b3ca9fe2712653c25bdcad1c4a65d8a0de3ba31324596bd9e88e5a9b60",
+      "source_manifest_sha256": "11915ea2ded0fcbaf73fcf4cfa5ba9acd8a81efb449ec4ba3ff9212840f64e76",
       "status": "ready",
       "target": "manifests/freezes/shared",
-      "tree_sha256": "12fe3f9804f2612c137fbf81a312b1a2e6cfecc077d5fa351a764e7efe3f2043"
+      "tree_sha256": "e35543e01a822675cbdef4160ad8a8f1cb2b5d01ead3c0f035af2569479c5b42"
     },
     {
       "files": [
         {
-          "bytes": 7997,
+          "bytes": 8034,
           "path": "ARTIFACT_MANIFEST.json",
-          "sha256": "930da0b3ca9fe2712653c25bdcad1c4a65d8a0de3ba31324596bd9e88e5a9b60"
+          "sha256": "11915ea2ded0fcbaf73fcf4cfa5ba9acd8a81efb449ec4ba3ff9212840f64e76"
         }
       ],
       "id": "rtx-freeze-manifests",
       "kind": "freeze-manifests",
-      "source_manifest_sha256": "930da0b3ca9fe2712653c25bdcad1c4a65d8a0de3ba31324596bd9e88e5a9b60",
+      "source_manifest_sha256": "11915ea2ded0fcbaf73fcf4cfa5ba9acd8a81efb449ec4ba3ff9212840f64e76",
       "status": "ready",
       "target": "manifests/freezes/rtx",
-      "tree_sha256": "12fe3f9804f2612c137fbf81a312b1a2e6cfecc077d5fa351a764e7efe3f2043"
+      "tree_sha256": "e35543e01a822675cbdef4160ad8a8f1cb2b5d01ead3c0f035af2569479c5b42"
     },
     {
       "files": [
@@ -296,17 +296,17 @@
         {
           "bytes": 1494,
           "path": "README.md",
-          "sha256": "855cb898761028df12355e595c37e2045f7eb651f7dcaef0336ebee874944b56"
+          "sha256": "746f8b6a9fa12c67ff6004a62aab21850f3f0acc975dc657537fdeed4636bf01"
         },
         {
-          "bytes": 854,
+          "bytes": 981,
           "path": "commands.json",
-          "sha256": "220361a581509804b6be99c63f6448072c37246628e0b937fbbe35b54182162c"
+          "sha256": "af7aa3872a46764b6f1d8378588cc921e41db413bd0c16b8efcd44e91f1ad2e9"
         },
         {
           "bytes": 8763,
           "path": "run.sh",
-          "sha256": "9599690ecbd3b7c542a5fe91c7ac80622c3579c20058f67ab0e9774543326ac9"
+          "sha256": "9cc05a09beecfb68b83b61f5da558dad095b762bc38f416491190507058def32"
         },
         {
           "bytes": 666,
@@ -316,10 +316,10 @@
       ],
       "id": "rtx-commands",
       "kind": "exact-commands",
-      "source_manifest_sha256": "220361a581509804b6be99c63f6448072c37246628e0b937fbbe35b54182162c",
+      "source_manifest_sha256": "af7aa3872a46764b6f1d8378588cc921e41db413bd0c16b8efcd44e91f1ad2e9",
       "status": "ready",
       "target": "commands/rtx",
-      "tree_sha256": "e9b89205a15a83848f78707685a0f0b7557e2eba1196c3c66d3db91c23ccddef"
+      "tree_sha256": "255e41cbc1cb6c13d3b51de1db0ebbe2364900a47ea5ed3bba04b1452ee6a15f"
     },
     {
       "files": [
