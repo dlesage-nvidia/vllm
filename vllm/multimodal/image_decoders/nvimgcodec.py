@@ -59,7 +59,20 @@ CUDA_CONTEXT_BYTES = 448 * 1024 * 1024
 # Marginal retained decoder state per slot, measured across 1..8 warmed slots:
 # ~11 MiB/slot at 1080p and ~20 MiB/slot at 4K. Sized for the 4K case with
 # headroom; nvJPEG grows its workspace to the largest image a slot has seen.
+# Largest raster the accelerated path will admit. nvJPEG grows its retained
+# workspace with the biggest image a slot has seen, so the reservation is only
+# an upper bound if the eligible domain is bounded too. Images above this go to
+# Pillow, which makes DECODER_WORKSPACE_BYTES (measured at 4K, with headroom) a
+# real ceiling rather than a sample.
+MAX_ELIGIBLE_PIXELS = 3840 * 2160
 DECODER_WORKSPACE_BYTES = 32 * 1024 * 1024
+# Each slot also retains one decoded-image buffer between calls. nvImageCodec
+# allocates it from its own device allocator, so it is invisible to torch's
+# accounting and has to be reserved explicitly or it comes silently out of the
+# KV cache. Measured directly: the buffer grows by reallocation to the largest
+# raster a slot has decoded and never shrinks, so the bound is one raster at the
+# eligibility ceiling, not a sum over sizes.
+DECODER_RETAINED_RASTER_BYTES = MAX_ELIGIBLE_PIXELS * 3
 
 _SOI = b"\xff\xd8"
 _EOI = b"\xff\xd9"
@@ -276,6 +289,14 @@ class _Slot:
         # slots would give N-way host concurrency and 1-way device concurrency,
         # silently capping the pool at one decoder's throughput.
         self.stream = torch.cuda.Stream(device=0)
+        # One decoded-image buffer retained between calls. Without it every
+        # decode allocates fresh device memory, and cudaMalloc synchronizes the
+        # whole device: on an instance whose GPU already serves the model that
+        # stall is paid by the forward pass. Measured at 1080p on an A100,
+        # accelerator decoding was 0.988x of baseline with the NVJPG engines at
+        # 5.7% -- idle engines and a real loss point at the allocation, not the
+        # decode. See DECODER_RETAINED_RASTER_BYTES for the memory it costs.
+        self.reusable: list[Any] = []
         self.decoder = nvimgcodec.Decoder(
             device_id=0,
             # MUST stay 1. In nvimgcodec 0.9.0 the HYBRID_CPU_GPU backend
@@ -604,11 +625,26 @@ def _decode_on_slot(
             decoded = []
             for start in range(0, len(streams), COALESCE_WIDTH):
                 part = streams[start : start + COALESCE_WIDTH]
-                decoded.extend(
-                    slot.decoder.decode(
+                # Retain a buffer only for width-1 calls. Each retained buffer
+                # holds a full raster that the startup reservation must cover,
+                # and serving counters read native_width_1 for every image, so
+                # this keeps the win while bounding retention at one raster per
+                # slot rather than COALESCE_WIDTH of them.
+                reuse = len(part) == 1 and len(slot.reusable) == 1
+                if reuse:
+                    out = slot.decoder.decode(
+                        part,
+                        images=slot.reusable,
+                        params=slot.params,
+                        cuda_stream=slot.stream.cuda_stream,
+                    )
+                else:
+                    out = slot.decoder.decode(
                         part, params=slot.params, cuda_stream=slot.stream.cuda_stream
                     )
-                )
+                    if len(part) == 1 and out and out[0] is not None:
+                        slot.reusable = [out[0]]
+                decoded.extend(out)
                 _count_width(len(part))
             if len(decoded) != len(streams):
                 _count("pillow:result_count")
@@ -776,14 +812,11 @@ def _disable(reason: str) -> None:
     logger.warning("Disabling the nvImageCodec image backend: %s", reason)
 
 
-# Largest raster the accelerated path will admit. nvJPEG grows its retained
-# workspace with the biggest image a slot has seen, so the reservation is only
-# an upper bound if the eligible domain is bounded too. Images above this go to
-# Pillow, which makes DECODER_WORKSPACE_BYTES (measured at 4K, with headroom) a
-# real ceiling rather than a sample.
-MAX_ELIGIBLE_PIXELS = 3840 * 2160
 
 
 def decoder_gpu_memory_bytes(num_decoders: int) -> int:
     """Per-process device footprint, for the startup KV-cache reservation."""
-    return num_decoders * DECODER_WORKSPACE_BYTES + CUDA_CONTEXT_BYTES
+    return (
+        num_decoders * (DECODER_WORKSPACE_BYTES + DECODER_RETAINED_RASTER_BYTES)
+        + CUDA_CONTEXT_BYTES
+    )

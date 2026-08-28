@@ -320,3 +320,24 @@ def test_explicit_num_decoders_is_honoured():
         mm_ipc_gpu_memory_gb=1.0,
     )
     assert cfg.get_image_decoder_count() == 16
+
+
+def test_reservation_covers_the_retained_decoder_buffer():
+    """Buffer reuse retains a raster per slot; the reservation must include it.
+
+    nvImageCodec allocates it from its own device allocator, so torch's
+    accounting cannot see it -- unreserved, it comes silently out of the KV
+    cache, which is the failure this reservation exists to prevent.
+    """
+    from vllm.multimodal.image_decoders.nvimgcodec import (
+        DECODER_RETAINED_RASTER_BYTES,
+        DECODER_WORKSPACE_BYTES,
+        MAX_ELIGIBLE_PIXELS,
+    )
+    from vllm.multimodal.gpu_ipc_memory import reserve_mm_ipc_gpu_memory
+
+    assert DECODER_RETAINED_RASTER_BYTES == MAX_ELIGIBLE_PIXELS * 3
+    per_slot = DECODER_WORKSPACE_BYTES + DECODER_RETAINED_RASTER_BYTES
+    available = 40 * GiB_bytes
+    taken = available - reserve_mm_ipc_gpu_memory(available, _image_mm_config(), 1)
+    assert taken >= 4 * per_slot, "retained rasters are not covered"

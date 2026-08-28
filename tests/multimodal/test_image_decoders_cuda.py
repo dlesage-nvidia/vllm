@@ -322,3 +322,51 @@ def test_chw_exif_orientation_matches_pillow(configured, tag):
     )
     diff = np.abs(planar.transpose(1, 2, 0).astype(np.int32) - reference.astype(np.int32))
     assert diff.max() <= 3, f"orientation {tag}: max |diff| {diff.max()}"
+
+
+def test_reused_buffer_grows_and_never_shrinks(configured):
+    """The reservation assumes retention is one raster, not a sum over sizes.
+
+    Measured from the device pointer: exceeding capacity reallocates (pointer
+    moves), but a smaller image afterwards reuses the larger buffer instead of
+    shrinking it. So reallocation is a warm-up cost per slot rather than a
+    per-image one, and alternating sizes do not thrash.
+    """
+    import nvidia.nvimgcodec as nvi
+
+    slot = backend._acquire_slot()
+    assert slot is not None
+    try:
+        def decode(w, h, reuse):
+            cs = nvi.CodeStream(_jpeg(w, h, seed=w))
+            out = (
+                slot.decoder.decode(
+                    [cs], images=[reuse], params=slot.params,
+                    cuda_stream=slot.stream.cuda_stream)
+                if reuse is not None else
+                slot.decoder.decode(
+                    [cs], params=slot.params, cuda_stream=slot.stream.cuda_stream)
+            )
+            slot.stream.synchronize()
+            img = out[0]
+            return img, img.__cuda_array_interface__["data"][0], img.capacity
+
+        small, _, cap_small = decode(320, 240, None)
+        big, ptr_big, cap_big = decode(1280, 960, small)
+        assert cap_big > cap_small, "capacity did not grow for a larger image"
+        _, ptr_again, cap_again = decode(320, 240, big)
+        assert cap_again == cap_big, "buffer shrank; retention would be unbounded"
+        assert ptr_again == ptr_big, "smaller image reallocated instead of reusing"
+    finally:
+        backend._release_slot(slot)
+
+
+def test_reuse_does_not_corrupt_earlier_results(configured):
+    """The invariant reuse depends on: results are copied out before recycling."""
+    first = backend.decode_batch([_jpeg(640, 480, seed=1)], "RGB")[0]
+    assert first is not None
+    snapshot = first.copy()
+    for seed in range(8):
+        backend.decode_batch([_jpeg(640, 480, seed=seed + 2)], "RGB")
+    np.testing.assert_array_equal(
+        first, snapshot, err_msg="a recycled buffer overwrote an earlier result")
