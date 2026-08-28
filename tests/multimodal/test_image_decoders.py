@@ -636,3 +636,29 @@ def test_parser_withdraws_the_bypass_for_such_a_request():
     assert adjusted["image"]["image_output"] == "pil"
     # The server-level configuration must not be mutated in the process.
     assert "image_output" not in FakeTracker.media_io_kwargs["image"]
+
+
+def test_probe_is_fed_the_config_that_actually_carries_processor_kwargs():
+    """The probe must read kwargs from multimodal_config, not model_config.
+
+    vLLM folds --mm-processor-kwargs into multimodal_config and leaves
+    model_config's copy None, so reading the latter silently probes a processor
+    the deployment does not run. Nothing fails loudly when that happens -- the
+    probe just proves less than it claims and falls back to PIL -- so the wiring
+    is asserted here rather than left to a benchmark to notice.
+
+    This reads source because the defect is a wrong attribute on a correct call:
+    both spellings type-check, both run, and only one is right.
+    """
+    import inspect
+
+    from vllm.renderers.base import BaseRenderer
+
+    src = inspect.getsource(BaseRenderer)
+    probe_call = src[src.index("probe_output_layout("):]
+    probe_call = probe_call[: probe_call.index(")")]
+    assert "model_config.mm_processor_kwargs" not in probe_call, (
+        "probe is reading model_config.mm_processor_kwargs, which vLLM leaves "
+        "None; it must read mm_config.mm_processor_kwargs"
+    )
+    assert "mm_config.mm_processor_kwargs" in probe_call

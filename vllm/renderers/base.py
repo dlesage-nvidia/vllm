@@ -144,7 +144,12 @@ class BaseRenderer(ABC, Generic[_T]):
                     mm_config.get_image_decoder_count(),
                     output_layout=probe_output_layout(
                         self.mm_processor,
-                        config.model_config.mm_processor_kwargs,
+                        # Not model_config: vLLM folds --mm-processor-kwargs into
+                        # multimodal_config, leaving model_config's copy None. The
+                        # probe would then verify a processor the deployment does
+                        # not run, and any kwarg that changes output layout would
+                        # go unseen.
+                        mm_config.mm_processor_kwargs,
                     ),
                     coalesce_width=mm_config.get_image_coalesce_width(),
                 )
