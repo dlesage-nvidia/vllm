@@ -1,8 +1,8 @@
 {
   "authorization": {
-    "freeze_manifest_sha256": "6edbaf2489feaef386619edb797c524b852ad01db63022c7f5d2c3a8c4a2f7e8",
+    "freeze_manifest_sha256": "8c2e4905d85b1ea91d7dba43e345fc1a96c28a283523e3059aeeca958f303396",
     "state": "frozen_launch_authorized_before_collection",
-    "supersedes_freeze_manifest_sha256": "74e8dc317ec449aabfd166dfd7c54cabf69985ea5ca307cf83fe67be7958a310"
+    "supersedes_freeze_manifest_sha256": "6edbaf2489feaef386619edb797c524b852ad01db63022c7f5d2c3a8c4a2f7e8"
   },
   "commands": [
     {
@@ -13,13 +13,13 @@
     {
       "kind": "preflight_then_timed_matrix",
       "path": "run.sh",
-      "sha256": "6b394d277cec095a685e9bce3a9717e26daf384c50c00bde45f3f6c8f4340491"
+      "sha256": "fbd8f42788742b0f93d1dc7a050edc2f8a669b9fff3645c2b30ab16789143e3d"
     }
   ],
   "path_policy": "collector absolute roots are replaced one-for-one by required environment variables; argv order, hashes, options, and the two result-root basenames are unchanged",
   "platform": "a100-80gb-pcie",
-  "preflight_result_root_basename": "a100-publication-preflight-v4",
+  "preflight_result_root_basename": "a100-publication-preflight-v5",
   "result_parent_basename": "vllm-pynv-qwen3vl-e2e-20260828-v1",
-  "result_root_basename": "a100-publication-matrix-c8c16c32-r6-v4",
+  "result_root_basename": "a100-publication-matrix-c8c16c32-r6-v5",
   "schema": "pynv-exact-command-record-v1"
 }

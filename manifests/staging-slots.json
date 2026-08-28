@@ -69,9 +69,9 @@
           "sha256": "af4cadebcfada425997baf3f773b0f81d4103e981d87222cc355bc884db0a2d8"
         },
         {
-          "bytes": 309286,
+          "bytes": 311836,
           "path": "run_pynv_persistent_three_arm_high_concurrency_matrix.py",
-          "sha256": "a18499e1d2276d6e46b89cc62bf39b156af33d36b89591d921192ac160fd76f0"
+          "sha256": "2be2babb567daf92ba6a90a2672bb01977789f863193580a8999343151f385d1"
         },
         {
           "bytes": 58630,
@@ -81,10 +81,10 @@
       ],
       "id": "a100-harness",
       "kind": "frozen-harness",
-      "source_manifest_sha256": "6edbaf2489feaef386619edb797c524b852ad01db63022c7f5d2c3a8c4a2f7e8",
+      "source_manifest_sha256": "8c2e4905d85b1ea91d7dba43e345fc1a96c28a283523e3059aeeca958f303396",
       "status": "ready",
       "target": "harness/a100",
-      "tree_sha256": "2fb72c091fdb57d0f1bae82a363b6555103083bbdc902d50651d49b48cb7a513"
+      "tree_sha256": "a340be1b5966113845467f92bbee10fb08a617c0a1b92d5bb11cfd3ae5f1df53"
     },
     {
       "files": [
@@ -129,17 +129,17 @@
     {
       "files": [
         {
-          "bytes": 74981,
+          "bytes": 80039,
           "path": "test_persistent_three_arm_campaign.py",
-          "sha256": "de5ed3502ea7ae1be34fa3b2b3c68c2e321227ff55349aaf0635fcd4f585221e"
+          "sha256": "7966e62af1b3d449ba8ca45ffba501b2fa805558634a20cc66cd090bc82a5403"
         }
       ],
       "id": "a100-tests",
       "kind": "frozen-tests",
-      "source_manifest_sha256": "6edbaf2489feaef386619edb797c524b852ad01db63022c7f5d2c3a8c4a2f7e8",
+      "source_manifest_sha256": "8c2e4905d85b1ea91d7dba43e345fc1a96c28a283523e3059aeeca958f303396",
       "status": "ready",
       "target": "tests/a100",
-      "tree_sha256": "aeb47ee289e25fbf7fb5f3ab1a7b24dcf50a1683b30964f205f8bd3c8cfa5b89"
+      "tree_sha256": "98836621a05a86ccdc988d7cd5b001d842ab1ad8dadfa4b1e5ecc1ffed0e7c2d"
     },
     {
       "files": [
@@ -176,30 +176,30 @@
         {
           "bytes": 7550,
           "path": "ARTIFACT_MANIFEST.json",
-          "sha256": "6edbaf2489feaef386619edb797c524b852ad01db63022c7f5d2c3a8c4a2f7e8"
+          "sha256": "8c2e4905d85b1ea91d7dba43e345fc1a96c28a283523e3059aeeca958f303396"
         },
         {
           "bytes": 4626,
           "path": "CAMPAIGN_CONTRACT.json",
-          "sha256": "82659a3caad4282094ca7d893816d1f34af9d0067c54062b88c386232ab224d0"
+          "sha256": "5e756f9472fcb4b8731c8804aa21147441d88e64a9581e10c28253eca8829d5c"
         },
         {
-          "bytes": 7997,
-          "path": "SHARED_V3_ARTIFACT_MANIFEST.json",
-          "sha256": "930da0b3ca9fe2712653c25bdcad1c4a65d8a0de3ba31324596bd9e88e5a9b60"
+          "bytes": 8034,
+          "path": "SHARED_V4_ARTIFACT_MANIFEST.json",
+          "sha256": "11915ea2ded0fcbaf73fcf4cfa5ba9acd8a81efb449ec4ba3ff9212840f64e76"
         },
         {
-          "bytes": 2239,
+          "bytes": 2720,
           "path": "VALIDATION.json",
-          "sha256": "e84e905836191eead19131dc2ef5e1419ae800a6d76f26099105e07a793c7e4f"
+          "sha256": "b068f145be6345ee6e5dadecca7c6ac4f063692a7c1bcb58986787a80aeed6b8"
         }
       ],
       "id": "a100-freeze-manifests",
       "kind": "freeze-manifests",
-      "source_manifest_sha256": "6edbaf2489feaef386619edb797c524b852ad01db63022c7f5d2c3a8c4a2f7e8",
+      "source_manifest_sha256": "8c2e4905d85b1ea91d7dba43e345fc1a96c28a283523e3059aeeca958f303396",
       "status": "ready",
       "target": "manifests/freezes/a100",
-      "tree_sha256": "90689b57ab719cbd7ca0097d06c590087c09db26918167e77e602c98fce3452a"
+      "tree_sha256": "598f1083fef2ae03502f7e0a40d617fee417db0bc97bd639502bb43b20c8dfc6"
     },
     {
       "files": [
@@ -326,17 +326,17 @@
         {
           "bytes": 1823,
           "path": "README.md",
-          "sha256": "4f77b989a3636eea2e0bb3c8a03aaeee0a5f84a80fd291e8bb4308536e0805d9"
+          "sha256": "8d59fe39bcdcd68f86d075859536c5f5389416c9f0180b331cc6941a3b3de0b7"
         },
         {
           "bytes": 1100,
           "path": "commands.json",
-          "sha256": "facbb4ebb566cd916fb36a963da5e9579b9dd026d94761b3c95d0b458669745f"
+          "sha256": "9a3f29cc32e9e7bf244f104a30aa0863ccbb91124134c5a4844fc22c354cb520"
         },
         {
           "bytes": 14457,
           "path": "run.sh",
-          "sha256": "6b394d277cec095a685e9bce3a9717e26daf384c50c00bde45f3f6c8f4340491"
+          "sha256": "fbd8f42788742b0f93d1dc7a050edc2f8a669b9fff3645c2b30ab16789143e3d"
         },
         {
           "bytes": 1199,
@@ -346,10 +346,10 @@
       ],
       "id": "a100-commands",
       "kind": "exact-commands",
-      "source_manifest_sha256": "facbb4ebb566cd916fb36a963da5e9579b9dd026d94761b3c95d0b458669745f",
+      "source_manifest_sha256": "9a3f29cc32e9e7bf244f104a30aa0863ccbb91124134c5a4844fc22c354cb520",
       "status": "ready",
       "target": "commands/a100",
-      "tree_sha256": "b4ad73cd292db093faa98431076f117b2696f1fab0aa8bc9cff87a254d1b3ec0"
+      "tree_sha256": "f9e5e55a91fbf9b78adb0aeb40315eec143793fd7d159ab0295485990d0e6d32"
     },
     {
       "files": [],

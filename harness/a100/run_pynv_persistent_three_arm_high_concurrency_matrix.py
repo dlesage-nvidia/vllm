@@ -91,7 +91,7 @@ T_CRITICAL_95_DF5 = 2.570581835636314
 MEASURED_REQUESTS = {8: 64, 16: 128, 32: 256}
 WARMUP_REQUESTS = {8: 24, 16: 48, 32: 96}
 CAMPAIGN_HARNESS_SHA256 = (
-    "71adcc9ddb99e65e51d9531ed40728b8261f0f763c2fd1d89c2610a58fa3aa2b"
+    "d6da18d1fd77df44476a66aadfb7767174906ce58b4da9b972b38d052255bcf6"
 )
 GPU_MONITOR_SHA256 = "239bcbbd0e635a8b44e46588142f336a8879067750aeee0d649faa8e62e950bc"
 IDLE_GATE_SHA256 = "0a7119e7d0c40e3274ea9846db0b4e7213e7c1beeb4ddecce3a18d9641c5b02e"
@@ -288,6 +288,8 @@ def stable_rehash_artifact(binding: Mapping[str, Any], *, label: str) -> dict[st
     claimed_resolved = Path(resolved_value)
     if not path.is_absolute() or not claimed_resolved.is_absolute():
         raise RuntimeError(f"{label} artifact paths are not absolute")
+    if os.path.normpath(path_value) != path_value:
+        raise RuntimeError(f"{label} artifact path is not normalized")
     try:
         path_lstat_before = path.lstat()
         resolved_before = path.resolve(strict=True)
@@ -391,12 +393,18 @@ def revalidate_runtime_artifact_manifest(
     for index, binding in enumerate(artifacts):
         if not isinstance(binding, Mapping):
             raise RuntimeError("runtime artifact binding is not an object")
+        path_value = binding.get("path")
         resolved_value = binding.get("resolved_path")
         if (
-            not isinstance(resolved_value, str)
+            not isinstance(path_value, str)
+            or not Path(path_value).is_absolute()
+            or os.path.normpath(path_value) != path_value
+            or not isinstance(resolved_value, str)
             or not Path(resolved_value).is_absolute()
         ):
-            raise RuntimeError(f"runtime artifact {index} resolved path is invalid")
+            raise RuntimeError(f"runtime artifact {index} path is invalid")
+        if str(Path(path_value).resolve(strict=True)) != resolved_value:
+            raise RuntimeError(f"runtime artifact {index} path binding is inconsistent")
         if resolved_value in claimed_by_resolved:
             raise RuntimeError("runtime artifact list contains a duplicate path")
         claimed_by_resolved[resolved_value] = binding
@@ -422,22 +430,24 @@ def revalidate_runtime_artifact_manifest(
         required_bindings[label] = resolved
 
     source_root = source_root.resolve()
-    vllm_native = sorted(
-        resolved
-        for resolved in claimed_by_resolved
-        if Path(resolved).is_relative_to(source_root)
-        and Path(resolved).suffix in {".so", ".pyd"}
+    vllm_package_root = source_root / "vllm"
+    claimed_vllm_bindings = sorted(
+        (str(Path(str(binding["path"]))), resolved)
+        for resolved, binding in claimed_by_resolved.items()
+        if Path(str(binding["path"])).is_relative_to(vllm_package_root)
+        and Path(str(binding["path"])).suffix in {".so", ".pyd"}
     )
-    if not vllm_native:
+    if not claimed_vllm_bindings:
         raise RuntimeError("runtime artifact manifest lacks vLLM native extensions")
-    discovered_vllm_native = sorted(
-        str(path.resolve(strict=True))
+    discovered_vllm_bindings = sorted(
+        (str(path), str(path.resolve(strict=True)))
         for pattern in ("*.so", "*.pyd")
-        for path in source_root.joinpath("vllm").glob(pattern)
+        for path in vllm_package_root.rglob(pattern)
         if path.is_file()
     )
-    if vllm_native != discovered_vllm_native:
+    if claimed_vllm_bindings != discovered_vllm_bindings:
         raise RuntimeError("runtime artifact manifest omits a vLLM native extension")
+    vllm_native = sorted({resolved for _, resolved in claimed_vllm_bindings})
     pynv_origin = Path(required_paths["module:PyNvVideoCodec"]).resolve(strict=True)
     pynv_package = pynv_origin.parent
     pynv_native = sorted(
@@ -574,18 +584,55 @@ def revalidate_live_runtime_artifact_manifest_binding(
         for path in pynv_package.glob(pattern)
         if path.is_file()
     )
-    resolved_vllm_paths = [Path(path).resolve(strict=True) for path in vllm_paths]
-    vllm_package_parents = {path.parent for path in resolved_vllm_paths}
-    if len(vllm_package_parents) != 1:
-        raise RuntimeError(f"{label} vLLM native artifacts span package roots")
-    vllm_package = next(iter(vllm_package_parents))
-    discovered_vllm = sorted(
-        str(path.resolve(strict=True))
+    artifacts_by_resolved: dict[str, Mapping[str, Any]] = {}
+    for index, artifact in enumerate(artifacts):
+        if not isinstance(artifact, Mapping):
+            raise RuntimeError(f"{label} live artifact {index} is malformed")
+        logical_path = artifact.get("path")
+        resolved_path = artifact.get("resolved_path")
+        if not isinstance(logical_path, str) or not isinstance(resolved_path, str):
+            raise RuntimeError(f"{label} live artifact path set is malformed")
+        if (
+            not Path(logical_path).is_absolute()
+            or not Path(resolved_path).is_absolute()
+        ):
+            raise RuntimeError(f"{label} live artifact paths are not absolute")
+        if os.path.normpath(logical_path) != logical_path:
+            raise RuntimeError(f"{label} live artifact path is not normalized")
+        if os.path.normpath(resolved_path) != resolved_path:
+            raise RuntimeError(f"{label} live resolved path is not normalized")
+        if resolved_path in artifacts_by_resolved:
+            raise RuntimeError(f"{label} live artifact path set is malformed")
+        artifacts_by_resolved[resolved_path] = artifact
+    if not set(vllm_paths).issubset(artifacts_by_resolved):
+        raise RuntimeError(f"{label} vLLM native artifact bindings are incomplete")
+    logical_vllm_paths = [
+        Path(str(artifacts_by_resolved[path].get("path", ""))) for path in vllm_paths
+    ]
+    vllm_package_roots = {
+        path.parent for path in logical_vllm_paths if path.parent.name == "vllm"
+    }
+    if len(vllm_package_roots) != 1:
+        raise RuntimeError(f"{label} vLLM logical package root is ambiguous")
+    vllm_package = next(iter(vllm_package_roots))
+    if not all(
+        path.is_absolute() and path.is_relative_to(vllm_package)
+        for path in logical_vllm_paths
+    ):
+        raise RuntimeError(f"{label} vLLM logical native paths escaped package root")
+    claimed_vllm_bindings = sorted(
+        (str(logical), resolved)
+        for logical, resolved in zip(logical_vllm_paths, vllm_paths)
+    )
+    discovered_vllm_bindings = sorted(
+        (str(path), str(path.resolve(strict=True)))
         for pattern in ("*.so", "*.pyd")
-        for path in vllm_package.glob(pattern)
+        for path in vllm_package.rglob(pattern)
         if path.is_file()
     )
-    if sorted(pynv_paths) != discovered_pynv or sorted(vllm_paths) != discovered_vllm:
+    if claimed_vllm_bindings != discovered_vllm_bindings:
+        raise RuntimeError(f"{label} live vLLM native artifact set changed")
+    if sorted(pynv_paths) != discovered_pynv:
         raise RuntimeError(f"{label} live native artifact set changed")
     expected_artifact_paths = {
         *required.values(),
@@ -3800,6 +3847,7 @@ def canonical_runtime_fingerprint(result: Mapping[str, Any]) -> dict[str, Any]:
     executable = python.get("executable")
     if not isinstance(executable, str):
         raise RuntimeError("Python executable provenance is missing")
+    vllm_native_paths = set(live_manifest["vllm_native_paths"])
     vllm_compiled_artifacts = sorted(
         (
             {
@@ -3808,8 +3856,7 @@ def canonical_runtime_fingerprint(result: Mapping[str, Any]) -> dict[str, Any]:
                 "sha256": item["sha256"],
             }
             for item in live_manifest["artifacts"]
-            if Path(item["resolved_path"]).is_relative_to(source_root)
-            and Path(item["resolved_path"]).suffix in {".so", ".pyd"}
+            if item["resolved_path"] in vllm_native_paths
         ),
         key=lambda item: (item["basename"], item["sha256"]),
     )

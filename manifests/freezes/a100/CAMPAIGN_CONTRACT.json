@@ -88,9 +88,9 @@
     "confidence_interval": "two-sided 95% t interval on paired log ratios, df=5",
     "also_report": ["mean", "median", "sample_stdev", "arithmetic_paired_delta", "ratio_of_means"]
   },
-  "shared_v3": {
-    "manifest_sha256": "930da0b3ca9fe2712653c25bdcad1c4a65d8a0de3ba31324596bd9e88e5a9b60",
-    "harness_sha256": "71adcc9ddb99e65e51d9531ed40728b8261f0f763c2fd1d89c2610a58fa3aa2b",
+  "shared_v4": {
+    "manifest_sha256": "11915ea2ded0fcbaf73fcf4cfa5ba9acd8a81efb449ec4ba3ff9212840f64e76",
+    "harness_sha256": "d6da18d1fd77df44476a66aadfb7767174906ce58b4da9b972b38d052255bcf6",
     "guard_helper_sha256": "4a2910fee2810afdb42f2a74611808bc692482df2992a9ac0cd0c8dd0a1104fb",
     "idle_gate_sha256": "0a7119e7d0c40e3274ea9846db0b4e7213e7c1beeb4ddecce3a18d9641c5b02e",
     "monitor_sha256": "239bcbbd0e635a8b44e46588142f336a8879067750aeee0d649faa8e62e950bc",

@@ -1,13 +1,13 @@
 {
-  "schema": "pynv-a100-publication-freeze-v4",
+  "schema": "pynv-a100-publication-freeze-v5",
   "status": "immutable_launch_authorized_not_launched",
-  "supersedes_manifest_sha256": "74e8dc317ec449aabfd166dfd7c54cabf69985ea5ca307cf83fe67be7958a310",
+  "supersedes_manifest_sha256": "6edbaf2489feaef386619edb797c524b852ad01db63022c7f5d2c3a8c4a2f7e8",
   "artifact_count_excluding_manifest": 16,
-  "shared_v3_manifest_sha256": "930da0b3ca9fe2712653c25bdcad1c4a65d8a0de3ba31324596bd9e88e5a9b60",
+  "shared_v4_manifest_sha256": "11915ea2ded0fcbaf73fcf4cfa5ba9acd8a81efb449ec4ba3ff9212840f64e76",
   "file_mode": "0444",
   "directory_mode": "0555",
   "dependency_order": [
-    "SHARED_V3_ARTIFACT_MANIFEST.json",
+    "SHARED_V4_ARTIFACT_MANIFEST.json",
     "CAMPAIGN_CONTRACT.json",
     "pynv_gpu_guard.py",
     "wait_for_exclusive_gpu_refined.py",
@@ -26,10 +26,10 @@
   ],
   "artifacts": [
     {
-      "path": "SHARED_V3_ARTIFACT_MANIFEST.json",
-      "role": "approved_shared_v3_provenance",
-      "bytes": 7997,
-      "sha256": "930da0b3ca9fe2712653c25bdcad1c4a65d8a0de3ba31324596bd9e88e5a9b60",
+      "path": "SHARED_V4_ARTIFACT_MANIFEST.json",
+      "role": "approved_shared_v4_provenance",
+      "bytes": 8034,
+      "sha256": "11915ea2ded0fcbaf73fcf4cfa5ba9acd8a81efb449ec4ba3ff9212840f64e76",
       "mode": "0444",
       "dependencies": []
     },
@@ -37,21 +37,21 @@
       "path": "CAMPAIGN_CONTRACT.json",
       "role": "semantic_three_arm_campaign_contract",
       "bytes": 4626,
-      "sha256": "82659a3caad4282094ca7d893816d1f34af9d0067c54062b88c386232ab224d0",
+      "sha256": "5e756f9472fcb4b8731c8804aa21147441d88e64a9581e10c28253eca8829d5c",
       "mode": "0444",
-      "dependencies": ["SHARED_V3_ARTIFACT_MANIFEST.json"]
+      "dependencies": ["SHARED_V4_ARTIFACT_MANIFEST.json"]
     },
     {
       "path": "pynv_gpu_guard.py",
-      "role": "shared_v3_structural_gpu_guard_helper",
+      "role": "shared_v4_structural_gpu_guard_helper",
       "bytes": 44002,
       "sha256": "4a2910fee2810afdb42f2a74611808bc692482df2992a9ac0cd0c8dd0a1104fb",
       "mode": "0444",
-      "dependencies": ["SHARED_V3_ARTIFACT_MANIFEST.json"]
+      "dependencies": ["SHARED_V4_ARTIFACT_MANIFEST.json"]
     },
     {
       "path": "wait_for_exclusive_gpu_refined.py",
-      "role": "shared_v3_idle_gate",
+      "role": "shared_v4_idle_gate",
       "bytes": 17800,
       "sha256": "0a7119e7d0c40e3274ea9846db0b4e7213e7c1beeb4ddecce3a18d9641c5b02e",
       "mode": "0444",
@@ -59,7 +59,7 @@
     },
     {
       "path": "run_with_gpu_monitor_refined.py",
-      "role": "shared_v3_workload_monitor",
+      "role": "shared_v4_workload_monitor",
       "bytes": 50860,
       "sha256": "239bcbbd0e635a8b44e46588142f336a8879067750aeee0d649faa8e62e950bc",
       "mode": "0444",
@@ -67,23 +67,23 @@
     },
     {
       "path": "benchmark_pynvvideocodec_e2e_persistent.py",
-      "role": "shared_v3_persistent_non_streaming_e2e_harness",
-      "bytes": 111561,
-      "sha256": "71adcc9ddb99e65e51d9531ed40728b8261f0f763c2fd1d89c2610a58fa3aa2b",
+      "role": "shared_v4_persistent_non_streaming_e2e_harness",
+      "bytes": 111605,
+      "sha256": "d6da18d1fd77df44476a66aadfb7767174906ce58b4da9b972b38d052255bcf6",
       "mode": "0444",
-      "dependencies": ["SHARED_V3_ARTIFACT_MANIFEST.json"]
+      "dependencies": ["SHARED_V4_ARTIFACT_MANIFEST.json"]
     },
     {
       "path": "capture_runtime_tree_manifest.py",
-      "role": "shared_v3_runtime_tree_manifest_tool",
+      "role": "shared_v4_runtime_tree_manifest_tool",
       "bytes": 18387,
       "sha256": "d4edac7bc314aba8ceedc799b9d9b1c64ac880d340dff70b949db50066f1981a",
       "mode": "0444",
-      "dependencies": ["SHARED_V3_ARTIFACT_MANIFEST.json"]
+      "dependencies": ["SHARED_V4_ARTIFACT_MANIFEST.json"]
     },
     {
       "path": "test_runtime_tree_manifest.py",
-      "role": "shared_v3_runtime_manifest_tests",
+      "role": "shared_v4_runtime_manifest_tests",
       "bytes": 9936,
       "sha256": "d0ab0fcf324f6bc1042610a0ac5a970fe5fcf3fe31927aa904d0bb0ea76e0366",
       "mode": "0444",
@@ -116,8 +116,8 @@
     {
       "path": "run_pynv_persistent_three_arm_high_concurrency_matrix.py",
       "role": "a100_three_arm_matrix_controller_and_auditor",
-      "bytes": 309286,
-      "sha256": "a18499e1d2276d6e46b89cc62bf39b156af33d36b89591d921192ac160fd76f0",
+      "bytes": 311836,
+      "sha256": "2be2babb567daf92ba6a90a2672bb01977789f863193580a8999343151f385d1",
       "mode": "0444",
       "dependencies": [
         "CAMPAIGN_CONTRACT.json",
@@ -133,9 +133,9 @@
     },
     {
       "path": "run_pynv_endpoint_high_concurrency_matrix_refined.py",
-      "role": "exact_shared_v3_test_dependency_only",
-      "bytes": 233134,
-      "sha256": "7045f370bcdac85e82249f77193dcd0339cb4de3944d0084731013c3eeb93f57",
+      "role": "exact_shared_v4_test_dependency_only",
+      "bytes": 235684,
+      "sha256": "de1573ea884a11dce770b4fba2c322abe454c90c129836fbd576086551382b91",
       "mode": "0444",
       "dependencies": [
         "benchmark_pynvvideocodec_e2e_persistent.py",
@@ -144,7 +144,7 @@
     },
     {
       "path": "test_persistent_http_harness.py",
-      "role": "exact_shared_v3_persistent_harness_tests",
+      "role": "exact_shared_v4_persistent_harness_tests",
       "bytes": 18003,
       "sha256": "9dadac7a651efb770557d98372acea90fe58db0a8ecf46a4a65adc8497c1a26b",
       "mode": "0444",
@@ -152,7 +152,7 @@
     },
     {
       "path": "test_refined_gpu_guards.py",
-      "role": "exact_shared_v3_guard_and_monitor_tests",
+      "role": "exact_shared_v4_guard_and_monitor_tests",
       "bytes": 33002,
       "sha256": "3cb113577694b1bd1a1fa02023827fc05a4331279ad6a16dc9339f49127c7d0b",
       "mode": "0444",
@@ -166,8 +166,8 @@
     {
       "path": "test_persistent_three_arm_campaign.py",
       "role": "a100_three_arm_parser_integrity_and_mutation_tests",
-      "bytes": 74981,
-      "sha256": "de5ed3502ea7ae1be34fa3b2b3c68c2e321227ff55349aaf0635fcd4f585221e",
+      "bytes": 80039,
+      "sha256": "7966e62af1b3d449ba8ca45ffba501b2fa805558634a20cc66cd090bc82a5403",
       "mode": "0444",
       "dependencies": [
         "CAMPAIGN_CONTRACT.json",
@@ -181,8 +181,8 @@
     {
       "path": "VALIDATION.json",
       "role": "offline_validation_transcript",
-      "bytes": 2239,
-      "sha256": "e84e905836191eead19131dc2ef5e1419ae800a6d76f26099105e07a793c7e4f",
+      "bytes": 2720,
+      "sha256": "b068f145be6345ee6e5dadecca7c6ac4f063692a7c1bcb58986787a80aeed6b8",
       "mode": "0444",
       "dependencies": [
         "test_runtime_tree_manifest.py",

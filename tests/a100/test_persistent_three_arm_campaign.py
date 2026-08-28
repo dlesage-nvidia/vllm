@@ -440,6 +440,35 @@ def exercise_runtime_hardware_fingerprint_contract(runner: ModuleType) -> None:
                     "sha256": hashlib.sha256(content).hexdigest(),
                 }
             )
+        vllm_link = paths["vllm"]
+        vllm_artifact = next(
+            item for item in artifacts if item["path"] == str(vllm_link)
+        )
+        vllm_content = vllm_link.read_bytes()
+        vllm_link.unlink()
+        vllm_target = root / "zz-precompiled" / "_C.abi3.so"
+        vllm_target.parent.mkdir(parents=True)
+        vllm_target.write_bytes(vllm_content)
+        vllm_link.symlink_to(vllm_target)
+        vllm_artifact["resolved_path"] = str(vllm_target.resolve())
+
+        nested_target = (
+            root / "aa-precompiled" / "vllm_flash_attn" / "_vllm_fa2_C.abi3.so"
+        )
+        nested_target.parent.mkdir(parents=True)
+        nested_target.write_bytes(b"fixture-vllm-nested")
+        nested_link = source_root / "vllm" / "vllm_flash_attn" / nested_target.name
+        nested_link.parent.mkdir(parents=True)
+        nested_link.symlink_to(nested_target)
+        paths["vllm_nested"] = nested_link
+        artifacts.append(
+            {
+                "path": str(nested_link),
+                "resolved_path": str(nested_target.resolve()),
+                "bytes": nested_target.stat().st_size,
+                "sha256": sha256_file(nested_target),
+            }
+        )
         environment = {
             name: "fixture"
             for name in (
@@ -515,6 +544,103 @@ def exercise_runtime_hardware_fingerprint_contract(runner: ModuleType) -> None:
         second = runner.canonical_runtime_fingerprint(copy.deepcopy(result))
         assert first == second
         assert first["schema"] == "pynv-runtime-hardware-fingerprint-v1"
+        live_manifest = first["live_runtime_artifact_manifest"]
+        assert live_manifest["vllm_native_paths"] == sorted(
+            [str(vllm_target.resolve()), str(nested_target.resolve())]
+        )
+        assert (
+            runner.revalidate_live_runtime_artifact_manifest_binding(
+                live_manifest, label="external-native-links"
+            )
+            == live_manifest
+        )
+        assert len(first["canonical"]["python"]["vllm_compiled_artifacts"]) == 2
+
+        omitted_nested = copy.deepcopy(live_manifest)
+        omitted_nested["vllm_native_paths"].remove(str(nested_target.resolve()))
+        omitted_nested["artifacts"] = [
+            item
+            for item in omitted_nested["artifacts"]
+            if item["resolved_path"] != str(nested_target.resolve())
+        ]
+        omitted_nested["sha256"] = runner.sha256_json(
+            {
+                field: omitted_nested[field]
+                for field in (
+                    "artifacts",
+                    "required_bindings",
+                    "pynv_native_paths",
+                    "vllm_native_paths",
+                    "nvcc",
+                )
+            }
+        )
+        try:
+            runner.revalidate_live_runtime_artifact_manifest_binding(
+                omitted_nested, label="omitted-nested-native"
+            )
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("omitted nested vLLM native was accepted")
+
+        direct_target = copy.deepcopy(live_manifest)
+        direct_artifact = next(
+            item
+            for item in direct_target["artifacts"]
+            if item["resolved_path"] == str(vllm_target.resolve())
+        )
+        direct_artifact["path"] = direct_artifact["resolved_path"]
+        direct_target["sha256"] = runner.sha256_json(
+            {
+                field: direct_target[field]
+                for field in (
+                    "artifacts",
+                    "required_bindings",
+                    "pynv_native_paths",
+                    "vllm_native_paths",
+                    "nvcc",
+                )
+            }
+        )
+        try:
+            runner.revalidate_live_runtime_artifact_manifest_binding(
+                direct_target, label="direct-resolved-native"
+            )
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("direct resolved vLLM native path was accepted")
+
+        traversal_alias = copy.deepcopy(live_manifest)
+        aliased_artifact = next(
+            item
+            for item in traversal_alias["artifacts"]
+            if item["resolved_path"] == str(vllm_target.resolve())
+        )
+        aliased_artifact["path"] = str(
+            source_root / "vllm" / ".." / "vllm" / vllm_link.name
+        )
+        traversal_alias["sha256"] = runner.sha256_json(
+            {
+                field: traversal_alias[field]
+                for field in (
+                    "artifacts",
+                    "required_bindings",
+                    "pynv_native_paths",
+                    "vllm_native_paths",
+                    "nvcc",
+                )
+            }
+        )
+        try:
+            runner.revalidate_live_runtime_artifact_manifest_binding(
+                traversal_alias, label="traversal-alias"
+            )
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("non-normalized vLLM native alias was accepted")
         changed = copy.deepcopy(result)
         changed["provenance"]["hardware"]["nvidia_smi_output"] = changed["provenance"][
             "hardware"
@@ -543,6 +669,7 @@ def exercise_runtime_hardware_fingerprint_contract(runner: ModuleType) -> None:
             "transformers",
             "PyNvVideoCodec",
             "vllm",
+            "vllm_nested",
             "nvcc",
         ):
             artifact_path = paths[artifact_label]
@@ -1594,6 +1721,12 @@ def main() -> None:
         assert endpoint["server_argv"] == runner.variant_server_argv(variant)
     contract_bytes = args.campaign_contract.read_text()
     assert "/home/" not in contract_bytes and "/tmp/" not in contract_bytes
+    shared_manifest = args.campaign_contract.parent / "SHARED_V4_ARTIFACT_MANIFEST.json"
+    assert contract["shared_v4"]["manifest_sha256"] == sha256_file(shared_manifest)
+    assert contract["shared_v4"]["harness_sha256"] == sha256_file(
+        args.harness.resolve()
+    )
+    assert runner.CAMPAIGN_HARNESS_SHA256 == sha256_file(args.harness.resolve())
     assert runner.PREFLIGHT_RUNNER_SHA256 == sha256_file(args.pilot_runner.resolve())
     assert runner.PREFLIGHT_RUNNER_FILENAME == args.pilot_runner.name
     assert runner.PIXEL_PREFLIGHT_SHA256 == sha256_file(args.pixel_preflight.resolve())

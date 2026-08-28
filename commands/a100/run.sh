@@ -16,9 +16,9 @@ set -euo pipefail
 : "${CONFLICTING_CONTROLLER_ROOT_2:?set the second known foreign controller root}"
 
 PYTHON="${SOURCE_ROOT}/.venv/bin/python"
-HARNESS_SHA256="71adcc9ddb99e65e51d9531ed40728b8261f0f763c2fd1d89c2610a58fa3aa2b"
-DRIVER_SHA256="a18499e1d2276d6e46b89cc62bf39b156af33d36b89591d921192ac160fd76f0"
-FREEZE_MANIFEST_SHA256="6edbaf2489feaef386619edb797c524b852ad01db63022c7f5d2c3a8c4a2f7e8"
+HARNESS_SHA256="d6da18d1fd77df44476a66aadfb7767174906ce58b4da9b972b38d052255bcf6"
+DRIVER_SHA256="2be2babb567daf92ba6a90a2672bb01977789f863193580a8999343151f385d1"
+FREEZE_MANIFEST_SHA256="8c2e4905d85b1ea91d7dba43e345fc1a96c28a283523e3059aeeca958f303396"
 
 fail() {
     echo "$*" >&2
@@ -121,7 +121,7 @@ validate_asset_inventory() {
     local -A expected_assets=(
         [ARTIFACT_MANIFEST.json]=1
         [CAMPAIGN_CONTRACT.json]=1
-        [SHARED_V3_ARTIFACT_MANIFEST.json]=1
+        [SHARED_V4_ARTIFACT_MANIFEST.json]=1
         [VALIDATION.json]=1
         [benchmark_pynvvideocodec_e2e_persistent.py]=1
         [capture_runtime_tree_manifest.py]=1
@@ -156,7 +156,7 @@ validate_asset_inventory() {
 }
 
 require_exact_directory SOURCE_ROOT vllm-pynv-a100-publication-3arm-20260828-v1
-require_exact_directory ASSET_ROOT pynv_a100_publication_freeze_v4
+require_exact_directory ASSET_ROOT pynv_a100_publication_freeze_v5
 require_exact_directory RUNTIME_MANIFEST_ROOT pynv-runtime-manifests-v3
 require_exact_directory TRANSFORMERS_ROOT vllm-pynv-e2e-transformers-5.14.1-20260827
 require_exact_directory HF_SNAPSHOT_ROOT 89644892e4d85e24eaac8bacfd4f463576704203
@@ -171,9 +171,9 @@ case "${controller_basenames}" in
 esac
 
 require_fresh_result_root \
-    PREFLIGHT_RESULT_ROOT a100-publication-preflight-v4
+    PREFLIGHT_RESULT_ROOT a100-publication-preflight-v5
 require_fresh_result_root \
-    RESULT_ROOT a100-publication-matrix-c8c16c32-r6-v4
+    RESULT_ROOT a100-publication-matrix-c8c16c32-r6-v5
 [[ "$(dirname -- "${PREFLIGHT_RESULT_ROOT}")" == "$(dirname -- "${RESULT_ROOT}")" ]] || \
     fail "preflight and matrix roots must share the frozen campaign parent"
 paths_overlap "${PREFLIGHT_RESULT_ROOT}" "${RESULT_ROOT}" && \
@@ -207,19 +207,19 @@ paths_overlap "${CONFLICTING_CONTROLLER_ROOT_1}" "${CONFLICTING_CONTROLLER_ROOT_
     fail "controller roots must be disjoint"
 
 check_sha256 "${ASSET_ROOT}/ARTIFACT_MANIFEST.json" "${FREEZE_MANIFEST_SHA256}"
-check_sha256 "${ASSET_ROOT}/CAMPAIGN_CONTRACT.json" "82659a3caad4282094ca7d893816d1f34af9d0067c54062b88c386232ab224d0"
-check_sha256 "${ASSET_ROOT}/SHARED_V3_ARTIFACT_MANIFEST.json" "930da0b3ca9fe2712653c25bdcad1c4a65d8a0de3ba31324596bd9e88e5a9b60"
-check_sha256 "${ASSET_ROOT}/VALIDATION.json" "e84e905836191eead19131dc2ef5e1419ae800a6d76f26099105e07a793c7e4f"
+check_sha256 "${ASSET_ROOT}/CAMPAIGN_CONTRACT.json" "5e756f9472fcb4b8731c8804aa21147441d88e64a9581e10c28253eca8829d5c"
+check_sha256 "${ASSET_ROOT}/SHARED_V4_ARTIFACT_MANIFEST.json" "11915ea2ded0fcbaf73fcf4cfa5ba9acd8a81efb449ec4ba3ff9212840f64e76"
+check_sha256 "${ASSET_ROOT}/VALIDATION.json" "b068f145be6345ee6e5dadecca7c6ac4f063692a7c1bcb58986787a80aeed6b8"
 check_sha256 "${ASSET_ROOT}/benchmark_pynvvideocodec_e2e_persistent.py" "${HARNESS_SHA256}"
 check_sha256 "${ASSET_ROOT}/capture_runtime_tree_manifest.py" "d4edac7bc314aba8ceedc799b9d9b1c64ac880d340dff70b949db50066f1981a"
 check_sha256 "${ASSET_ROOT}/preflight_pynv_persistent_three_arm_pixel_parity.py" "af4cadebcfada425997baf3f773b0f81d4103e981d87222cc355bc884db0a2d8"
 check_sha256 "${ASSET_ROOT}/pynv_gpu_guard.py" "4a2910fee2810afdb42f2a74611808bc692482df2992a9ac0cd0c8dd0a1104fb"
-check_sha256 "${ASSET_ROOT}/run_pynv_endpoint_high_concurrency_matrix_refined.py" "7045f370bcdac85e82249f77193dcd0339cb4de3944d0084731013c3eeb93f57"
+check_sha256 "${ASSET_ROOT}/run_pynv_endpoint_high_concurrency_matrix_refined.py" "de1573ea884a11dce770b4fba2c322abe454c90c129836fbd576086551382b91"
 check_sha256 "${ASSET_ROOT}/run_pynv_persistent_three_arm_high_concurrency_matrix.py" "${DRIVER_SHA256}"
 check_sha256 "${ASSET_ROOT}/run_pynv_persistent_three_arm_high_concurrency_pilots.py" "77aa45391de3a3436168827025ac6c5b7812bcc977e121d99fd244a5159f68b0"
 check_sha256 "${ASSET_ROOT}/run_with_gpu_monitor_refined.py" "239bcbbd0e635a8b44e46588142f336a8879067750aeee0d649faa8e62e950bc"
 check_sha256 "${ASSET_ROOT}/test_persistent_http_harness.py" "9dadac7a651efb770557d98372acea90fe58db0a8ecf46a4a65adc8497c1a26b"
-check_sha256 "${ASSET_ROOT}/test_persistent_three_arm_campaign.py" "de5ed3502ea7ae1be34fa3b2b3c68c2e321227ff55349aaf0635fcd4f585221e"
+check_sha256 "${ASSET_ROOT}/test_persistent_three_arm_campaign.py" "7966e62af1b3d449ba8ca45ffba501b2fa805558634a20cc66cd090bc82a5403"
 check_sha256 "${ASSET_ROOT}/test_refined_gpu_guards.py" "3cb113577694b1bd1a1fa02023827fc05a4331279ad6a16dc9339f49127c7d0b"
 check_sha256 "${ASSET_ROOT}/test_runtime_tree_manifest.py" "d0ab0fcf324f6bc1042610a0ac5a970fe5fcf3fe31927aa904d0bb0ea76e0366"
 check_sha256 "${ASSET_ROOT}/wait_for_exclusive_gpu_refined.py" "0a7119e7d0c40e3274ea9846db0b4e7213e7c1beeb4ddecce3a18d9641c5b02e"

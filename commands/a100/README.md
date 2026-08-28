@@ -14,13 +14,13 @@ basenames, the freeze-manifest hash, and every frozen program/test hash.
 The collection used these root basenames:
 
 - `SOURCE_ROOT`: `vllm-pynv-a100-publication-3arm-20260828-v1`
-- `ASSET_ROOT`: `pynv_a100_publication_freeze_v4`
+- `ASSET_ROOT`: `pynv_a100_publication_freeze_v5`
 - `RUNTIME_MANIFEST_ROOT`: `pynv-runtime-manifests-v3`
 - `TRANSFORMERS_ROOT`: `vllm-pynv-e2e-transformers-5.14.1-20260827`
 - `CORPUS_ROOT`: `vllm-pynv-e2e-corpus-20260827`
 - Result parent: `vllm-pynv-qwen3vl-e2e-20260828-v1`
-- `PREFLIGHT_RESULT_ROOT`: `a100-publication-preflight-v4`
-- `RESULT_ROOT`: `a100-publication-matrix-c8c16c32-r6-v4`
+- `PREFLIGHT_RESULT_ROOT`: `a100-publication-preflight-v5`
+- `RESULT_ROOT`: `a100-publication-matrix-c8c16c32-r6-v5`
 
 `HF_SNAPSHOT_ROOT` is the cached snapshot at revision
 `89644892e4d85e24eaac8bacfd4f463576704203`. The two controller-root variables
