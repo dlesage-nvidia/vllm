@@ -67,6 +67,8 @@ class MediaIO(ABC, Generic[_T]):
         cls,
         default_kwargs: dict[str, Any] | None,
         runtime_kwargs: dict[str, Any] | None,
+        *,
+        trusted: bool = False,
     ) -> dict[str, Any]:
         """Merge config-level kwargs and request-level kwargs.
 

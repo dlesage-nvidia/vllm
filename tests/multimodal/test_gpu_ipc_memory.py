@@ -246,3 +246,77 @@ def test_reserve_mm_ipc_gpu_memory_uses_configured_hw_decoders(
     assert reserve_mm_ipc_gpu_memory(available_bytes, mm_config) == (
         available_bytes - _pynvvideocodec_decoder_budget(hw_decoders=3)
     )
+
+
+# --- GPU image-decoder reservation ------------------------------------------
+
+
+def _image_mm_config(**overrides):
+    from vllm.config.multimodal import MultiModalConfig
+
+    kwargs = dict(
+        media_io_kwargs={"image": {"image_backend": "nvimgcodec", "num_decoders": 4}},
+        mm_ipc_gpu_memory_gb=1.0,
+    )
+    kwargs.update(overrides)
+    return MultiModalConfig(**kwargs)
+
+
+def test_image_backend_reserves_workspace_and_context():
+    """The reservation must actually shrink the KV cache, by the stated amount."""
+    from vllm.multimodal.gpu_ipc_memory import reserve_mm_ipc_gpu_memory
+    from vllm.multimodal.image_decoders import (
+        CUDA_CONTEXT_BYTES,
+        DECODER_WORKSPACE_BYTES,
+    )
+
+    available = 40 * GiB_bytes
+    remaining = reserve_mm_ipc_gpu_memory(available, _image_mm_config(), 1)
+    expected = available - (
+        int(1.0 * GiB_bytes) + 4 * DECODER_WORKSPACE_BYTES + CUDA_CONTEXT_BYTES
+    )
+    assert remaining == expected
+
+
+def test_image_reservation_scales_with_api_processes():
+    from vllm.multimodal.gpu_ipc_memory import reserve_mm_ipc_gpu_memory
+
+    available = 60 * GiB_bytes
+    one = available - reserve_mm_ipc_gpu_memory(available, _image_mm_config(), 1)
+    two = available - reserve_mm_ipc_gpu_memory(available, _image_mm_config(), 2)
+    # The raw-frame budget is split across processes; the decoder term is not.
+    assert two > one
+
+
+def test_pillow_backend_reserves_nothing_extra():
+    from vllm.multimodal.gpu_ipc_memory import reserve_mm_ipc_gpu_memory
+
+    available = 40 * GiB_bytes
+    pillow = _image_mm_config(media_io_kwargs={}, mm_ipc_gpu_memory_gb=0.0)
+    assert reserve_mm_ipc_gpu_memory(available, pillow, 1) == available
+
+
+def test_reservation_covers_the_whole_eligible_domain():
+    """The workspace figure is only an upper bound if eligibility is bounded."""
+    from vllm.multimodal.image_decoders import DECODER_WORKSPACE_BYTES
+    from vllm.multimodal.image_decoders.nvimgcodec import MAX_ELIGIBLE_PIXELS
+
+    # Largest admitted raster must fit comfortably inside the per-slot figure.
+    assert MAX_ELIGIBLE_PIXELS * 3 < DECODER_WORKSPACE_BYTES * 8
+
+
+def test_startup_validation_rejects_a_zero_gpu_budget():
+    import pytest
+
+    with pytest.raises(ValueError, match="mm-ipc-gpu-memory-gb"):
+        _image_mm_config(mm_ipc_gpu_memory_gb=0.0).validate_image_backend_available()
+
+
+def test_explicit_num_decoders_is_honoured():
+    from vllm.config.multimodal import MultiModalConfig
+
+    cfg = MultiModalConfig(
+        media_io_kwargs={"image": {"image_backend": "nvimgcodec", "num_decoders": 16}},
+        mm_ipc_gpu_memory_gb=1.0,
+    )
+    assert cfg.get_image_decoder_count() == 16

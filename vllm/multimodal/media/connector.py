@@ -8,6 +8,7 @@ import hashlib
 import os
 import tempfile
 import time
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, TypeVar
@@ -16,6 +17,7 @@ from urllib.request import url2pathname
 import aiohttp
 import numpy as np
 import numpy.typing as npt
+import pybase64
 import requests
 import torch
 from PIL import Image, UnidentifiedImageError
@@ -32,6 +34,7 @@ from vllm.logger import init_logger
 from vllm.multimodal.video import get_video_loader_backend_for_processor
 from vllm.utils.registry import ExtensionManager
 
+from ..image_decoders import NVIMGCODEC_BACKEND, PILLOW_BACKEND
 from .audio import AudioEmbeddingMediaIO, AudioMediaIO
 from .base import MediaIO, MediaWithBytes
 from .image import ImageEmbeddingMediaIO, ImageMediaIO
@@ -127,6 +130,8 @@ def _wrap_media_fetch_error(
 def merge_media_io_kwargs(
     defaults: dict[str, dict[str, Any]] | None,
     overrides: dict[str, dict[str, Any]] | None,
+    *,
+    trusted: bool = False,
 ) -> dict[str, dict[str, Any]] | None:
     """Merge config-level and per-request media_io_kwargs per modality.
 
@@ -143,6 +148,7 @@ def merge_media_io_kwargs(
         merged[key] = io_cls.merge_kwargs(
             (defaults or {}).get(key),
             (overrides or {}).get(key),
+            trusted=trusted,
         )
     return merged or None
 
@@ -330,11 +336,7 @@ class MediaConnector:
         media_type = media_type.partition(";")[0]
         return media_io.load_base64(media_type, data)
 
-    def _load_file_url(
-        self,
-        url_spec: Url,
-        media_io: MediaIO[_M],
-    ) -> _M:  # type: ignore[type-var]
+    def _resolve_file_url(self, url_spec: Url) -> Path:
         allowed_local_media_path = self.allowed_local_media_path
         if allowed_local_media_path is None:
             raise RuntimeError(
@@ -349,8 +351,32 @@ class MediaConnector:
                 f"The file path {filepath} must be a subpath "
                 f"of `--allowed-local-media-path {allowed_local_media_path}`."
             )
+        return filepath
 
-        return media_io.load_file(filepath)
+    def _load_file_url(
+        self,
+        url_spec: Url,
+        media_io: MediaIO[_M],
+    ) -> _M:  # type: ignore[type-var]
+        return media_io.load_file(self._resolve_file_url(url_spec))
+
+    def _file_url_bytes(self, url_spec: Url) -> bytes:
+        return self._resolve_file_url(url_spec).read_bytes()
+
+    @staticmethod
+    def _data_url_bytes(url: str) -> bytes:
+        """Raw bytes of a data: URL, applying the same rules as _load_data_url."""
+        data_spec, sep, data = url[5:].partition(",")
+        if not sep:
+            msg = f"Invalid data URL {url[:32]!r}: missing ',' separator."
+            raise ValueError(msg)
+
+        _media_type, sep, encoding = data_spec.rpartition(";")
+        if not sep or encoding != "base64":
+            msg = "Only base64 data URLs are supported for now."
+            raise NotImplementedError(msg)
+
+        return pybase64.b64decode(data, validate=True)
 
     def _assert_url_in_allowed_media_domains(self, url_spec: Url) -> None:
         if (
@@ -548,6 +574,152 @@ class MediaConnector:
             # convert to ValueError to be properly caught upstream
             raise ValueError(str(e)) from e
 
+    async def _fetch_media_bytes_async(
+        self,
+        url: str,
+        media_io: MediaIO[Any],
+        *,
+        fetch_timeout: int | None = None,
+    ) -> bytes:
+        """Fetch a URL's encoded bytes without decoding them.
+
+        Splitting fetch from decode is what allows several images in one request
+        to be decoded in a single batched call. Every access rule enforced by
+        `load_from_url_async` is enforced here too -- allowed media domains, the
+        byte ceiling, and the local-path restriction -- because this must not
+        become a second way to reach a URL that path would refuse.
+        """
+        loop = asyncio.get_running_loop()
+
+        if url[:5].lower() == "data:":
+            return await loop.run_in_executor(
+                global_thread_pool, self._data_url_bytes, url
+            )
+
+        url_spec = parse_url(url)
+
+        if url_spec.scheme and url_spec.scheme.startswith("http"):
+            self._assert_url_in_allowed_media_domains(url_spec)
+            max_bytes = media_io.get_max_bytes()
+
+            cached = await loop.run_in_executor(
+                global_thread_pool, self._get_cached_bytes, url
+            )
+            if cached is not None:
+                return cached
+
+            try:
+                data = await self.connection.async_get_bytes(
+                    url_spec.url,
+                    timeout=fetch_timeout,
+                    allow_redirects=envs.VLLM_MEDIA_URL_ALLOW_REDIRECTS,
+                    max_bytes=max_bytes,
+                )
+            except Exception as e:
+                wrapped = _wrap_media_fetch_error(url, e)
+                if isinstance(wrapped, VLLMUnprocessableEntityError):
+                    raise wrapped from e
+                raise
+
+            await loop.run_in_executor(
+                global_thread_pool, self._put_cached_bytes, url, data
+            )
+            return data
+
+        if url_spec.scheme == "file":
+            return await loop.run_in_executor(
+                global_thread_pool, self._file_url_bytes, url_spec
+            )
+
+        msg = "The URL must be either a HTTP, data or file URL."
+        raise ValueError(msg)
+
+    async def fetch_images_settled_async(
+        self,
+        image_urls: Sequence[str],
+        *,
+        image_mode: str | None = "RGB",
+    ) -> list[Any]:
+        """Fetch several images for one request, decoding them in one batch.
+
+        Returns one entry per input URL, in order, each either the loaded image
+        or the exception that URL raised. Exceptions are returned rather than
+        raised because with scalar fetches every image failed independently, and
+        batching must not let one bad URL take down its siblings.
+        """
+        if not image_urls:
+            return []
+
+        image_io = ImageMediaIO(
+            **({"image_mode": image_mode} | self.media_io_kwargs.get("image", {}))
+        )
+        fetched = await asyncio.gather(
+            *(
+                self._fetch_media_bytes_async(
+                    url, image_io, fetch_timeout=envs.VLLM_IMAGE_FETCH_TIMEOUT
+                )
+                for url in image_urls
+            ),
+            return_exceptions=True,
+        )
+
+        results: list[Any] = list(fetched)
+        usable = [i for i, item in enumerate(fetched) if not isinstance(item, BaseException)]
+        if not usable:
+            return [_as_image_value_error(item) for item in results]
+
+        datas = [fetched[i] for i in usable]
+        loop = asyncio.get_running_loop()
+
+        if image_io.image_backend != NVIMGCODEC_BACKEND:
+            # Default path: fan out, one executor task per image, exactly as the
+            # scalar fetches did. Batching only pays when an accelerator can
+            # take a whole batch in one native call; routing Pillow through the
+            # plural entry point instead serialises N decodes onto a single
+            # media-executor thread, which is a straight regression for the
+            # backend almost every deployment runs.
+            decoded = await asyncio.gather(
+                *(
+                    loop.run_in_executor(global_thread_pool, image_io.load_bytes, d)
+                    for d in datas
+                ),
+                return_exceptions=True,
+            )
+        else:
+            try:
+                decoded = await loop.run_in_executor(
+                    global_thread_pool, image_io.load_bytes_many, datas
+                )
+            except Exception:
+                # One undecodable image must not void the others. Retry one at a
+                # time so each failure lands on the request that caused it.
+                decoded = await asyncio.gather(
+                    *(
+                        loop.run_in_executor(global_thread_pool, image_io.load_bytes, d)
+                        for d in datas
+                    ),
+                    return_exceptions=True,
+                )
+
+        for slot, value in zip(usable, decoded):
+            results[slot] = value
+        return [_as_image_value_error(item) for item in results]
+
+    async def fetch_images_async(
+        self,
+        image_urls: Sequence[str],
+        *,
+        image_mode: str | None = "RGB",
+    ) -> list[Any]:
+        """Plural `fetch_image_async`. Raises on the first failing URL."""
+        results = await self.fetch_images_settled_async(
+            image_urls, image_mode=image_mode
+        )
+        for item in results:
+            if isinstance(item, BaseException):
+                raise item
+        return results
+
     def fetch_video(
         self,
         video_url: str,
@@ -559,7 +731,16 @@ class MediaConnector:
         Load video from an HTTP or base64 data URL.
         """
         image_io = ImageMediaIO(
-            **({"image_mode": image_mode} | self.media_io_kwargs.get("image", {}))
+            **(
+                {"image_mode": image_mode}
+                | self.media_io_kwargs.get("image", {})
+                # Video frames are decoded through this inner ImageMediaIO on a
+                # shared media-executor thread. Pin it to Pillow so enabling the
+                # GPU *image* backend does not implicitly reroute the *video*
+                # path into the decoder pool, where it would contend for slots
+                # that image requests are accounted against.
+                | {"image_backend": PILLOW_BACKEND}
+            )
         )
         video_io_kwargs = dict(self.media_io_kwargs.get("video", {}))
         if "video_backend" not in video_io_kwargs and (
@@ -589,7 +770,16 @@ class MediaConnector:
         original image mode (e.g. preserving the alpha channel).
         """
         image_io = ImageMediaIO(
-            **({"image_mode": image_mode} | self.media_io_kwargs.get("image", {}))
+            **(
+                {"image_mode": image_mode}
+                | self.media_io_kwargs.get("image", {})
+                # Video frames are decoded through this inner ImageMediaIO on a
+                # shared media-executor thread. Pin it to Pillow so enabling the
+                # GPU *image* backend does not implicitly reroute the *video*
+                # path into the decoder pool, where it would contend for slots
+                # that image requests are accounted against.
+                | {"image_backend": PILLOW_BACKEND}
+            )
         )
         video_io_kwargs = dict(self.media_io_kwargs.get("video", {}))
         if "video_backend" not in video_io_kwargs and (
@@ -653,3 +843,10 @@ class MediaConnector:
         return await loop.run_in_executor(
             global_thread_pool, audio_embedding_io.load_base64, "", data
         )
+
+
+def _as_image_value_error(item: Any) -> Any:
+    """Mirror `fetch_image_async`, which converts this to ValueError upstream."""
+    if isinstance(item, UnidentifiedImageError):
+        return ValueError(str(item))
+    return item

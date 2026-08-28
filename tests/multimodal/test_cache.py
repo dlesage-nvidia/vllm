@@ -692,12 +692,8 @@ _SLEEP_VISION_PROMPT = (
 )
 
 
-@create_new_process_for_each_test()
-@pytest.mark.skipif(
-    not torch.cuda.is_available(),
-    reason="sleep mode regression requires a CUDA GPU",
-)
-def test_sleep_wake_preserves_mm_cache_consistency():
+@create_new_process_for_each_test("spawn")
+def _run_sleep_wake_preserves_mm_cache_consistency():
     """Regression for vllm-project/vllm#42995."""
     from vllm import LLM, SamplingParams
     from vllm.assets.image import ImageAsset
@@ -722,3 +718,19 @@ def test_sleep_wake_preserves_mm_cache_consistency():
     llm.wake_up()
     output2 = llm.generate([prompt], sampling_params)
     assert output2[0].outputs[0].text
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available(),
+    reason="sleep mode regression requires a CUDA GPU",
+)
+def test_sleep_wake_preserves_mm_cache_consistency(monkeypatch: pytest.MonkeyPatch):
+    # The engine core must be spawned, not forked. Other modules in this
+    # directory initialize CUDA in the pytest process while they are collected,
+    # and this module's own CPU tests create a CUDA context by pinning host
+    # memory in the shm cache, so a forked engine core cannot initialize CUDA.
+    # vLLM's own spawn-forcing guard does not catch it: in a fork-poisoned
+    # process torch.cuda.is_initialized() reports False. Set here rather than in
+    # the child so the spawned process inherits it.
+    monkeypatch.setenv("VLLM_WORKER_MULTIPROC_METHOD", "spawn")
+    _run_sleep_wake_preserves_mm_cache_consistency()

@@ -5,6 +5,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal, TypeAlias, TypedDict, cast, final
 
+import os
+
 import torch
 from pydantic import ConfigDict, Field, field_validator, model_validator
 from pydantic.dataclasses import dataclass
@@ -310,6 +312,9 @@ class MultiModalConfig:
 
     @model_validator(mode="after")
     def _validate_multimodal_config(self):
+        # Fail here rather than booting, reserving KV cache for a decoder that
+        # cannot be built, and silently serving every request from Pillow.
+        self.validate_image_backend_available()
         if self.mm_processor_cache_type != "shm" and (
             self.mm_shm_cache_max_object_size_mb
             != MultiModalConfig.mm_shm_cache_max_object_size_mb
@@ -530,6 +535,66 @@ class MultiModalConfig:
             codec_backend is not None
             and VIDEO_LOADER_REGISTRY.backend_requires_gpu(codec_backend)
         )
+
+    def use_gpu_image_backend(self) -> bool:
+        """Return whether the configured image decoder uses the GPU."""
+        from vllm.multimodal.image_decoders import NVIMGCODEC_BACKEND
+
+        image_kwargs = self.media_io_kwargs.get("image", {})
+        return image_kwargs.get("image_backend") == NVIMGCODEC_BACKEND
+
+    def validate_image_backend_available(self) -> None:
+        """Fail at startup if the selected GPU image backend cannot be used.
+
+        Without this the server boots, reserves KV cache for a decoder it can
+        never build, and then silently serves every request from Pillow -- a
+        failure that looks exactly like "the feature did not help".
+        """
+        import importlib.util
+
+        if not self.use_gpu_image_backend():
+            return
+        if importlib.util.find_spec("nvidia.nvimgcodec") is None:
+            raise ValueError(
+                "media_io_kwargs selects the 'nvimgcodec' image backend, but the "
+                "nvidia-nvimgcodec package is not installed. Install the "
+                "CUDA-major-matched package (e.g. nvidia-nvimgcodec-cu13) or "
+                "remove image_backend from --media-io-kwargs."
+            )
+        if self.mm_ipc_gpu_memory_gb <= 0:
+            raise ValueError(
+                "The 'nvimgcodec' image backend requires a positive "
+                "--mm-ipc-gpu-memory-gb value to lease decoded rasters from."
+            )
+
+    def get_image_decoder_count(self) -> int:
+        """Number of retained GPU image-decoder slots for this process."""
+        from vllm.multimodal.image_decoders import DEFAULT_NUM_DECODERS
+
+        image_kwargs = self.media_io_kwargs.get("image", {})
+        count = image_kwargs.get("num_decoders", DEFAULT_NUM_DECODERS)
+        if isinstance(count, bool) or not isinstance(count, int):
+            raise ValueError("num_decoders must be an integer")
+        if not 1 <= count <= 16:
+            raise ValueError("num_decoders must be between 1 and 16")
+        return count
+
+    def get_image_coalesce_width(self) -> int:
+        """Widest native batch a GPU decoder leader will assemble.
+
+        Exposed because the measured optimum differs by GPU: the engine-count
+        curve is not the same on every device, so a single compiled-in constant
+        cannot be right everywhere.
+        """
+        from vllm.multimodal.image_decoders import DEFAULT_COALESCE_WIDTH
+
+        image_kwargs = self.media_io_kwargs.get("image", {})
+        width = image_kwargs.get("coalesce_width", DEFAULT_COALESCE_WIDTH)
+        if isinstance(width, bool) or not isinstance(width, int):
+            raise ValueError("coalesce_width must be an integer")
+        if not 1 <= width <= 16:
+            raise ValueError("coalesce_width must be between 1 and 16")
+        return width
 
     def is_multimodal_pruning_enabled(self):
         return self.get_video_pruning_spec() is not None

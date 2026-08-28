@@ -1,0 +1,385 @@
+{
+ "animated.png": {
+  "format": "PNG",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "bf395136af6d",
+  "size": [
+   64,
+   48
+  ],
+  "src_mode": "RGB"
+ },
+ "animated.webp": {
+  "format": "WEBP",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "5d71e985693f",
+  "size": [
+   64,
+   48
+  ],
+  "src_mode": "RGB"
+ },
+ "baseline_444.jpg": {
+  "format": "JPEG",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "f008fee2bb28",
+  "size": [
+   64,
+   48
+  ],
+  "src_mode": "RGB"
+ },
+ "baseline_rgb.jpg": {
+  "format": "JPEG",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "afd2eda08353",
+  "size": [
+   64,
+   48
+  ],
+  "src_mode": "RGB"
+ },
+ "bmp.bmp": {
+  "format": "BMP",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "bf395136af6d",
+  "size": [
+   64,
+   48
+  ],
+  "src_mode": "RGB"
+ },
+ "cmyk_adobe.jpg": {
+  "format": "JPEG",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "e348121bf7be",
+  "size": [
+   64,
+   48
+  ],
+  "src_mode": "CMYK"
+ },
+ "empty.jpg": {
+  "error": "UnidentifiedImageError",
+  "msg": "cannot identify image file <_io.BytesIO object at 0x7d999288b560>",
+  "ok": false
+ },
+ "exif_jpeg_orient2.jpg": {
+  "format": "JPEG",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "b34dba499dc2",
+  "size": [
+   64,
+   48
+  ],
+  "src_mode": "RGB"
+ },
+ "exif_jpeg_orient3.jpg": {
+  "format": "JPEG",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "1c3df837f125",
+  "size": [
+   64,
+   48
+  ],
+  "src_mode": "RGB"
+ },
+ "exif_jpeg_orient4.jpg": {
+  "format": "JPEG",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "b7a01c449f71",
+  "size": [
+   64,
+   48
+  ],
+  "src_mode": "RGB"
+ },
+ "exif_jpeg_orient5.jpg": {
+  "format": "JPEG",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "6af66536e158",
+  "size": [
+   48,
+   64
+  ],
+  "src_mode": "RGB"
+ },
+ "exif_jpeg_orient6.jpg": {
+  "format": "JPEG",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "52cec3833b23",
+  "size": [
+   48,
+   64
+  ],
+  "src_mode": "RGB"
+ },
+ "exif_jpeg_orient7.jpg": {
+  "format": "JPEG",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "8abe4ec081ad",
+  "size": [
+   48,
+   64
+  ],
+  "src_mode": "RGB"
+ },
+ "exif_jpeg_orient8.jpg": {
+  "format": "JPEG",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "89209d2816e7",
+  "size": [
+   48,
+   64
+  ],
+  "src_mode": "RGB"
+ },
+ "exif_tiff_orient2.tif": {
+  "format": "TIFF",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "4aad5f0ec71d",
+  "size": [
+   64,
+   48
+  ],
+  "src_mode": "RGB"
+ },
+ "exif_tiff_orient3.tif": {
+  "format": "TIFF",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "bf70da38668f",
+  "size": [
+   64,
+   48
+  ],
+  "src_mode": "RGB"
+ },
+ "exif_tiff_orient4.tif": {
+  "format": "TIFF",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "9c948741f43a",
+  "size": [
+   64,
+   48
+  ],
+  "src_mode": "RGB"
+ },
+ "exif_tiff_orient5.tif": {
+  "format": "TIFF",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "038b055dc8d1",
+  "size": [
+   48,
+   64
+  ],
+  "src_mode": "RGB"
+ },
+ "exif_tiff_orient6.tif": {
+  "format": "TIFF",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "d40dafab60f3",
+  "size": [
+   48,
+   64
+  ],
+  "src_mode": "RGB"
+ },
+ "exif_tiff_orient7.tif": {
+  "format": "TIFF",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "039f44da7405",
+  "size": [
+   48,
+   64
+  ],
+  "src_mode": "RGB"
+ },
+ "exif_tiff_orient8.tif": {
+  "format": "TIFF",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "9bafc10e638f",
+  "size": [
+   48,
+   64
+  ],
+  "src_mode": "RGB"
+ },
+ "garbage.jpg": {
+  "error": "UnidentifiedImageError",
+  "msg": "cannot identify image file <_io.BytesIO object at 0x7d999288bdd0>",
+  "ok": false
+ },
+ "grayscale.jpg": {
+  "format": "JPEG",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "dbd7c925e361",
+  "size": [
+   64,
+   48
+  ],
+  "src_mode": "L"
+ },
+ "j2k.j2k": {
+  "format": "JPEG2000",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "bf395136af6d",
+  "size": [
+   64,
+   48
+  ],
+  "src_mode": "RGB"
+ },
+ "jp2.jp2": {
+  "format": "JPEG2000",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "7de373834fd4",
+  "size": [
+   64,
+   48
+  ],
+  "src_mode": "RGB"
+ },
+ "png_16bit.png": {
+  "format": "PNG",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "a27a50c72e45",
+  "size": [
+   64,
+   48
+  ],
+  "src_mode": "I;16"
+ },
+ "png_la.png": {
+  "format": "PNG",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "1e63adc43eb1",
+  "size": [
+   64,
+   48
+  ],
+  "src_mode": "LA"
+ },
+ "png_palette_trns.png": {
+  "format": "PNG",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "f5ffa0b0e01d",
+  "size": [
+   64,
+   48
+  ],
+  "src_mode": "P"
+ },
+ "png_rgba.png": {
+  "format": "PNG",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "d6a77d229553",
+  "size": [
+   64,
+   48
+  ],
+  "src_mode": "RGBA"
+ },
+ "png_truecolor_trns.png": {
+  "format": "PNG",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "ad8ac263fbee",
+  "size": [
+   64,
+   48
+  ],
+  "src_mode": "RGB"
+ },
+ "ppm.ppm": {
+  "format": "PPM",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "bf395136af6d",
+  "size": [
+   64,
+   48
+  ],
+  "src_mode": "RGB"
+ },
+ "progressive.jpg": {
+  "format": "JPEG",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "afd2eda08353",
+  "size": [
+   64,
+   48
+  ],
+  "src_mode": "RGB"
+ },
+ "restart_markers.jpg": {
+  "format": "JPEG",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "afd2eda08353",
+  "size": [
+   64,
+   48
+  ],
+  "src_mode": "RGB"
+ },
+ "tiff_multipage.tif": {
+  "format": "TIFF",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "bf395136af6d",
+  "size": [
+   64,
+   48
+  ],
+  "src_mode": "RGB"
+ },
+ "truncated.jpg": {
+  "error": "OSError",
+  "msg": "image file is truncated (13 bytes not processed)",
+  "ok": false
+ },
+ "truncated_no_eoi.jpg": {
+  "error": "OSError",
+  "msg": "image file is truncated (23 bytes not processed)",
+  "ok": false
+ },
+ "webp_rgba.webp": {
+  "format": "WEBP",
+  "ok": true,
+  "out_mode": "RGB",
+  "sha": "d6a77d229553",
+  "size": [
+   64,
+   48
+  ],
+  "src_mode": "RGBA"
+ }
+}

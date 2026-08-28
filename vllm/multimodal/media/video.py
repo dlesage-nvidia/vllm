@@ -30,8 +30,14 @@ class VideoMediaIO(MediaIO[MediaWithBytes[tuple[npt.NDArray, dict[str, Any]]]]):
         cls,
         default_kwargs: dict[str, Any] | None,
         runtime_kwargs: dict[str, Any] | None,
+        *,
+        trusted: bool = False,
     ) -> dict[str, Any]:
-        if runtime_kwargs:
+        # `trusted` means the caller already applied the request trust
+        # boundary and is re-merging its own authorized result (Kimi-K3 does
+        # this). Stripping again would delete the server's own static video
+        # configuration, exactly as it did for the image backend.
+        if runtime_kwargs and not trusted:
             # Decoder GPU memory is reserved from the startup value.
             runtime_kwargs = dict(runtime_kwargs)
             runtime_kwargs.pop("hw_decoders", None)
@@ -54,7 +60,9 @@ class VideoMediaIO(MediaIO[MediaWithBytes[tuple[npt.NDArray, dict[str, Any]]]]):
                             k: v for k, v in runtime_kwargs.items() if k != key
                         }
 
-        merged = super().merge_kwargs(default_kwargs, runtime_kwargs)
+        merged = super().merge_kwargs(
+            default_kwargs, runtime_kwargs, trusted=trusted
+        )
         # fps and num_frames interact with each other, so if either is
         # overridden at request time, wipe the other from defaults to
         # avoid unintuitive cross-field interactions.

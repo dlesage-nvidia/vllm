@@ -1,0 +1,187 @@
+{
+ "animated.png": {
+  "bytes": 7686,
+  "expect": "pillow",
+  "why": "APNG: same"
+ },
+ "animated.webp": {
+  "bytes": 952,
+  "expect": "pillow",
+  "why": "animated WebP: no still-image compositing semantics"
+ },
+ "baseline_444.jpg": {
+  "bytes": 1640,
+  "expect": "gpu",
+  "why": "4:4:4 JPEG must behave the same as 4:2:0"
+ },
+ "baseline_rgb.jpg": {
+  "bytes": 1266,
+  "expect": "gpu",
+  "why": "plain 8-bit YCbCr 4:2:0 JPEG, the target workload"
+ },
+ "bmp.bmp": {
+  "bytes": 9270,
+  "expect": "match_pillow",
+  "why": "BMP (CPU plugin)"
+ },
+ "cmyk_adobe.jpg": {
+  "bytes": 2258,
+  "expect": "match_pillow",
+  "why": "Adobe CMYK JPEG (transform 0); inverted samples"
+ },
+ "empty.jpg": {
+  "bytes": 0,
+  "expect": "error",
+  "why": "empty payload"
+ },
+ "exif_jpeg_orient2.jpg": {
+  "bytes": 1488,
+  "expect": "match_pillow",
+  "why": "JPEG EXIF orientation 2 stored in info['exif']"
+ },
+ "exif_jpeg_orient3.jpg": {
+  "bytes": 1488,
+  "expect": "match_pillow",
+  "why": "JPEG EXIF orientation 3 stored in info['exif']"
+ },
+ "exif_jpeg_orient4.jpg": {
+  "bytes": 1488,
+  "expect": "match_pillow",
+  "why": "JPEG EXIF orientation 4 stored in info['exif']"
+ },
+ "exif_jpeg_orient5.jpg": {
+  "bytes": 1488,
+  "expect": "match_pillow",
+  "why": "JPEG EXIF orientation 5 stored in info['exif']"
+ },
+ "exif_jpeg_orient6.jpg": {
+  "bytes": 1488,
+  "expect": "match_pillow",
+  "why": "JPEG EXIF orientation 6 stored in info['exif']"
+ },
+ "exif_jpeg_orient7.jpg": {
+  "bytes": 1488,
+  "expect": "match_pillow",
+  "why": "JPEG EXIF orientation 7 stored in info['exif']"
+ },
+ "exif_jpeg_orient8.jpg": {
+  "bytes": 1488,
+  "expect": "match_pillow",
+  "why": "JPEG EXIF orientation 8 stored in info['exif']"
+ },
+ "exif_tiff_orient2.tif": {
+  "bytes": 9368,
+  "expect": "match_pillow",
+  "why": "TIFF EXIF orientation 2 stored in tag_v2, not info['exif']"
+ },
+ "exif_tiff_orient3.tif": {
+  "bytes": 9368,
+  "expect": "match_pillow",
+  "why": "TIFF EXIF orientation 3 stored in tag_v2, not info['exif']"
+ },
+ "exif_tiff_orient4.tif": {
+  "bytes": 9368,
+  "expect": "match_pillow",
+  "why": "TIFF EXIF orientation 4 stored in tag_v2, not info['exif']"
+ },
+ "exif_tiff_orient5.tif": {
+  "bytes": 9368,
+  "expect": "match_pillow",
+  "why": "TIFF EXIF orientation 5 stored in tag_v2, not info['exif']"
+ },
+ "exif_tiff_orient6.tif": {
+  "bytes": 9368,
+  "expect": "match_pillow",
+  "why": "TIFF EXIF orientation 6 stored in tag_v2, not info['exif']"
+ },
+ "exif_tiff_orient7.tif": {
+  "bytes": 9368,
+  "expect": "match_pillow",
+  "why": "TIFF EXIF orientation 7 stored in tag_v2, not info['exif']"
+ },
+ "exif_tiff_orient8.tif": {
+  "bytes": 9368,
+  "expect": "match_pillow",
+  "why": "TIFF EXIF orientation 8 stored in tag_v2, not info['exif']"
+ },
+ "garbage.jpg": {
+  "bytes": 514,
+  "expect": "error",
+  "why": "JPEG SOI with garbage body"
+ },
+ "grayscale.jpg": {
+  "bytes": 764,
+  "expect": "match_pillow",
+  "why": "1-component JPEG promoted to RGB"
+ },
+ "j2k.j2k": {
+  "bytes": 2426,
+  "expect": "match_pillow",
+  "why": "raw J2K codestream"
+ },
+ "jp2.jp2": {
+  "bytes": 1420,
+  "expect": "match_pillow",
+  "why": "JP2 container"
+ },
+ "png_16bit.png": {
+  "bytes": 1352,
+  "expect": "pillow",
+  "why": "16-bit: allow_any_depth is off, must not be silently rescaled"
+ },
+ "png_la.png": {
+  "bytes": 2482,
+  "expect": "match_pillow",
+  "why": "LA (grey+alpha)"
+ },
+ "png_palette_trns.png": {
+  "bytes": 1063,
+  "expect": "match_pillow",
+  "why": "palette PNG with tRNS index"
+ },
+ "png_rgba.png": {
+  "bytes": 5022,
+  "expect": "match_pillow",
+  "why": "true alpha channel"
+ },
+ "png_truecolor_trns.png": {
+  "bytes": 3891,
+  "expect": "match_pillow",
+  "why": "truecolor PNG with a tRNS colour key: source mode is already RGB, so Pillow's mode-convert short-circuits and does NOT composite"
+ },
+ "ppm.ppm": {
+  "bytes": 9229,
+  "expect": "match_pillow",
+  "why": "PNM (CPU plugin)"
+ },
+ "progressive.jpg": {
+  "bytes": 1117,
+  "expect": "gpu_or_fallback",
+  "why": "progressive JPEG: HW engines cannot do it; must not corrupt"
+ },
+ "restart_markers.jpg": {
+  "bytes": 1285,
+  "expect": "gpu_or_fallback",
+  "why": "restart markers change entropy segmentation"
+ },
+ "tiff_multipage.tif": {
+  "bytes": 18720,
+  "expect": "match_pillow",
+  "why": "multi-page TIFF: both must expose the FIRST frame"
+ },
+ "truncated.jpg": {
+  "bytes": 4065,
+  "expect": "error",
+  "why": "truncated JPEG: Pillow raises; a GPU decoder may return grey filler"
+ },
+ "truncated_no_eoi.jpg": {
+  "bytes": 8129,
+  "expect": "error",
+  "why": "JPEG missing its EOI marker"
+ },
+ "webp_rgba.webp": {
+  "bytes": 2762,
+  "expect": "match_pillow",
+  "why": "WebP with alpha"
+ }
+}

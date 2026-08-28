@@ -1107,6 +1107,10 @@ class AsyncMultiModalContentParser(BaseMultiModalContentParser):
 
         self._tracker = tracker
         self._mm_processor_kwargs: dict[str, Any] | None = mm_processor_kwargs
+        # Every image in this request, in placeholder order, plus the single
+        # shared task that resolves them all. See _fetch_images.
+        self._image_urls: list[str | None] = []
+        self._images_future: "asyncio.Future[list[Any]] | None" = None
 
     @cached_property
     def _connector(self) -> MediaConnector:
@@ -1114,10 +1118,30 @@ class AsyncMultiModalContentParser(BaseMultiModalContentParser):
         # actually contains media so text-only parsing never blocks on that I/O.
         return MEDIA_CONNECTOR_REGISTRY.load(
             envs.VLLM_MEDIA_CONNECTOR,
-            media_io_kwargs=self._tracker.media_io_kwargs,
+            media_io_kwargs=self._media_io_kwargs_for_request(),
             allowed_local_media_path=self._tracker.allowed_local_media_path,
             allowed_media_domains=self._tracker.allowed_media_domains,
         )
+
+    def _media_io_kwargs_for_request(self) -> dict[str, Any]:
+        """Drop the raw-array bypass when this request voids its certification.
+
+        The capability probe certifies a layout once, at startup, against the
+        server-level processor configuration. A request that overrides a
+        layout-sensitive processor kwarg is asking for the array to be read
+        differently than was certified, and the certified answer would then be
+        silently wrong pixels rather than an error. Such a request falls back to
+        PIL output; GPU decoding still applies, only the bypass is withdrawn.
+        """
+        from vllm.multimodal.image_decoders import request_invalidates_probe
+
+        media_io_kwargs = self._tracker.media_io_kwargs or {}
+        if not request_invalidates_probe(self._mm_processor_kwargs):
+            return media_io_kwargs
+
+        adjusted = {k: dict(v) for k, v in media_io_kwargs.items()}
+        adjusted.setdefault("image", {})["image_output"] = "pil"
+        return adjusted
 
     @property
     def model_config(self) -> ModelConfig:
@@ -1152,15 +1176,67 @@ class AsyncMultiModalContentParser(BaseMultiModalContentParser):
         tensor = await safe_load_prompt_embeds_async(self.model_config, data_bytes)
         return tensor, None
 
-    async def _image_with_uuid_async(self, image_url: str | None, uuid: str | None):
-        image = (
-            await self._connector.fetch_image_async(image_url) if image_url else None
-        )
+    def _fetch_images(self) -> "asyncio.Future[list[Any]]":
+        """One shared fetch for every image in this request.
+
+        Each image's coroutine awaits the same task, so a multi-image request
+        issues a single batched decode instead of N independent ones. Creating
+        it lazily is what makes that correct: the tracker only awaits these
+        coroutines after the whole message has been parsed, so by the time the
+        first one runs, `_image_urls` is already complete.
+        """
+        if self._images_future is None:
+            self._images_future = asyncio.ensure_future(self._fetch_images_once())
+        return self._images_future
+
+    def _batching_is_safe(self, connector: MediaConnector) -> bool:
+        """Only batch through a connector that has not been customised past it.
+
+        `MediaConnector` is an extension point: deployments register their own
+        and commonly override `fetch_image_async` alone. Calling the plural
+        entry point on such a connector would silently bypass that override, so
+        batch only when the connector either inherits the scalar path unchanged
+        or implements batching itself.
+        """
+        cls = type(connector)
+        if getattr(cls, "fetch_images_settled_async", None) is None:
+            return False
+        if cls.fetch_images_settled_async is not MediaConnector.fetch_images_settled_async:
+            return True
+        return cls.fetch_image_async is MediaConnector.fetch_image_async
+
+    async def _fetch_images_once(self) -> list[Any]:
+        results: list[Any] = [None] * len(self._image_urls)
+        present = [i for i, url in enumerate(self._image_urls) if url]
+        if not present:
+            return results
+
+        connector = self._connector
+        urls = [self._image_urls[i] for i in present]
+        if self._batching_is_safe(connector):
+            fetched = await connector.fetch_images_settled_async(urls)
+        else:
+            fetched = await asyncio.gather(
+                *(connector.fetch_image_async(url) for url in urls),
+                return_exceptions=True,
+            )
+        for slot, value in zip(present, fetched):
+            results[slot] = value
+        return results
+
+    async def _image_with_uuid_async(self, slot: int, uuid: str | None):
+        image = (await self._fetch_images())[slot]
+        # Failures are carried per image so one bad URL cannot fail its
+        # siblings; re-raise here so this request's error surfaces unchanged.
+        if isinstance(image, BaseException):
+            raise image
         return image, uuid
 
     def parse_image(self, image_url: str | None, uuid: str | None = None) -> None:
+        slot = len(self._image_urls)
+        self._image_urls.append(image_url)
         placeholder = self._tracker.add(
-            "image", partial(self._image_with_uuid_async, image_url, uuid)
+            "image", partial(self._image_with_uuid_async, slot, uuid)
         )
         self._add_placeholder("image", placeholder)
 

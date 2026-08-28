@@ -89,6 +89,24 @@ class MultiModalHasher:
                 )
             return cls.iter_item_to_bytes("image", obj.original_bytes)
 
+        if (
+            isinstance(obj, MediaWithBytes)
+            and isinstance(obj.media, np.ndarray)
+            and obj.io_config
+            and "image_backend" in obj.io_config
+        ):
+            # A decoded image may be handed back as a raw HWC raster rather than
+            # a PIL image. Without this branch it falls through to the video
+            # branch below, which labels it "video" and discards io_config, so
+            # two results differing only in which backend produced them would
+            # hash equal and the multimodal cache could serve one for the other.
+            # The marker is explicit rather than a shape test because a
+            # single-channel THW video array is also 3-D.
+            return cls.iter_item_to_bytes(
+                "image",
+                {"io_config": obj.io_config, "data": obj.original_bytes},
+            )
+
         if isinstance(obj, MediaWithBytes) and isinstance(obj.media, np.ndarray):
             frames = obj.media
             if frames.nbytes < len(obj.original_bytes):

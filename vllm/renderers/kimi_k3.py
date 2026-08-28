@@ -29,7 +29,13 @@ _K3_THINKING_EFFORTS = ("low", "high", "max")
 def _merge_k3_media_io_kwargs(
     media_io_kwargs: dict[str, dict[str, Any]] | None,
 ) -> dict[str, dict[str, Any]] | None:
-    return merge_media_io_kwargs(_K3_MEDIA_IO_DEFAULTS, media_io_kwargs)
+    # ChatParams.with_defaults has already merged the server's static
+    # media_io_kwargs into this value and applied the request trust boundary.
+    # Re-merging it as if it were raw request input would strip startup-only
+    # settings such as image_backend, silently disabling the GPU decoder.
+    return merge_media_io_kwargs(
+        _K3_MEDIA_IO_DEFAULTS, media_io_kwargs, trusted=True
+    )
 
 
 def _dump_k3_template_value(value: Any) -> Any:

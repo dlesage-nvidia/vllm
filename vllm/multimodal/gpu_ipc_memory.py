@@ -100,6 +100,29 @@ class MultiModalGPUMemoryPool:
             self._outstanding.add(lease_id)
         return MultiModalGPUMemoryLease(self, lease_id, nbytes)
 
+    def try_acquire(self, nbytes: int) -> MultiModalGPUMemoryLease | None:
+        """Reserve ``nbytes`` if that much budget is free right now, else None.
+
+        The non-blocking sibling of :meth:`acquire`. A caller that can fall back
+        to a CPU decode uses this so it never occupies a shared media-executor
+        thread while merely waiting for another decode, and so it can never
+        participate in a deadlock. A request larger than the pool returns
+        ``None`` rather than raising, because for such a caller "too big" and
+        "busy" have the same handling.
+        """
+        if nbytes < 0:
+            raise ValueError(f"Cannot acquire negative bytes: {nbytes}")
+        if nbytes > self._total_bytes:
+            return None
+        with self._cond:
+            if self._available < nbytes:
+                return None
+            self._available -= nbytes
+            lease_id = self._next_lease_id
+            self._next_lease_id += 1
+            self._outstanding.add(lease_id)
+        return MultiModalGPUMemoryLease(self, lease_id, nbytes)
+
     def _release(self, lease: MultiModalGPUMemoryLease) -> None:
         with self._cond:
             if lease.lease_id not in self._outstanding:
@@ -228,6 +251,29 @@ def reserve_mm_ipc_gpu_memory(
         if mm_config.use_gpu_video_backend()
         else 0
     )
+    # Image decoder: retained nvJPEG state plus the CUDA context. The context is
+    # per-process and shared with the video backend, so it is taken as max(),
+    # never summed -- otherwise enabling both double-counts one context.
+    image_decoder_reserved_bytes = 0
+    if mm_config.use_gpu_image_backend():
+        from vllm.multimodal.image_decoders import (
+            CUDA_CONTEXT_BYTES as IMAGE_CUDA_CONTEXT_BYTES,
+            DECODER_WORKSPACE_BYTES as IMAGE_WORKSPACE_BYTES,
+        )
+
+        slots = mm_config.get_image_decoder_count()
+        per_server_image_bytes = slots * IMAGE_WORKSPACE_BYTES
+        if decoder_reserved_bytes:
+            # A video CUDA context is already reserved for this process.
+            shared_context = 0
+        else:
+            shared_context = IMAGE_CUDA_CONTEXT_BYTES
+        image_decoder_reserved_bytes = num_api_servers * (
+            per_server_image_bytes + shared_context
+        )
+        decoder_reserved_bytes += image_decoder_reserved_bytes
+        per_server_decoder_bytes += per_server_image_bytes + shared_context
+
     reserved_bytes = raw_frame_reserved_bytes + decoder_reserved_bytes
     if reserved_bytes <= 0:
         return available_kv_cache_memory_bytes

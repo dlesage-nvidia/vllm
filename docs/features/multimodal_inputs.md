@@ -779,6 +779,70 @@ Full example: [examples/generate/multimodal/openai_chat_completion_client_for_mu
     export VLLM_IMAGE_FETCH_TIMEOUT=<timeout>
     ```
 
+
+#### GPU image decoding with nvImageCodec
+
+JPEG decoding can be offloaded to the GPU's hardware decoder via
+[nvImageCodec](https://docs.nvidia.com/cuda/nvimagecodec/). It is **opt-in** and
+requires a frontend GPU memory budget:
+
+```bash
+vllm serve <model> \
+    --mm-ipc-gpu-memory-gb 1 \
+    --media-io-kwargs '{"image": {"image_backend": "nvimgcodec"}}'
+```
+
+Install the optional dependency matching your CUDA major version, e.g.
+`pip install nvidia-nvimgcodec-cu13`.
+
+| Option | Default | Meaning |
+|--------|---------|---------|
+| `image_backend` | `pillow` | `nvimgcodec` enables GPU decoding. |
+| `num_decoders` | `8` | Retained decoder slots, and the concurrency bound. |
+| `image_output` | `array` | `array` returns the raster directly; `pil` wraps it in a `PIL.Image` for processors that require one. |
+
+These are **startup-only**. A request that sets them in `media_io_kwargs` has
+them stripped with a warning, because they shape retained GPU resources.
+
+##### What is decoded on the GPU
+
+The backend decodes an image only when it can prove the result matches Pillow.
+Anything else is decoded by Pillow at its own position, so behaviour never
+changes — only speed does.
+
+| Input | Route | Why |
+|-------|-------|-----|
+| Baseline/progressive 8-bit JPEG, 1 or 3 channels, `image_mode="RGB"` | **GPU** | Verified against Pillow within the tolerance below. |
+| `image_mode` other than `"RGB"` | Pillow | Mode conversion and background compositing are not reproduced. |
+| Any non-JPEG codec (PNG, WebP, TIFF, BMP, PNM, JPEG 2000) | Pillow | No hardware decoder is involved, and several diverge from Pillow: a palette PNG with a `tRNS` chunk reports 3 channels in its header, so the predicate cannot even detect the case. |
+| Truncated JPEG (no `FFD9` end marker) | Pillow | **Safety-critical.** A truncated stream parses cleanly and decodes to grey filler on the GPU, while Pillow raises. Without this check a cut-off upload would silently reach the model. |
+| CMYK/YCCK (4-channel) or 2-channel JPEG | Pillow | Adobe/YCCK inversion variants are not covered by the parity corpus. |
+| More than 8 bits per sample | Pillow | Would be silently rescaled. |
+| Larger than `VLLM_MAX_IMAGE_PIXELS`, or than the whole GPU budget | Pillow | Preserves the existing error, and stops a resource bound from becoming a per-request limit. |
+| All decoder slots busy, or GPU budget exhausted | Pillow | Back-pressure sheds rather than queues. A caller parks briefly (2 ms, plus up to 50 ms if a decoder already adopted its work) on a *shared media-executor thread*, then falls back. No thread ever blocks while **holding** a decoder slot or GPU budget, which is what makes deadlock impossible; but it is not true that nothing waits. |
+
+##### Tolerance and caching
+
+nvJPEG and libjpeg-turbo differ by a small number of least-significant bits.
+Decoded pixels are therefore equal to Pillow's *within tolerance*, not
+bit-exactly. Results record which backend produced them, so the multimodal cache
+cannot serve GPU pixels for a Pillow key; switching the flag costs a one-time
+cold cache.
+
+##### Observability
+
+A silent fall back to Pillow looks exactly like "the feature did nothing", so
+outcomes are counted by reason. Read them before drawing any performance
+conclusion:
+
+```python
+from vllm.multimodal.image_decoders import stats
+print(stats())   # {'gpu': 1024, 'pillow:not_jpeg': 12, 'pillow:no_slot': 3}
+```
+
+Video frames are always decoded by Pillow, even when this backend is enabled, so
+enabling GPU image decoding never reroutes the video path.
+
 ### Video Inputs
 
 Instead of `image_url`, you can pass a video file via `video_url`. Here is a simple example using [LLaVA-OneVision](https://huggingface.co/llava-hf/llava-onevision-qwen2-0.5b-ov-hf).

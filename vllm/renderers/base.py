@@ -130,6 +130,25 @@ class BaseRenderer(ABC, Generic[_T]):
                     cache=mm_processor_cache,
                 )
 
+            if mm_config is not None and mm_config.use_gpu_image_backend():
+                # Enable the GPU image decoder only once the pool it leases from
+                # exists AND the processor is constructed: the output contract is
+                # decided by probing that processor, so this must run after
+                # create_processor above, not before it.
+                from vllm.multimodal.image_decoders import (
+                    configure as configure_image_decoders,
+                    probe_output_layout,
+                )
+
+                configure_image_decoders(
+                    mm_config.get_image_decoder_count(),
+                    output_layout=probe_output_layout(
+                        self.mm_processor,
+                        config.model_config.mm_processor_kwargs,
+                    ),
+                    coalesce_width=mm_config.get_image_coalesce_width(),
+                )
+
             if mm_processor_cache:
                 self._mm_cache_stats = MultiModalCacheStats()
 
@@ -288,6 +307,11 @@ class BaseRenderer(ABC, Generic[_T]):
         await self._clear_mm_cache_async()
 
     def shutdown(self) -> None:
+        from vllm.multimodal.image_decoders import shutdown as shutdown_image_decoders
+
+        # Idempotent, and safe to call when the backend was never enabled.
+        shutdown_image_decoders()
+
         mm_processor_cache = self.mm_processor_cache
         if mm_processor_cache is not None:
             mm_processor_cache.close()
