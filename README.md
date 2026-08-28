@@ -89,5 +89,6 @@ slot inventories, and stale generated manifests.
 The final result summary will carry all six accepted measurements per cell,
 dispersion, same-repetition paired deltas, geometric ratios and confidence
 intervals, token-parity status, and allowlisted hardware/software provenance.
-No numeric result or immutable publication tag is claimed by this staging
-tree.
+No numeric result or final-results tag is claimed by this staging tree.
+Platform-specific pre-run tags only freeze the inputs authorized before each
+collection starts.

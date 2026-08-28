@@ -614,6 +614,23 @@ def _scan_file(path: Path, relative: str) -> None:
         )
         for example in synthetic_examples:
             raw = raw.replace(example, b'"synthetic-process-path"')
+    if relative == "tests/a100/test_persistent_three_arm_campaign.py":
+        # The frozen campaign test asserts that its contract contains neither
+        # private-root marker. Permit only that complete negative assertion;
+        # any other occurrence of either marker must still fail publication.
+        home_marker = b'"/' + b'home/"'
+        temporary_marker = b'"/' + b'tmp/"'
+        negative_assertion = (
+            b"assert "
+            + home_marker
+            + b" not in contract_bytes and "
+            + temporary_marker
+            + b" not in contract_bytes"
+        )
+        raw = raw.replace(
+            negative_assertion,
+            b"assert private_roots_absent_in_contract",
+        )
     _scan_text(raw, relative)
     if relative.endswith(".json"):
         _scan_json_keys(_load_json_bytes(raw, relative), relative)

@@ -1,0 +1,25 @@
+{
+  "authorization": {
+    "freeze_manifest_sha256": "6edbaf2489feaef386619edb797c524b852ad01db63022c7f5d2c3a8c4a2f7e8",
+    "state": "frozen_launch_authorized_before_collection",
+    "supersedes_freeze_manifest_sha256": "74e8dc317ec449aabfd166dfd7c54cabf69985ea5ca307cf83fe67be7958a310"
+  },
+  "commands": [
+    {
+      "kind": "focused_validation",
+      "path": "validate.sh",
+      "sha256": "3318ec37681ce82d7fbad62ada5fa96a2e93853b597bad3146a19b9832f9a9a7"
+    },
+    {
+      "kind": "preflight_then_timed_matrix",
+      "path": "run.sh",
+      "sha256": "90129e234573f81d923cf36b10407e19da88132342a403c4b84fb21314491bdc"
+    }
+  ],
+  "path_policy": "collector absolute roots are replaced one-for-one by required environment variables; argv order, hashes, options, and the two result-root basenames are unchanged",
+  "platform": "a100-80gb-pcie",
+  "preflight_result_root_basename": "a100-publication-preflight-v4",
+  "result_parent_basename": "vllm-pynv-qwen3vl-e2e-20260828-v1",
+  "result_root_basename": "a100-publication-matrix-c8c16c32-r6-v4",
+  "schema": "pynv-exact-command-record-v1"
+}

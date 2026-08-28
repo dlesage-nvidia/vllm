@@ -1,0 +1,101 @@
+{
+  "schema": "pynv-a100-three-arm-publication-contract-v1",
+  "status": "frozen_launch_authorized_not_launched",
+  "gpu_class": "NVIDIA A100",
+  "endpoints": {
+    "upstream": {
+      "commit": "d1e5e66ee30ba4bc020ac8e14b05e7a8c41b9302",
+      "tree": "9cc26997991af6f8f38150c9631d482d18b1bd2c",
+      "video_backend": "pynvvideocodec",
+      "backend_kwargs": {"hw_decoders": 2},
+      "server_argv": ["--no-mm-device-do-normalize"],
+      "decoder_output_layout": "native_thwc"
+    },
+    "pr-base": {
+      "commit": "bc8abf31fef015339473f6071eda0de0305dd9b2",
+      "tree": "09423356278c6c4bd871ccda98499474fad78bdd",
+      "video_backend": "pynvvideocodec",
+      "backend_kwargs": {"hw_decoders": 2},
+      "server_argv": ["--no-mm-device-do-normalize"],
+      "decoder_output_layout": "native_thwc"
+    },
+    "pr-head": {
+      "commit": "30d917599b104423e452fa718890af01c4ff4d39",
+      "tree": "66c4849eb21973b9ca391b7b0911968f4aa63dac",
+      "video_backend": "pynvvideocodec",
+      "backend_kwargs": {"hw_decoders": 2, "output_layout": "tchw"},
+      "server_argv": ["--mm-device-do-normalize"],
+      "decoder_output_layout": "tchw",
+      "decoder_to_host_transfer": "direct_packed_tchw_d2h"
+    }
+  },
+  "schedule": [
+    {"rep": 1, "endpoint_order": ["upstream", "pr-base", "pr-head"], "concurrency_order": [8, 16, 32]},
+    {"rep": 2, "endpoint_order": ["pr-head", "pr-base", "upstream"], "concurrency_order": [32, 16, 8]},
+    {"rep": 3, "endpoint_order": ["pr-base", "pr-head", "upstream"], "concurrency_order": [16, 32, 8]},
+    {"rep": 4, "endpoint_order": ["upstream", "pr-head", "pr-base"], "concurrency_order": [8, 32, 16]},
+    {"rep": 5, "endpoint_order": ["pr-head", "upstream", "pr-base"], "concurrency_order": [32, 8, 16]},
+    {"rep": 6, "endpoint_order": ["pr-base", "upstream", "pr-head"], "concurrency_order": [16, 8, 32]}
+  ],
+  "workload": {
+    "model": "Qwen/Qwen3-VL-2B-Instruct",
+    "revision": "89644892e4d85e24eaac8bacfd4f463576704203",
+    "video_count": 8,
+    "video_corpus_contract": "eight names hard-linked to one byte-identical source asset",
+    "frames_per_request": 32,
+    "pixel_budget_per_frame": [1024, 576],
+    "max_pixels_total": 18874368,
+    "output_tokens": 32,
+    "prompt_tokens": 9375,
+    "warmup_requests_by_concurrency": {"8": 24, "16": 48, "32": 96},
+    "measured_requests_by_concurrency": {"8": 64, "16": 128, "32": 256}
+  },
+  "server_lifecycle": {
+    "fresh_server_per_endpoint_rep_cell": true,
+    "one_server_spans_all_three_concurrency_blocks": true,
+    "max_num_seqs": 32,
+    "max_num_batched_tokens": 9216,
+    "kv_cache_memory_bytes": 42949672960,
+    "mm_ipc_gpu_memory_gb": 2.0
+  },
+  "client_transport": {
+    "protocol": "non-streaming HTTP/1.1",
+    "implementation": "stdlib http.client.HTTPConnection",
+    "pool_size_equals_concurrency": true,
+    "every_slot_explicitly_warmed": true,
+    "same_pool_reused_for_measured_phase": true,
+    "request_retries": 0
+  },
+  "evidence_policy": {
+    "ingress_idle_gate_seconds": 1200,
+    "per_attempt_idle_gate_seconds": 30,
+    "maximum_monitor_coverage_gap_seconds": 1.0,
+    "terminal_post_exit_samples": 2,
+    "cell_retry_policy": "validated telemetry-proven contamination only",
+    "request_retry_policy": "never",
+    "token_policy": "full prompt and completion token arrays plus text/reasoning hashes",
+    "input_mismatch_status": "invalid_input_parity",
+    "completion_mismatch_status": "timing_passed_completion_mismatch"
+  },
+  "analysis": {
+    "paired_repetitions": 6,
+    "pairwise_comparisons": [
+      ["upstream", "pr-base"],
+      ["pr-base", "pr-head"],
+      ["upstream", "pr-head"]
+    ],
+    "primary_speedup": "paired geometric mean candidate_over_baseline",
+    "confidence_interval": "two-sided 95% t interval on paired log ratios, df=5",
+    "also_report": ["mean", "median", "sample_stdev", "arithmetic_paired_delta", "ratio_of_means"]
+  },
+  "shared_v3": {
+    "manifest_sha256": "930da0b3ca9fe2712653c25bdcad1c4a65d8a0de3ba31324596bd9e88e5a9b60",
+    "harness_sha256": "71adcc9ddb99e65e51d9531ed40728b8261f0f763c2fd1d89c2610a58fa3aa2b",
+    "guard_helper_sha256": "4a2910fee2810afdb42f2a74611808bc692482df2992a9ac0cd0c8dd0a1104fb",
+    "idle_gate_sha256": "0a7119e7d0c40e3274ea9846db0b4e7213e7c1beeb4ddecce3a18d9641c5b02e",
+    "monitor_sha256": "239bcbbd0e635a8b44e46588142f336a8879067750aeee0d649faa8e62e950bc",
+    "runtime_manifest_tool_sha256": "d4edac7bc314aba8ceedc799b9d9b1c64ac880d340dff70b949db50066f1981a",
+    "runtime_manifest_test_sha256": "d0ab0fcf324f6bc1042610a0ac5a970fe5fcf3fe31927aa904d0bb0ea76e0366"
+  },
+  "launch_authorization": true
+}

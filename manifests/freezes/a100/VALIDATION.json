@@ -1,0 +1,54 @@
+{
+  "schema": "pynv-a100-publication-freeze-validation-v1",
+  "status": "passed_launch_authorized_not_launched",
+  "supersedes_manifest_sha256": "74e8dc317ec449aabfd166dfd7c54cabf69985ea5ca307cf83fe67be7958a310",
+  "shared_v3_producer_evidence": {
+    "manifest_sha256": "930da0b3ca9fe2712653c25bdcad1c4a65d8a0de3ba31324596bd9e88e5a9b60",
+    "python_3_10_12": {"passed": 283, "skipped": 0},
+    "python_3_12_13_native_torch_2_13_0_cu132": {"passed": 283, "skipped": 0}
+  },
+  "a100_adapter_contract_suite": {
+    "python_3_10_12": "passed",
+    "python_3_12_13_native_torch_2_13_0_cu132": "passed",
+    "coverage": [
+      "all 18 endpoint commands parse with the frozen workload and transport",
+      "six-sequence endpoint/concurrency balance",
+      "semantic campaign contract matches code",
+      "exact pilot and pixel artifact pins",
+      "full prompt/completion token and text/reasoning status policy",
+      "raw response and aggregate mutation rejection",
+      "persistent pool lifecycle and no-retry evidence",
+      "deep preflight command/path reconstruction",
+      "runtime artifact and source tamper rejection",
+      "strict contamination-only retry evidence",
+      "eight paths require one hard-linked source identity",
+      "actual shared monitor wrapper report and JSONL validated through A100 code"
+    ]
+  },
+  "copied_shared_subset_recheck": {
+    "python_3_12_13_native_torch_2_13_0_cu132": {
+      "passed": 25,
+      "deselected": 0
+    },
+    "python_3_10_12": {
+      "passed": 25,
+      "deselected": 0
+    }
+  },
+  "static_validation": {
+    "black_26_5_1": "13 Python files clean",
+    "pyflakes_3_4_0": "13 Python files clean",
+    "python_3_10_12_in_memory_compile": "13 of 13 passed",
+    "python_3_12_13_in_memory_compile": "13 of 13 passed",
+    "bytecode_or_cache_files_in_freeze": 0,
+    "shared_copy_hash_graph": "9 of 9 exact shared-v3 dependencies passed"
+  },
+  "independent_semantic_audit": {
+    "status": "passed",
+    "scope": "schedule, endpoints, retry policy, raw and aggregate replay, persistent pool, preflight, monitor, hardlink, and timed-intrusion contracts"
+  },
+  "gpu_preflight_run": false,
+  "gpu_pilot_run": false,
+  "gpu_matrix_run": false,
+  "launch_authorization": true
+}

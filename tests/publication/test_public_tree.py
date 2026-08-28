@@ -257,6 +257,28 @@ class PublicTreeTest(unittest.TestCase):
         ):
             public_tree._scan_file(target, "tests/shared/test_refined_gpu_guards.py")
 
+    def test_only_exact_a100_private_root_negative_assertion_is_allowlisted(
+        self,
+    ) -> None:
+        target = self.root / "tests/a100/test_persistent_three_arm_campaign.py"
+        home_root = "/" + "home/"
+        temporary_root = "/" + "tmp/"
+        target.write_text(
+            f'assert "{home_root}" not in contract_bytes and '
+            f'"{temporary_root}" not in contract_bytes\n'
+        )
+        public_tree._scan_file(
+            target, "tests/a100/test_persistent_three_arm_campaign.py"
+        )
+
+        target.write_text(f'leaked = "{home_root}private/run"\n')
+        with self.assertRaisesRegex(
+            public_tree.ArtifactError, "private absolute POSIX"
+        ):
+            public_tree._scan_file(
+                target, "tests/a100/test_persistent_three_arm_campaign.py"
+            )
+
     def test_unc_scanner_rejects_paths_without_matching_escaped_newlines(self) -> None:
         target = self.root / "commands/rtx/commands.txt"
         backslash = chr(92)

@@ -62,13 +62,29 @@
       "tree_sha256": "6377a0a81e699d301675107ab48d27c1aab0bedc29d8a94375a72d27bdaa8748"
     },
     {
-      "files": [],
+      "files": [
+        {
+          "bytes": 30913,
+          "path": "preflight_pynv_persistent_three_arm_pixel_parity.py",
+          "sha256": "af4cadebcfada425997baf3f773b0f81d4103e981d87222cc355bc884db0a2d8"
+        },
+        {
+          "bytes": 309286,
+          "path": "run_pynv_persistent_three_arm_high_concurrency_matrix.py",
+          "sha256": "a18499e1d2276d6e46b89cc62bf39b156af33d36b89591d921192ac160fd76f0"
+        },
+        {
+          "bytes": 58630,
+          "path": "run_pynv_persistent_three_arm_high_concurrency_pilots.py",
+          "sha256": "77aa45391de3a3436168827025ac6c5b7812bcc977e121d99fd244a5159f68b0"
+        }
+      ],
       "id": "a100-harness",
       "kind": "frozen-harness",
-      "source_manifest_sha256": null,
-      "status": "pending",
+      "source_manifest_sha256": "6edbaf2489feaef386619edb797c524b852ad01db63022c7f5d2c3a8c4a2f7e8",
+      "status": "ready",
       "target": "harness/a100",
-      "tree_sha256": null
+      "tree_sha256": "2fb72c091fdb57d0f1bae82a363b6555103083bbdc902d50651d49b48cb7a513"
     },
     {
       "files": [
@@ -111,13 +127,19 @@
       "tree_sha256": "0495f03cb157b715aab8d8010136bad17c74f356794a50aa5f5a9a65264b55df"
     },
     {
-      "files": [],
+      "files": [
+        {
+          "bytes": 74981,
+          "path": "test_persistent_three_arm_campaign.py",
+          "sha256": "de5ed3502ea7ae1be34fa3b2b3c68c2e321227ff55349aaf0635fcd4f585221e"
+        }
+      ],
       "id": "a100-tests",
       "kind": "frozen-tests",
-      "source_manifest_sha256": null,
-      "status": "pending",
+      "source_manifest_sha256": "6edbaf2489feaef386619edb797c524b852ad01db63022c7f5d2c3a8c4a2f7e8",
+      "status": "ready",
       "target": "tests/a100",
-      "tree_sha256": null
+      "tree_sha256": "aeb47ee289e25fbf7fb5f3ab1a7b24dcf50a1683b30964f205f8bd3c8cfa5b89"
     },
     {
       "files": [
@@ -150,13 +172,34 @@
       "tree_sha256": "12fe3f9804f2612c137fbf81a312b1a2e6cfecc077d5fa351a764e7efe3f2043"
     },
     {
-      "files": [],
+      "files": [
+        {
+          "bytes": 7550,
+          "path": "ARTIFACT_MANIFEST.json",
+          "sha256": "6edbaf2489feaef386619edb797c524b852ad01db63022c7f5d2c3a8c4a2f7e8"
+        },
+        {
+          "bytes": 4626,
+          "path": "CAMPAIGN_CONTRACT.json",
+          "sha256": "82659a3caad4282094ca7d893816d1f34af9d0067c54062b88c386232ab224d0"
+        },
+        {
+          "bytes": 7997,
+          "path": "SHARED_V3_ARTIFACT_MANIFEST.json",
+          "sha256": "930da0b3ca9fe2712653c25bdcad1c4a65d8a0de3ba31324596bd9e88e5a9b60"
+        },
+        {
+          "bytes": 2239,
+          "path": "VALIDATION.json",
+          "sha256": "e84e905836191eead19131dc2ef5e1419ae800a6d76f26099105e07a793c7e4f"
+        }
+      ],
       "id": "a100-freeze-manifests",
       "kind": "freeze-manifests",
-      "source_manifest_sha256": null,
-      "status": "pending",
+      "source_manifest_sha256": "6edbaf2489feaef386619edb797c524b852ad01db63022c7f5d2c3a8c4a2f7e8",
+      "status": "ready",
       "target": "manifests/freezes/a100",
-      "tree_sha256": null
+      "tree_sha256": "90689b57ab719cbd7ca0097d06c590087c09db26918167e77e602c98fce3452a"
     },
     {
       "files": [
@@ -204,13 +247,49 @@
       "tree_sha256": "b5c76d9d3633898498caac26618b2f95dc82565f85440af604aa4399717b3f12"
     },
     {
-      "files": [],
+      "files": [
+        {
+          "bytes": 977,
+          "path": "ARTIFACT_MANIFEST.json",
+          "sha256": "6d37008846e47dcbc843894130b72ecac9a2edd8f6c8971fc348c77c9d779bc0"
+        },
+        {
+          "bytes": 2277,
+          "path": "hf-snapshot.jsonl",
+          "sha256": "5a2020450ee3804b0e3c5e8be0b1bf33eab679796706ca416e36517a10c3baf3"
+        },
+        {
+          "bytes": 1129,
+          "path": "hf-snapshot.summary.json",
+          "sha256": "dbe902ae5df6a54b5de02d18860da5c377d851ce082f98084615ce0de73c3c97"
+        },
+        {
+          "bytes": 418598,
+          "path": "transformers-overlay.jsonl",
+          "sha256": "91e8b5660cb228e78f48fe931bc28dd68f92d751475e9d76b93590246a255bb0"
+        },
+        {
+          "bytes": 1052,
+          "path": "transformers-overlay.summary.json",
+          "sha256": "84f07f0a667e3c63cca1c36b64e4b1674b1f8931d1243f8ccd0b6acc24055a79"
+        },
+        {
+          "bytes": 381637,
+          "path": "transformers.jsonl",
+          "sha256": "a33471c896d571395e22d4d4f1fa58f6b4fee7c0b66f281fceabaab1a804241a"
+        },
+        {
+          "bytes": 963,
+          "path": "transformers.summary.json",
+          "sha256": "04da4a7f34692a5cb6c6317855b76c259c1aef215411099f3a3e6c872fbe8fda"
+        }
+      ],
       "id": "a100-runtime-manifests",
       "kind": "runtime-manifests",
-      "source_manifest_sha256": null,
-      "status": "pending",
+      "source_manifest_sha256": "6d37008846e47dcbc843894130b72ecac9a2edd8f6c8971fc348c77c9d779bc0",
+      "status": "ready",
       "target": "manifests/runtime/a100",
-      "tree_sha256": null
+      "tree_sha256": "7a7359d4657cdbfa3f31b82ed0f11e9dd4d24aa299282e6993a8e46624473ff0"
     },
     {
       "files": [
@@ -243,13 +322,34 @@
       "tree_sha256": "e9b89205a15a83848f78707685a0f0b7557e2eba1196c3c66d3db91c23ccddef"
     },
     {
-      "files": [],
+      "files": [
+        {
+          "bytes": 1694,
+          "path": "README.md",
+          "sha256": "9ed33e0eeb5ecfeb0157f7fa5da0cac81e02d3c4f0bae7d6d4792460d39208a6"
+        },
+        {
+          "bytes": 1100,
+          "path": "commands.json",
+          "sha256": "bf3c3caea71f63d6e21c5d4664ccabe499292595036fbd884d3310c0e5274e6e"
+        },
+        {
+          "bytes": 14454,
+          "path": "run.sh",
+          "sha256": "90129e234573f81d923cf36b10407e19da88132342a403c4b84fb21314491bdc"
+        },
+        {
+          "bytes": 1199,
+          "path": "validate.sh",
+          "sha256": "3318ec37681ce82d7fbad62ada5fa96a2e93853b597bad3146a19b9832f9a9a7"
+        }
+      ],
       "id": "a100-commands",
       "kind": "exact-commands",
-      "source_manifest_sha256": null,
-      "status": "pending",
+      "source_manifest_sha256": "bf3c3caea71f63d6e21c5d4664ccabe499292595036fbd884d3310c0e5274e6e",
+      "status": "ready",
       "target": "commands/a100",
-      "tree_sha256": null
+      "tree_sha256": "1a976f7fe60e8a23ad71737faedf6977add955b67870f25e707e132b8d83f98b"
     },
     {
       "files": [],
