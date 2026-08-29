@@ -13,6 +13,11 @@ from .base import (
     VideoTargetMetadata,
     check_frame_pixel_limit,
 )
+from .capability import (
+    VideoResizeTarget,
+    processor_video_resize_target,
+    request_invalidates_video_resize_target,
+)
 
 VideoDecoderBackend = Literal[
     "opencv", "pyav", "torchcodec", "pynvvideocodec", "deepstream"
@@ -28,6 +33,7 @@ _BACKEND_OPTION_DEFAULTS: dict[str, dict[str, Any]] = {
     PYNVVIDEOCODEC_VIDEO_BACKEND: {
         "hw_decoders": PYNVVIDEOCODEC_DEFAULT_HW_DECODERS,
         "output_layout": PYNVVIDEOCODEC_DEFAULT_OUTPUT_LAYOUT,
+        "gpu_resize": False,
     },
     "deepstream": {
         "pool_size": None,
@@ -109,7 +115,10 @@ __all__ = [
     "VideoDecoderBackend",
     "VideoSourceMetadata",
     "VideoTargetMetadata",
+    "VideoResizeTarget",
     "check_frame_pixel_limit",
     "decode_video",
+    "processor_video_resize_target",
+    "request_invalidates_video_resize_target",
     "resolve_video_backend_kwargs",
 ]

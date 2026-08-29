@@ -4,6 +4,7 @@
 import os
 import tempfile
 import threading
+from collections import Counter
 from contextlib import contextmanager, suppress
 from typing import ClassVar, NamedTuple, cast
 
@@ -21,6 +22,7 @@ from .base import (
     VideoTargetMetadata,
     check_frame_pixel_limit,
 )
+from .capability import VideoResizeTarget
 
 logger = init_logger(__name__)
 
@@ -33,8 +35,13 @@ def decode_pynvvideocodec(
     *,
     hw_decoders: int = PYNVVIDEOCODEC_DEFAULT_HW_DECODERS,
     output_layout: PyNvVideoCodecOutputLayout = PYNVVIDEOCODEC_DEFAULT_OUTPUT_LAYOUT,
+    gpu_resize: bool = False,
 ) -> tuple[npt.NDArray, VideoSourceMetadata, list[int], list[int]]:
-    PyNvVideoCodecVideoBackendMixin._configure_decoder_slots(hw_decoders, output_layout)
+    PyNvVideoCodecVideoBackendMixin._configure_decoder_slots(
+        hw_decoders,
+        output_layout,
+        gpu_resize=gpu_resize,
+    )
     return PyNvVideoCodecVideoBackendMixin.decode_frames_pynvvideocodec(
         loader_cls,
         data,
@@ -59,6 +66,46 @@ PYNVVIDEOCODEC_DECODER_CACHE_SIZE = 2
 PYNVVIDEOCODEC_CUDA_CONTEXT_BYTES = int(1.8 * 1024 * MiB_bytes)
 
 
+def _load_cvcuda():
+    if os.environ.get("VLLM_PYNVVIDEOCODEC_NO_CVCUDA") == "1":
+        return None
+    try:
+        import cvcuda
+    except Exception:
+        return None
+    if not hasattr(cvcuda, "hq_resize"):
+        logger.info(
+            "PyNvVideoCodec: cvcuda is installed without hq_resize; using "
+            "the torch GPU resize path."
+        )
+        return None
+    return cvcuda
+
+
+_CVCUDA = None
+_CVCUDA_RESOLVED = False
+_RESIZE_COUNTERS: Counter[str] = Counter()
+_RESIZE_COUNTERS_LOCK = threading.Lock()
+
+
+def _cvcuda():
+    global _CVCUDA, _CVCUDA_RESOLVED
+    if not _CVCUDA_RESOLVED:
+        _CVCUDA = _load_cvcuda()
+        _CVCUDA_RESOLVED = True
+    return _CVCUDA
+
+
+def _count_resize(name: str, amount: int = 1) -> None:
+    with _RESIZE_COUNTERS_LOCK:
+        _RESIZE_COUNTERS[name] += amount
+
+
+def get_pynvvideocodec_resize_stats() -> dict[str, int]:
+    with _RESIZE_COUNTERS_LOCK:
+        return dict(_RESIZE_COUNTERS)
+
+
 def validate_pynvvideocodec_hw_decoders(hw_decoders: object) -> int:
     if (
         isinstance(hw_decoders, bool)
@@ -80,11 +127,33 @@ def validate_pynvvideocodec_output_layout(
 def configure_pynvvideocodec_decoder_pool(
     hw_decoders: object = PYNVVIDEOCODEC_DEFAULT_HW_DECODERS,
     output_layout: object = PYNVVIDEOCODEC_DEFAULT_OUTPUT_LAYOUT,
+    *,
+    gpu_resize: bool = False,
+    resize_target: VideoResizeTarget | None = None,
 ) -> None:
-    """Freeze the process-wide decoder capacity and output layout."""
+    """Freeze process-wide decoder capacity, layout, and resize behavior."""
     validated_hw_decoders = validate_pynvvideocodec_hw_decoders(hw_decoders)
     validated_output_layout = validate_pynvvideocodec_output_layout(output_layout)
-    _pynv_decoder_pool.configure(validated_hw_decoders, validated_output_layout)
+    if not isinstance(gpu_resize, bool):
+        raise ValueError("gpu_resize must be a boolean")
+    if gpu_resize and resize_target is None and _pynv_decoder_pool.max_slots is None:
+        raise RuntimeError(
+            "PyNvVideoCodec gpu_resize must be configured at server startup"
+        )
+    if gpu_resize and _pynv_decoder_pool.max_slots is None:
+        if _cvcuda() is None:
+            logger.warning(
+                "PyNvVideoCodec: gpu_resize is enabled without CV-CUDA "
+                "HQResize; using the slower torch GPU resize fallback."
+            )
+        else:
+            logger.info("PyNvVideoCodec: gpu_resize is using CV-CUDA HQResize.")
+    _pynv_decoder_pool.configure(
+        validated_hw_decoders,
+        validated_output_layout,
+        gpu_resize,
+        resize_target,
+    )
 
 
 def _pynvvideocodec_exception_types(nvc) -> tuple[type[Exception], ...]:
@@ -101,6 +170,9 @@ def _pynvvc_frames_to_pinned_host(
     decoded_frames,
     output_layout: PyNvVideoCodecOutputLayout,
     stream,
+    *,
+    resize_target: VideoResizeTarget | None = None,
+    cvstream=None,
 ) -> npt.NDArray:
     """Copy individual PyNvVideoCodec frames directly to one host batch."""
     import torch
@@ -156,6 +228,48 @@ def _pynvvc_frames_to_pinned_host(
                     f"{expected_frame_layout} with three channels"
                 )
 
+        if output_layout == "tchw":
+            height, width = expected_shape[1:]
+        else:
+            height, width = expected_shape[:2]
+
+        if resize_target is not None:
+            target = resize_target(width, height, len(torch_frames))
+            if target is not None:
+                target_width, target_height = target
+                if target_width * target_height < width * height:
+                    torch_frames = _resize_pynvvc_frames(
+                        torch_frames,
+                        output_layout,
+                        (target_width, target_height),
+                        cvstream=cvstream,
+                    )
+                    expected_shape = (
+                        (3, target_height, target_width)
+                        if output_layout == "tchw"
+                        else (target_height, target_width, 3)
+                    )
+                    _count_resize("gpu_resized", len(torch_frames))
+                else:
+                    _count_resize("resize_not_downscale")
+            else:
+                _count_resize("resize_declined")
+
+        for index, frame in enumerate(torch_frames):
+            if (
+                tuple(frame.shape) != expected_shape
+                or frame.dtype != torch.uint8
+                or frame.device != expected_device
+                or not frame.is_contiguous()
+            ):
+                raise ValueError(
+                    "PyNvVideoCodec GPU resize returned frame "
+                    f"{index} with shape {tuple(frame.shape)}, dtype "
+                    f"{frame.dtype}, device {frame.device}, and stride "
+                    f"{tuple(frame.stride())}; expected contiguous "
+                    f"{expected_shape} torch.uint8 on {expected_device}"
+                )
+
         host_frames = torch.empty(
             (len(torch_frames), *expected_shape),
             dtype=torch.uint8,
@@ -177,6 +291,56 @@ def _pynvvc_frames_to_pinned_host(
                 stream.synchronize()
 
 
+def _resize_pynvvc_frames(
+    frames,
+    output_layout: PyNvVideoCodecOutputLayout,
+    target: tuple[int, int],
+    *,
+    cvstream=None,
+):
+    """Resize decoded frames without materializing a full device batch."""
+    import torch
+
+    target_width, target_height = target
+    cv = _cvcuda()
+    if cv is not None and cvstream is not None:
+        layout = "CHW" if output_layout == "tchw" else "HWC"
+        resized = [
+            torch.as_tensor(
+                cv.hq_resize(
+                    cv.as_tensor(frame, layout),
+                    (target_height, target_width),
+                    antialias=True,
+                    interpolation=cv.Interp.CUBIC,
+                    stream=cvstream,
+                ).cuda(),
+                device=frame.device,
+            )
+            for frame in frames
+        ]
+        _count_resize("resize_cvcuda", len(resized))
+        return resized
+
+    import torch.nn.functional as F
+
+    resized = []
+    for frame in frames:
+        chw = frame if output_layout == "tchw" else frame.permute(2, 0, 1)
+        output = F.interpolate(
+            chw.unsqueeze(0).to(torch.float16),
+            size=(target_height, target_width),
+            mode="bicubic",
+            align_corners=False,
+            antialias=True,
+        )
+        output = output.clamp_(0, 255).to(torch.uint8).squeeze(0)
+        if output_layout == "thwc":
+            output = output.permute(1, 2, 0).contiguous()
+        resized.append(output)
+    _count_resize("resize_torch", len(resized))
+    return resized
+
+
 class PyNvVideoCodecDecoderSlot:
     """A retained PyNv decoder slot and its CUDA stream.
 
@@ -195,8 +359,10 @@ class PyNvVideoCodecDecoderSlot:
         output_layout: PyNvVideoCodecOutputLayout = (
             PYNVVIDEOCODEC_DEFAULT_OUTPUT_LAYOUT
         ),
+        cvstream=None,
     ) -> None:
         self.stream = stream
+        self.cvstream = cvstream
         self.output_layout = validate_pynvvideocodec_output_layout(output_layout)
         self.decoder = None
         self.source_path: str | None = None
@@ -204,6 +370,16 @@ class PyNvVideoCodecDecoderSlot:
     def invalidate(self) -> None:
         self.decoder = None
         self.source_path = None
+
+    def close(self) -> None:
+        with suppress(BaseException):
+            if self.cvstream is not None:
+                self.cvstream.sync()
+            elif self.stream is not None:
+                self.stream.synchronize()
+        self.invalidate()
+        self.stream = None
+        self.cvstream = None
 
     def _construct(self, file_path: str, nvc, device_index: int) -> None:
         self.invalidate()
@@ -256,16 +432,23 @@ class _PyNvDecoderPool:
         self.cond: threading.Condition = threading.Condition()
         self.max_slots: int | None = None
         self.output_layout: PyNvVideoCodecOutputLayout | None = None
+        self.gpu_resize: bool | None = None
+        self.resize_target: VideoResizeTarget | None = None
+        self.generation: int = 0
 
     def configure(
         self,
         hw_decoders: int,
         output_layout: PyNvVideoCodecOutputLayout,
+        gpu_resize: bool,
+        resize_target: VideoResizeTarget | None,
     ) -> None:
         with self.cond:
             if self.max_slots is None:
                 self.max_slots = hw_decoders
                 self.output_layout = output_layout
+                self.gpu_resize = gpu_resize
+                self.resize_target = resize_target
             elif self.max_slots != hw_decoders:
                 raise RuntimeError(
                     "PyNvVideoCodec decoder count is already configured as "
@@ -276,9 +459,39 @@ class _PyNvDecoderPool:
                     "PyNvVideoCodec output layout is already configured as "
                     f"{self.output_layout!r}, got {output_layout!r}"
                 )
+            elif self.gpu_resize != gpu_resize:
+                raise RuntimeError(
+                    "PyNvVideoCodec gpu_resize is already configured as "
+                    f"{self.gpu_resize}, got {gpu_resize}"
+                )
+            elif resize_target is not None and self.resize_target is not resize_target:
+                raise RuntimeError("PyNvVideoCodec resize target is already configured")
+
+    def shutdown(self) -> None:
+        with self.cond:
+            slots = self.slots
+            self.slots = []
+            self.active = 0
+            self.max_slots = None
+            self.output_layout = None
+            self.gpu_resize = None
+            self.resize_target = None
+            self.generation += 1
+            self.cond.notify_all()
+        for slot in slots:
+            slot.close()
 
 
 _pynv_decoder_pool = _PyNvDecoderPool()
+
+
+def shutdown_pynvvideocodec_decoder_pool() -> None:
+    _pynv_decoder_pool.shutdown()
+    with _RESIZE_COUNTERS_LOCK:
+        stats = dict(_RESIZE_COUNTERS)
+        _RESIZE_COUNTERS.clear()
+    if stats:
+        logger.info("PyNvVideoCodec GPU resize outcomes: %s", stats)
 
 
 class PyNvVideoCodecVideoBackendMixin:
@@ -293,8 +506,21 @@ class PyNvVideoCodecVideoBackendMixin:
         output_layout = _pynv_decoder_pool.output_layout
         if output_layout is None:
             raise RuntimeError("PyNvVideoCodec output layout is not configured")
+        if _pynv_decoder_pool.resize_target is not None and (cv := _cvcuda()):
+            torch.accelerator.set_device_index(cls._DEVICE_INDEX)
+            cvstream = cv.Stream()
+            stream = torch.cuda.ExternalStream(
+                cvstream.handle,
+                device=cls._DEVICE_INDEX,
+            )
+            return PyNvVideoCodecDecoderSlot(
+                stream,
+                output_layout,
+                cvstream=cvstream,
+            )
         return PyNvVideoCodecDecoderSlot(
-            torch.cuda.Stream(device=cls._DEVICE_INDEX), output_layout
+            torch.cuda.Stream(device=cls._DEVICE_INDEX),
+            output_layout,
         )
 
     @classmethod
@@ -302,8 +528,16 @@ class PyNvVideoCodecVideoBackendMixin:
         cls,
         hw_decoders: object,
         output_layout: object = PYNVVIDEOCODEC_DEFAULT_OUTPUT_LAYOUT,
+        *,
+        gpu_resize: bool = False,
+        resize_target: VideoResizeTarget | None = None,
     ) -> None:
-        configure_pynvvideocodec_decoder_pool(hw_decoders, output_layout)
+        configure_pynvvideocodec_decoder_pool(
+            hw_decoders,
+            output_layout,
+            gpu_resize=gpu_resize,
+            resize_target=resize_target,
+        )
 
     @staticmethod
     @contextmanager
@@ -327,6 +561,10 @@ class PyNvVideoCodecVideoBackendMixin:
             if pool.max_slots is None:
                 raise RuntimeError("PyNvVideoCodec decoder slots are not configured")
             while True:
+                if pool.max_slots is None:
+                    raise RuntimeError(
+                        "PyNvVideoCodec decoder slots are not configured"
+                    )
                 if pool.slots:
                     slot = pool.slots.pop()
                     break
@@ -335,13 +573,15 @@ class PyNvVideoCodecVideoBackendMixin:
                     create_slot = True
                     break
                 pool.cond.wait()
+            generation = pool.generation
 
         if create_slot:
             try:
                 slot = cls._create_decoder_slot()
             except Exception:
                 with pool.cond:
-                    pool.active -= 1
+                    if generation == pool.generation:
+                        pool.active -= 1
                     pool.cond.notify()
                 raise
 
@@ -352,9 +592,15 @@ class PyNvVideoCodecVideoBackendMixin:
         finally:
             if not borrow_succeeded:
                 slot.invalidate()
+            close_slot = False
             with pool.cond:
-                pool.slots.append(slot)
+                if generation == pool.generation and pool.max_slots is not None:
+                    pool.slots.append(slot)
+                else:
+                    close_slot = True
                 pool.cond.notify()
+            if close_slot:
+                slot.close()
 
     @staticmethod
     def _metadata_value(metadata, *names: str, default=None):
@@ -441,7 +687,11 @@ class PyNvVideoCodecVideoBackendMixin:
                     # failure while retaining the decoded frame references.
                     decode_submitted = False
                     return _pynvvc_frames_to_pinned_host(
-                        decoded_frames, decoder_slot.output_layout, stream
+                        decoded_frames,
+                        decoder_slot.output_layout,
+                        stream,
+                        resize_target=_pynv_decoder_pool.resize_target,
+                        cvstream=decoder_slot.cvstream,
                     )
                 finally:
                     if decode_submitted:
@@ -477,11 +727,17 @@ class PyNvVideoCodecVideoBackendMixin:
                 source=source, target=target, **kwargs
             )
             raw_frame_bytes = len(frame_idx) * gpu_source.height * gpu_source.width * 3
+            leased_frame_bytes = raw_frame_bytes
+            if _pynv_decoder_pool.resize_target is not None:
+                # The decoder surfaces and resized outputs overlap until the
+                # asynchronous host copies complete. A second raw-raster budget
+                # is a conservative upper bound because only downscales run.
+                leased_frame_bytes *= 2
             pool = get_mm_gpu_ipc_pool()
-            if pool is None or raw_frame_bytes == 0:
+            if pool is None or leased_frame_bytes == 0:
                 frames = cls._decode_to_pinned_host(temp_path, frame_idx, nvc)
             else:
-                with pool.acquire(raw_frame_bytes):
+                with pool.acquire(leased_frame_bytes):
                     frames = cls._decode_to_pinned_host(temp_path, frame_idx, nvc)
         finally:
             with suppress(FileNotFoundError):

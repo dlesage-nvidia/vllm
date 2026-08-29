@@ -102,6 +102,8 @@ class BaseRenderer(ABC, Generic[_T]):
         self._readonly_mm_processor: BaseMultiModalProcessor | None = None
         self._mm_cache_stats: MultiModalCacheStats | None = None
         self._nvimagecodec_service_lease = False
+        self._pynvvideocodec_pool_configured = False
+        self._pynvvideocodec_resize_processor_kwargs: dict[str, object] | None = None
         self._clear_mm_cache_async = make_async(
             self.clear_mm_cache, executor=self._mm_executor
         )
@@ -117,6 +119,21 @@ class BaseRenderer(ABC, Generic[_T]):
             # is 0). Lives in the API-server process only.
             mm_config = config.model_config.multimodal_config
             if mm_config is not None:
+                maybe_init_mm_gpu_ipc_pool(
+                    mm_config.mm_ipc_gpu_memory_gb,
+                    config.parallel_config._api_process_count,
+                )
+
+            mm_processor_cache = mm_registry.processor_cache_from_config(config)
+
+            with set_default_torch_num_threads():
+                self.mm_processor = mm_registry.create_processor(
+                    config.model_config,
+                    tokenizer=self.tokenizer,
+                    cache=mm_processor_cache,
+                )
+
+            if mm_config is not None:
                 from vllm.multimodal.video import (
                     configure_pynvvideocodec_video_io,
                     uses_pynvvideocodec_video_io,
@@ -131,20 +148,14 @@ class BaseRenderer(ABC, Generic[_T]):
                     configure_pynvvideocodec_video_io(
                         video_io_kwargs,
                         get_video_processor_cls_name(config.model_config),
+                        processor=self.mm_processor,
+                        processor_kwargs=mm_config.mm_processor_kwargs,
                     )
-                maybe_init_mm_gpu_ipc_pool(
-                    mm_config.mm_ipc_gpu_memory_gb,
-                    config.parallel_config._api_process_count,
-                )
-
-            mm_processor_cache = mm_registry.processor_cache_from_config(config)
-
-            with set_default_torch_num_threads():
-                self.mm_processor = mm_registry.create_processor(
-                    config.model_config,
-                    tokenizer=self.tokenizer,
-                    cache=mm_processor_cache,
-                )
+                    self._pynvvideocodec_pool_configured = True
+                    if video_io_kwargs.get("gpu_resize", False):
+                        self._pynvvideocodec_resize_processor_kwargs = dict(
+                            mm_config.mm_processor_kwargs or {}
+                        )
 
             if mm_processor_cache:
                 self._mm_cache_stats = MultiModalCacheStats()
@@ -311,6 +322,15 @@ class BaseRenderer(ABC, Generic[_T]):
         await self._clear_mm_cache_async()
 
     def shutdown(self) -> None:
+        if self._pynvvideocodec_pool_configured:
+            from vllm.multimodal.video_decoders.pynvvideocodec import (
+                shutdown_pynvvideocodec_decoder_pool,
+            )
+
+            shutdown_pynvvideocodec_decoder_pool()
+            self._pynvvideocodec_pool_configured = False
+            self._pynvvideocodec_resize_processor_kwargs = None
+
         if self._nvimagecodec_service_lease:
             from vllm.multimodal.media.image_decode_service import (
                 release_nvimagecodec_decode_service_lease,
@@ -765,6 +785,21 @@ class BaseRenderer(ABC, Generic[_T]):
         *,
         skip_mm_cache: bool = False,
     ) -> "MultiModalInput":
+        if self._pynvvideocodec_resize_processor_kwargs is not None:
+            from vllm.multimodal.video_decoders import (
+                request_invalidates_video_resize_target,
+            )
+
+            invalid = request_invalidates_video_resize_target(
+                self._pynvvideocodec_resize_processor_kwargs,
+                mm_processor_kwargs,
+            )
+            if invalid:
+                raise ValueError(
+                    "Request-level mm_processor_kwargs cannot override "
+                    f"{sorted(invalid)} while PyNvVideoCodec gpu_resize is enabled"
+                )
+
         if skip_mm_cache and self._readonly_mm_processor is not None:
             mm_processor = self._readonly_mm_processor
         else:

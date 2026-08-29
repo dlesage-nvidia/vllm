@@ -17,6 +17,7 @@ import pytest
 from PIL import Image
 
 import vllm.multimodal.media.video as video_module
+import vllm.multimodal.video_decoders.pynvvideocodec as pynv_module
 from vllm.assets.base import get_vllm_public_assets
 from vllm.assets.video import (
     video_get_metadata,
@@ -649,6 +650,23 @@ class TestMergeKwargsGpuBackendPolicy:
         )
         assert result["output_layout"] == "tchw"
 
+    def test_prevents_request_level_gpu_resize_override(self):
+        result = VideoMediaIO.merge_kwargs(
+            default_kwargs={
+                "backend": "pynvvideocodec",
+                "gpu_resize": True,
+            },
+            runtime_kwargs={"gpu_resize": False},
+        )
+        assert result["gpu_resize"] is True
+
+    def test_strips_request_level_gpu_resize_when_not_static(self):
+        result = VideoMediaIO.merge_kwargs(
+            default_kwargs={"backend": "pynvvideocodec"},
+            runtime_kwargs={"gpu_resize": True},
+        )
+        assert "gpu_resize" not in result
+
     @pytest.mark.parametrize("backend", ["opencv", "pyav", "torchcodec"])
     def test_cpu_codec_fallback_drops_static_pynv_options(self, backend: str):
         result = VideoMediaIO.merge_kwargs(
@@ -656,12 +674,14 @@ class TestMergeKwargsGpuBackendPolicy:
                 "backend": "pynvvideocodec",
                 "hw_decoders": 2,
                 "output_layout": "tchw",
+                "gpu_resize": True,
             },
             runtime_kwargs={"backend": backend},
         )
         assert result["backend"] == backend
         assert "hw_decoders" not in result
         assert "output_layout" not in result
+        assert "gpu_resize" not in result
 
     def test_custom_loader_output_layout_passes_through(self):
         result = VideoMediaIO.merge_kwargs(
@@ -857,6 +877,81 @@ def test_pynvvc_frames_copy_directly_to_pinned_host(
         "synchronize",
         "numpy",
     ]
+
+
+@pytest.mark.parametrize(
+    ("output_layout", "frame_shape", "expected_shape", "cvcuda_layout"),
+    [
+        ("thwc", (4, 5, 3), (2, 3, 3), "HWC"),
+        ("tchw", (3, 4, 5), (3, 2, 3), "CHW"),
+    ],
+)
+def test_pynvvc_gpu_resize_uses_cvcuda_hqresize(
+    monkeypatch: pytest.MonkeyPatch,
+    output_layout: str,
+    frame_shape: tuple[int, int, int],
+    expected_shape: tuple[int, int, int],
+    cvcuda_layout: str,
+):
+    torch = pytest.importorskip("torch")
+    calls: list[tuple] = []
+    cvstream = object()
+
+    class FakeOutput:
+        def __init__(self, tensor) -> None:
+            self.tensor = tensor
+
+        def cuda(self):
+            return self.tensor
+
+    class FakeCvCuda:
+        class Interp:
+            CUBIC = "cubic"
+
+        @staticmethod
+        def as_tensor(frame, layout):
+            calls.append(("as_tensor", layout))
+            return frame
+
+        @staticmethod
+        def hq_resize(
+            frame,
+            size,
+            *,
+            antialias: bool,
+            interpolation,
+            stream,
+        ):
+            calls.append(("hq_resize", size, antialias, interpolation, stream))
+            height, width = size
+            output = (
+                frame[:, :height, :width]
+                if output_layout == "tchw"
+                else frame[:height, :width, :]
+            )
+            return FakeOutput(output.contiguous())
+
+    monkeypatch.setattr(pynv_module, "_cvcuda", lambda: FakeCvCuda)
+    with pynv_module._RESIZE_COUNTERS_LOCK:
+        pynv_module._RESIZE_COUNTERS.clear()
+
+    frames = [
+        torch.arange(math.prod(frame_shape), dtype=torch.uint8).reshape(frame_shape)
+    ]
+    resized = pynv_module._resize_pynvvc_frames(
+        frames,
+        output_layout,
+        (3, 2),
+        cvstream=cvstream,
+    )
+
+    assert [tuple(frame.shape) for frame in resized] == [expected_shape]
+    assert all(frame.is_contiguous() for frame in resized)
+    assert calls == [
+        ("as_tensor", cvcuda_layout),
+        ("hq_resize", (2, 3), True, "cubic", cvstream),
+    ]
+    assert pynv_module.get_pynvvideocodec_resize_stats() == {"resize_cvcuda": 1}
 
 
 @pytest.mark.parametrize(
@@ -1091,6 +1186,33 @@ def test_pynvvideocodec_tchw_marks_media_hash_config():
     loaded = video_io.load_bytes(b"encoded-video")
 
     assert loaded.io_config == {"pynvvideocodec_input_data_format": "channels_first"}
+
+
+def test_pynvvideocodec_gpu_resize_marks_media_hash_config():
+    frames = np.zeros((4, 3, 8, 10), dtype=np.uint8)
+    video_io = VideoMediaIO(
+        ImageMediaIO(),
+        backend="pynvvideocodec",
+        output_layout="tchw",
+        gpu_resize=True,
+    )
+    video_io.video_loader = SimpleNamespace(
+        load_bytes=lambda *args, **kwargs: (
+            frames,
+            {
+                VLLM_VIDEO_INPUT_DATA_FORMAT_KEY: "channels_first",
+                video_module.VLLM_VIDEO_GPU_RESIZE_KEY: True,
+            },
+        )
+    )
+
+    loaded = video_io.load_bytes(b"encoded-video")
+
+    assert loaded.io_config == {
+        "pynvvideocodec_input_data_format": "channels_first",
+        "pynvvideocodec_gpu_resize": True,
+    }
+    assert video_module.VLLM_VIDEO_GPU_RESIZE_KEY not in loaded.media[1]
 
 
 def test_encode_base64_preserves_thwc_with_tchw_decoder_config():

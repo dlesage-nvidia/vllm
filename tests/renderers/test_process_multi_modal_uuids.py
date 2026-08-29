@@ -64,6 +64,45 @@ def test_text_only_model_mm_data_maps_to_bad_request():
     assert error_response.error.code == HTTPStatus.BAD_REQUEST
 
 
+def test_gpu_video_resize_rejects_request_processor_sizing_override():
+    renderer = object.__new__(HfRenderer)
+    renderer._pynvvideocodec_resize_processor_kwargs = {"max_pixels": 123}
+
+    with pytest.raises(
+        ValueError,
+        match=r"cannot override \['do_sample_frames', 'num_frames'\]",
+    ):
+        renderer._process_multimodal(
+            prompt=[1],
+            mm_data={},
+            mm_uuids=None,
+            mm_processor_kwargs={"do_sample_frames": True, "num_frames": 4},
+        )
+
+
+def test_renderer_shutdown_closes_pynvvideocodec_pool_once(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    calls = []
+    monkeypatch.setattr(
+        "vllm.multimodal.video_decoders.pynvvideocodec."
+        "shutdown_pynvvideocodec_decoder_pool",
+        lambda: calls.append("shutdown"),
+    )
+    renderer = object.__new__(HfRenderer)
+    renderer.mm_processor = None
+    renderer._pynvvideocodec_pool_configured = True
+    renderer._pynvvideocodec_resize_processor_kwargs = {"max_pixels": 123}
+    renderer._nvimagecodec_service_lease = False
+
+    renderer.shutdown()
+    renderer.shutdown()
+
+    assert calls == ["shutdown"]
+    assert renderer._pynvvideocodec_pool_configured is False
+    assert renderer._pynvvideocodec_resize_processor_kwargs is None
+
+
 def test_multi_modal_uuids_length_mismatch_raises():
     renderer = _build_renderer()
 

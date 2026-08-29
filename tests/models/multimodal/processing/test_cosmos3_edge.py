@@ -11,6 +11,7 @@ from vllm.assets.video import VideoAsset
 from vllm.config import ModelConfig
 from vllm.multimodal import MULTIMODAL_REGISTRY
 from vllm.multimodal.video import VLLM_VIDEO_INPUT_DATA_FORMAT_KEY
+from vllm.multimodal.video_decoders import processor_video_resize_target
 
 from ....conftest import ImageTestAssets
 from ...utils import build_model_context
@@ -95,6 +96,16 @@ def test_device_normalization_is_disabled() -> None:
     )
 
     assert ctx.model_config.multimodal_config.mm_device_do_normalize is False
+
+
+def test_gpu_video_resize_target_resolves_live_processor(processor) -> None:
+    target = processor_video_resize_target(
+        processor,
+        {"max_pixels": 32 * 1024 * 576},
+    )
+
+    assert target is not None
+    assert target(3840, 2160, 32) == (1024, 576)
 
 
 @pytest.mark.parametrize("num_images", [1, 2])

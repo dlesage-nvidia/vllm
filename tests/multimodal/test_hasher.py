@@ -154,6 +154,12 @@ def test_hash_separates_video_frame_decode_config():
     pynvvideocodec_tchw = item_for_hash(
         {"pynvvideocodec_input_data_format": "channels_first"}
     )
+    pynvvideocodec_gpu_resize = item_for_hash(
+        {
+            "pynvvideocodec_input_data_format": "channels_first",
+            "pynvvideocodec_gpu_resize": True,
+        }
+    )
 
     hasher = MultiModalHasher
     assert hasher.hash_kwargs("blake3", video=pillow) != hasher.hash_kwargs(
@@ -162,6 +168,9 @@ def test_hash_separates_video_frame_decode_config():
     assert hasher.hash_kwargs("blake3", video=pillow) != hasher.hash_kwargs(
         "blake3", video=pynvvideocodec_tchw
     )
+    assert hasher.hash_kwargs(
+        "blake3", video=pynvvideocodec_tchw
+    ) != hasher.hash_kwargs("blake3", video=pynvvideocodec_gpu_resize)
 
 
 def test_hash_non_contiguous_array():

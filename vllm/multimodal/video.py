@@ -15,9 +15,11 @@ from vllm.multimodal.video_decoders import (
     PYNVVIDEOCODEC_DEFAULT_OUTPUT_LAYOUT,
     PYNVVIDEOCODEC_VIDEO_BACKEND,
     VideoDecoderBackend,
+    VideoResizeTarget,
     VideoSourceMetadata,
     VideoTargetMetadata,
     decode_video,
+    processor_video_resize_target,
     resolve_video_backend_kwargs,
 )
 from vllm.utils.import_utils import PlaceholderModule
@@ -32,12 +34,14 @@ except ImportError:
 logger = init_logger(__name__)
 
 VLLM_VIDEO_INPUT_DATA_FORMAT_KEY = "_vllm_input_data_format"
+VLLM_VIDEO_GPU_RESIZE_KEY = "_vllm_gpu_resize"
 PYNVVIDEOCODEC_TCHW_VIDEO_PROCESSORS = frozenset(
     {
         "Cosmos3EdgeVideoProcessor",
         "Qwen3VLVideoProcessor",
     }
 )
+PYNVVIDEOCODEC_GPU_RESIZE_VIDEO_PROCESSORS = PYNVVIDEOCODEC_TCHW_VIDEO_PROCESSORS
 
 
 def validate_video_processor_output_layout(
@@ -80,6 +84,9 @@ def uses_pynvvideocodec_video_io(video_kwargs: dict[str, Any]) -> bool:
 def configure_pynvvideocodec_video_io(
     video_kwargs: dict[str, Any] | None,
     video_processor: str | None,
+    *,
+    processor: Any = None,
+    processor_kwargs: dict[str, object] | None = None,
 ) -> None:
     """Validate and freeze a statically configured PyNvVideoCodec path."""
     resolved = resolve_video_io_kwargs(video_kwargs, video_processor)
@@ -88,6 +95,24 @@ def configure_pynvvideocodec_video_io(
 
     output_layout = resolved.get("output_layout", PYNVVIDEOCODEC_DEFAULT_OUTPUT_LAYOUT)
     validate_video_processor_output_layout(video_processor, output_layout)
+    gpu_resize = resolved.get("gpu_resize", False)
+    if not isinstance(gpu_resize, bool):
+        raise ValueError("PyNvVideoCodec gpu_resize must be a boolean")
+
+    resize_target: VideoResizeTarget | None = None
+    if gpu_resize:
+        if video_processor not in PYNVVIDEOCODEC_GPU_RESIZE_VIDEO_PROCESSORS:
+            raise ValueError(
+                "PyNvVideoCodec gpu_resize is not supported by video "
+                f"processor {video_processor!r}; supported processors: "
+                f"{sorted(PYNVVIDEOCODEC_GPU_RESIZE_VIDEO_PROCESSORS)}"
+            )
+        resize_target = processor_video_resize_target(processor, processor_kwargs)
+        if resize_target is None:
+            raise ValueError(
+                "PyNvVideoCodec gpu_resize was requested, but no safe resize "
+                f"target could be derived for {video_processor!r}"
+            )
 
     from vllm.multimodal.video_decoders.pynvvideocodec import (
         configure_pynvvideocodec_decoder_pool,
@@ -96,6 +121,8 @@ def configure_pynvvideocodec_video_io(
     configure_pynvvideocodec_decoder_pool(
         resolved.get("hw_decoders", PYNVVIDEOCODEC_DEFAULT_HW_DECODERS),
         output_layout,
+        gpu_resize=gpu_resize,
+        resize_target=resize_target,
     )
 
 
@@ -324,6 +351,9 @@ class VideoBackend(VideoLoader):
                 - ``output_layout`` (PyNvVideoCodec): decoded host layout,
                   either ``"thwc"`` (default) or ``"tchw"``. The latter uses
                   planar RGBP output and is restricted to audited processors.
+                - ``gpu_resize`` (PyNvVideoCodec): opt in to resizing decoded
+                  frames on the GPU before their host transfer. Restricted to
+                  processors whose sizing behavior has been audited.
                 - ``pool_size`` / ``timeout_sec`` (DeepStream): decoder pool
                   size and pool acquisition timeout in seconds.
 
@@ -362,6 +392,8 @@ class VideoBackend(VideoLoader):
             and backend_kwargs["output_layout"] == "tchw"
         ):
             metadata[VLLM_VIDEO_INPUT_DATA_FORMAT_KEY] = "channels_first"
+        if backend == PYNVVIDEOCODEC_VIDEO_BACKEND and backend_kwargs["gpu_resize"]:
+            metadata[VLLM_VIDEO_GPU_RESIZE_KEY] = True
         return frames, metadata
 
 

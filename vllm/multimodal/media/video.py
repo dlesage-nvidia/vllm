@@ -18,6 +18,7 @@ from vllm.multimodal.image_decoders import NVIMAGECODEC_IMAGE_BACKEND
 from ..video import (
     PYNVVIDEOCODEC_VIDEO_BACKEND,
     VIDEO_LOADER_REGISTRY,
+    VLLM_VIDEO_GPU_RESIZE_KEY,
     VLLM_VIDEO_INPUT_DATA_FORMAT_KEY,
     uses_pynvvideocodec_video_io,
 )
@@ -68,6 +69,7 @@ class VideoMediaIO(MediaIO[MediaWithBytes[tuple[npt.NDArray, dict[str, Any]]]]):
             runtime_kwargs = dict(runtime_kwargs)
             runtime_kwargs.pop("hw_decoders", None)
             runtime_kwargs.pop("pool_size", None)
+            runtime_kwargs.pop("gpu_resize", None)
 
             # Block request-level selection of GPU video backends that
             # were not configured (and VRAM-reserved) at startup.
@@ -101,11 +103,16 @@ class VideoMediaIO(MediaIO[MediaWithBytes[tuple[npt.NDArray, dict[str, Any]]]]):
                     merged["output_layout"] = default_kwargs["output_layout"]
                 else:
                     merged.pop("output_layout", None)
+                if "gpu_resize" in default_kwargs:
+                    merged["gpu_resize"] = default_kwargs["gpu_resize"]
+                else:
+                    merged.pop("gpu_resize", None)
             else:
                 # A request may fall back to another loader or codec. Remove
                 # static PyNv-only options, while preserving an explicitly
                 # request-owned output_layout for a custom loader.
                 merged.pop("hw_decoders", None)
+                merged.pop("gpu_resize", None)
                 if not runtime_kwargs or "output_layout" not in runtime_kwargs:
                     merged.pop("output_layout", None)
         # fps and num_frames interact with each other, so if either is
@@ -151,17 +158,31 @@ class VideoMediaIO(MediaIO[MediaWithBytes[tuple[npt.NDArray, dict[str, Any]]]]):
         video = self.video_loader.load_bytes(
             data, num_frames=self.num_frames, **self.kwargs
         )
-        input_data_format = (
-            video[1].get(VLLM_VIDEO_INPUT_DATA_FORMAT_KEY)
+        metadata = (
+            video[1]
             if isinstance(video, tuple) and isinstance(video[1], dict)
             else None
         )
-        io_config = (
-            {"pynvvideocodec_input_data_format": input_data_format}
-            if input_data_format is not None
+        input_data_format = (
+            metadata.get(VLLM_VIDEO_INPUT_DATA_FORMAT_KEY)
+            if metadata is not None
             else None
         )
-        return MediaWithBytes(video, data, io_config)
+        gpu_resize = (
+            metadata.get(VLLM_VIDEO_GPU_RESIZE_KEY) if metadata is not None else None
+        )
+        if gpu_resize and metadata is not None:
+            # This marker affects the decoded bytes and therefore the media
+            # hash, but it is not processor-facing video metadata.
+            metadata = dict(metadata)
+            metadata.pop(VLLM_VIDEO_GPU_RESIZE_KEY)
+            video = (video[0], metadata)
+        io_config = {}
+        if input_data_format is not None:
+            io_config["pynvvideocodec_input_data_format"] = input_data_format
+        if gpu_resize:
+            io_config["pynvvideocodec_gpu_resize"] = True
+        return MediaWithBytes(video, data, io_config or None)
 
     def _jpeg_sequence_frame_count(self, data: str) -> int:
         if self.num_frames == 0:

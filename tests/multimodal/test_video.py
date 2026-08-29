@@ -19,6 +19,7 @@ from vllm.models.minimax_m3.common.mm_preprocess import MiniMaxM3VideoBackend
 from vllm.multimodal.video import (
     PYNVVIDEOCODEC_VIDEO_BACKEND,
     VIDEO_LOADER_REGISTRY,
+    VLLM_VIDEO_GPU_RESIZE_KEY,
     VLLM_VIDEO_INPUT_DATA_FORMAT_KEY,
     DynamicVideoBackend,
     GLM46VVideoBackend,
@@ -33,11 +34,19 @@ from vllm.multimodal.video import (
     get_video_loader_backend_for_processor,
 )
 from vllm.multimodal.video_decoders import decode_video, resolve_video_backend_kwargs
+from vllm.multimodal.video_decoders.capability import (
+    processor_video_resize_target,
+    request_invalidates_video_resize_target,
+)
 from vllm.multimodal.video_decoders.pynvvideocodec import (
+    _RESIZE_COUNTERS,
+    _RESIZE_COUNTERS_LOCK,
     PYNVVIDEOCODEC_DECODER_CACHE_SIZE,
     PyNvVideoCodecDecoderSlot,
     PyNvVideoCodecVideoBackendMixin,
     _pynv_decoder_pool,
+    _resize_pynvvc_frames,
+    get_pynvvideocodec_resize_stats,
     validate_pynvvideocodec_output_layout,
 )
 from vllm.platforms import current_platform
@@ -68,19 +77,30 @@ def _fresh_decoder_pool():
     old_cond = pool.cond
     old_max = pool.max_slots
     old_output_layout = pool.output_layout
+    old_gpu_resize = pool.gpu_resize
+    old_resize_target = pool.resize_target
+    old_generation = pool.generation
     pool.slots = []
     pool.active = 0
     pool.cond = threading.Condition()
     pool.max_slots = None
     pool.output_layout = None
+    pool.gpu_resize = None
+    pool.resize_target = None
     try:
         yield pool
     finally:
+        for slot in pool.slots:
+            if callable(close := getattr(slot, "close", None)):
+                close()
         pool.slots = old_slots
         pool.active = old_active
         pool.cond = old_cond
         pool.max_slots = old_max
         pool.output_layout = old_output_layout
+        pool.gpu_resize = old_gpu_resize
+        pool.resize_target = old_resize_target
+        pool.generation = old_generation
 
 
 @VIDEO_LOADER_REGISTRY.register("test_video_loader_1")
@@ -293,6 +313,84 @@ def test_pynvvideocodec_backend_accounts_raw_decoded_frames(
     assert metadata["frames_indices"] == [0, 3, 6, 9]
 
 
+def test_pynvvideocodec_gpu_resize_accounts_overlapping_outputs(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    class FakeNvc:
+        pass
+
+    class RecordingPool:
+        def __init__(self):
+            self.acquired: list[int] = []
+
+        @contextmanager
+        def acquire(self, size: int):
+            self.acquired.append(size)
+            yield
+
+    gpu_source = PyNvVideoCodecVideoBackendMixin
+    source_metadata = VideoSourceMetadata(10, 5.0, 2.0)
+    monkeypatch.setitem(sys.modules, "PyNvVideoCodec", FakeNvc)
+    monkeypatch.setattr(
+        gpu_source,
+        "_read_source_metadata",
+        classmethod(
+            lambda cls, file_path, nvc: type(
+                "Source", (), {"source": source_metadata, "width": 10, "height": 20}
+            )()
+        ),
+    )
+    monkeypatch.setattr(
+        gpu_source,
+        "_decode_to_pinned_host",
+        classmethod(
+            lambda cls, file_path, frame_idx, nvc: np.zeros(
+                (len(frame_idx), 20, 10, 3), dtype=np.uint8
+            )
+        ),
+    )
+    pool = RecordingPool()
+    monkeypatch.setattr(
+        "vllm.multimodal.gpu_ipc_memory.get_mm_gpu_ipc_pool", lambda: pool
+    )
+
+    with _fresh_decoder_pool() as decoder_pool:
+        decoder_pool.resize_target = lambda width, height, frames: (5, 10)
+        frames, _, _, _ = gpu_source.decode_frames_pynvvideocodec(
+            VideoBackend,
+            b"fake video",
+            VideoTargetMetadata(4, -1, 300),
+        )
+
+    assert frames.shape == (4, 20, 10, 3)
+    assert pool.acquired == [2 * 4 * 20 * 10 * 3]
+
+
+def test_pynvvideocodec_gpu_resize_marks_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(
+        "vllm.multimodal.video.decode_video",
+        lambda *args, **kwargs: (
+            np.zeros((2, 3, 8, 10), dtype=np.uint8),
+            VideoSourceMetadata(2, 1.0, 2.0),
+            [0, 1],
+            [0, 1],
+        ),
+    )
+
+    _, metadata = VideoBackend.load_bytes(
+        b"fake video",
+        num_frames=2,
+        backend=PYNVVIDEOCODEC_VIDEO_BACKEND,
+        output_layout="tchw",
+        gpu_resize=True,
+    )
+
+    assert metadata[VLLM_VIDEO_INPUT_DATA_FORMAT_KEY] == "channels_first"
+    assert metadata[VLLM_VIDEO_GPU_RESIZE_KEY] is True
+
+
 @pytest.mark.skipif(not current_platform.is_cuda(), reason="Requires CUDA")
 def test_pynvvideocodec_codec_uses_dynamic_sampling_strategy(
     monkeypatch: pytest.MonkeyPatch,
@@ -443,6 +541,104 @@ def test_pynvvideocodec_rgbp_matches_rgb_and_tchw_host_contract(tmp_path: Path):
     assert metadata["frames_indices"] == frame_indices
 
 
+@pytest.mark.skipif(not current_platform.is_cuda(), reason="Requires CUDA")
+@pytest.mark.parametrize("output_layout", ["thwc", "tchw"])
+def test_pynvvideocodec_gpu_resize_uses_cvcuda_and_matches_pil(
+    output_layout: str,
+):
+    cvcuda = pytest.importorskip("cvcuda")
+    if not hasattr(cvcuda, "hq_resize"):
+        pytest.skip("CV-CUDA HQResize is unavailable")
+    from PIL import Image
+
+    video = create_long_gop_video(num_frames=12, width=320, height=240, fps=6)
+    loader = VIDEO_LOADER_REGISTRY.load(PYNVVIDEOCODEC_VIDEO_BACKEND)
+    with _fresh_decoder_pool():
+        baseline, _ = loader.load_bytes(
+            video,
+            num_frames=4,
+            hw_decoders=1,
+            output_layout=output_layout,
+        )
+
+    with _RESIZE_COUNTERS_LOCK:
+        _RESIZE_COUNTERS.clear()
+    with _fresh_decoder_pool():
+        PyNvVideoCodecVideoBackendMixin._configure_decoder_slots(
+            1,
+            output_layout,
+            gpu_resize=True,
+            resize_target=lambda width, height, num_frames: (160, 120),
+        )
+        resized, _ = loader.load_bytes(
+            video,
+            num_frames=4,
+            hw_decoders=1,
+            output_layout=output_layout,
+            gpu_resize=True,
+        )
+
+    baseline_thwc = (
+        baseline.transpose(0, 2, 3, 1) if output_layout == "tchw" else baseline
+    )
+    resized_thwc = resized.transpose(0, 2, 3, 1) if output_layout == "tchw" else resized
+    reference = np.stack(
+        [
+            np.asarray(
+                Image.fromarray(frame).resize((160, 120), Image.Resampling.BICUBIC)
+            )
+            for frame in baseline_thwc
+        ]
+    )
+    difference = np.abs(resized_thwc.astype(np.int16) - reference.astype(np.int16))
+
+    assert resized_thwc.shape == (4, 120, 160, 3)
+    assert difference.mean() < 2.0
+    assert get_pynvvideocodec_resize_stats() == {
+        "gpu_resized": 4,
+        "resize_cvcuda": 4,
+    }
+
+
+@pytest.mark.skipif(not current_platform.is_cuda(), reason="Requires CUDA")
+@pytest.mark.parametrize(
+    ("output_layout", "frame_shape", "expected_shape"),
+    [
+        ("thwc", (4, 5, 3), (2, 3, 3)),
+        ("tchw", (3, 4, 5), (3, 2, 3)),
+    ],
+)
+def test_pynvvc_gpu_resize_uses_torch_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+    output_layout: str,
+    frame_shape: tuple[int, int, int],
+    expected_shape: tuple[int, int, int],
+):
+    import torch
+
+    monkeypatch.setattr(
+        "vllm.multimodal.video_decoders.pynvvideocodec._cvcuda",
+        lambda: None,
+    )
+    with _RESIZE_COUNTERS_LOCK:
+        _RESIZE_COUNTERS.clear()
+
+    frames = [
+        torch.arange(
+            int(np.prod(frame_shape)),
+            dtype=torch.uint8,
+            device=current_platform.device_type,
+        ).reshape(frame_shape)
+    ]
+    resized = _resize_pynvvc_frames(frames, output_layout, (3, 2))
+
+    assert [tuple(frame.shape) for frame in resized] == [expected_shape]
+    assert all(
+        frame.dtype == torch.uint8 and frame.is_contiguous() for frame in resized
+    )
+    assert get_pynvvideocodec_resize_stats() == {"resize_torch": 1}
+
+
 @pytest.mark.parametrize("hw_decoders", [1, 3])
 def test_pynvvideocodec_decoder_slots_are_bounded(
     monkeypatch: pytest.MonkeyPatch,
@@ -496,6 +692,67 @@ def test_pynvvideocodec_decoder_slots_are_bounded(
         assert create_count == hw_decoders
 
 
+def test_pynvvideocodec_shutdown_during_slot_creation_discards_stale_slot(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    class FakeSlot:
+        closed = False
+
+        def close(self):
+            self.closed = True
+
+    slot = FakeSlot()
+    with _fresh_decoder_pool() as pool:
+        PyNvVideoCodecVideoBackendMixin._configure_decoder_slots(1)
+        original_generation = pool.generation
+
+        def fake_create_slot(cls):
+            pool.shutdown()
+            pool.configure(1, "thwc", False, None)
+            return slot
+
+        monkeypatch.setattr(
+            PyNvVideoCodecVideoBackendMixin,
+            "_create_decoder_slot",
+            classmethod(fake_create_slot),
+        )
+
+        with PyNvVideoCodecVideoBackendMixin._borrow_decoder_slot() as borrowed:
+            assert borrowed is slot
+            assert pool.generation == original_generation + 1
+
+        assert slot.closed
+        assert pool.slots == []
+        assert pool.active == 0
+
+
+def test_pynvvideocodec_shutdown_during_failed_slot_creation_keeps_new_count(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    with _fresh_decoder_pool() as pool:
+        PyNvVideoCodecVideoBackendMixin._configure_decoder_slots(1)
+
+        def fake_create_slot(cls):
+            pool.shutdown()
+            pool.configure(1, "thwc", False, None)
+            raise RuntimeError("slot creation failed after shutdown")
+
+        monkeypatch.setattr(
+            PyNvVideoCodecVideoBackendMixin,
+            "_create_decoder_slot",
+            classmethod(fake_create_slot),
+        )
+
+        with (
+            pytest.raises(RuntimeError, match="slot creation failed after shutdown"),
+            PyNvVideoCodecVideoBackendMixin._borrow_decoder_slot(),
+        ):
+            pass
+
+        assert pool.active == 0
+        assert pool.max_slots == 1
+
+
 def test_pynvvideocodec_decoder_slots_are_configured_once(
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -530,6 +787,140 @@ def test_pynvvideocodec_static_config_freezes_pool_before_decode():
             PyNvVideoCodecVideoBackendMixin._configure_decoder_slots(2, "tchw")
         with pytest.raises(RuntimeError, match="already configured as 'tchw'"):
             PyNvVideoCodecVideoBackendMixin._configure_decoder_slots(3, "thwc")
+
+
+def test_video_gpu_resize_target_preserves_processor_geometry():
+    from transformers.models.qwen3_vl import video_processing_qwen3_vl
+
+    class SyntheticVideoProcessor:
+        size = {
+            "shortest_edge": 128 * 32 * 32,
+            "longest_edge": 32 * 32 * 768,
+        }
+        patch_size = 16
+        merge_size = 2
+        temporal_patch_size = 2
+        do_resize = True
+
+        def __call__(self, *args, **kwargs):
+            raise AssertionError("target derivation must not run preprocessing")
+
+    SyntheticVideoProcessor.__module__ = video_processing_qwen3_vl.__name__
+    max_pixels = 32 * 1024 * 576
+    target = processor_video_resize_target(
+        SyntheticVideoProcessor(),
+        {"max_pixels": max_pixels},
+    )
+
+    assert target is not None
+    target_width, target_height = target(5000, 3333, 32) or (0, 0)
+    assert target_width * target_height < 5000 * 3333
+
+    resize_kwargs = {
+        "num_frames": 32,
+        "factor": 32,
+        "temporal_factor": 2,
+        "min_pixels": 128 * 32 * 32,
+        "max_pixels": max_pixels,
+    }
+    direct = video_processing_qwen3_vl.smart_resize(
+        height=3333,
+        width=5000,
+        **resize_kwargs,
+    )
+    repeated = video_processing_qwen3_vl.smart_resize(
+        height=target_height,
+        width=target_width,
+        **resize_kwargs,
+    )
+    assert repeated == direct
+
+    fewer_frames = target(1920, 1080, 16)
+    more_frames = target(1920, 1080, 32)
+    assert fewer_frames is not None and more_frames is not None
+    assert fewer_frames[0] * fewer_frames[1] > more_frames[0] * more_frames[1]
+
+
+def test_pynvvideocodec_gpu_resize_fails_closed_without_audited_target():
+    with _fresh_decoder_pool():
+        with pytest.raises(ValueError, match="not supported by video processor"):
+            configure_pynvvideocodec_video_io(
+                {
+                    "backend": "pynvvideocodec",
+                    "gpu_resize": True,
+                },
+                "Qwen2VLVideoProcessor",
+            )
+
+        with pytest.raises(ValueError, match="no safe resize target"):
+            configure_pynvvideocodec_video_io(
+                {
+                    "backend": "pynvvideocodec",
+                    "gpu_resize": True,
+                },
+                "Qwen3VLVideoProcessor",
+            )
+
+
+def test_pynvvideocodec_gpu_resize_rejects_request_sizing_overrides():
+    configured = {"max_pixels": 32 * 1024 * 576}
+
+    assert not request_invalidates_video_resize_target(
+        configured,
+        {"max_pixels": configured["max_pixels"], "do_normalize": False},
+    )
+    assert request_invalidates_video_resize_target(
+        configured,
+        {
+            "do_sample_frames": True,
+            "max_frames": 16,
+            "max_pixels": 16 * 1024 * 576,
+            "min_frames": 4,
+            "num_frames": 16,
+            "video_metadata": {"fps": 30},
+        },
+    ) == {
+        "do_sample_frames",
+        "max_frames",
+        "max_pixels",
+        "min_frames",
+        "num_frames",
+        "video_metadata",
+    }
+
+
+def test_pynvvideocodec_gpu_resize_freezes_derived_target():
+    from transformers.models.qwen3_vl import video_processing_qwen3_vl
+
+    class SyntheticVideoProcessor:
+        size = {
+            "shortest_edge": 128 * 32 * 32,
+            "longest_edge": 32 * 32 * 768,
+        }
+        patch_size = 16
+        merge_size = 2
+        temporal_patch_size = 2
+
+        def __call__(self, *args, **kwargs):
+            raise AssertionError("target derivation must not run preprocessing")
+
+    SyntheticVideoProcessor.__module__ = video_processing_qwen3_vl.__name__
+
+    with _fresh_decoder_pool() as pool:
+        configure_pynvvideocodec_video_io(
+            {
+                "backend": "pynvvideocodec",
+                "output_layout": "tchw",
+                "gpu_resize": True,
+            },
+            "Qwen3VLVideoProcessor",
+            processor=SyntheticVideoProcessor(),
+            processor_kwargs={"max_pixels": 32 * 1024 * 576},
+        )
+
+        assert pool.gpu_resize is True
+        assert pool.resize_target is not None
+        assert pool.resize_target(3840, 2160, 32) == (1024, 576)
 
 
 def test_custom_video_layout_does_not_configure_pynvvideocodec_pool():

@@ -17,6 +17,7 @@ from vllm.model_executor.models.qwen3_vl import (
 from vllm.model_executor.models.vision import FusedInputNorm
 from vllm.multimodal import MULTIMODAL_REGISTRY
 from vllm.multimodal.video import VLLM_VIDEO_INPUT_DATA_FORMAT_KEY
+from vllm.multimodal.video_decoders import processor_video_resize_target
 
 from ....conftest import ImageTestAssets
 from ...utils import build_model_context
@@ -56,6 +57,24 @@ def _build_video_mm_data(
         "do_sample_frames": True,
     }
     return {"video": [(video, metadata)]}
+
+
+def test_gpu_video_resize_target_resolves_live_processor() -> None:
+    max_pixels = 32 * 1024 * 576
+    ctx = build_model_context(
+        MODEL_ID,
+        mm_processor_kwargs={"max_pixels": max_pixels},
+        limit_mm_per_prompt={"image": 0, "video": 1},
+    )
+    processor = MULTIMODAL_REGISTRY.create_processor(ctx.model_config)
+
+    target = processor_video_resize_target(
+        processor,
+        ctx.model_config.multimodal_config.mm_processor_kwargs,
+    )
+
+    assert target is not None
+    assert target(3840, 2160, 32) == (1024, 576)
 
 
 @pytest.mark.parametrize("model_id", [MODEL_ID, MOE_MODEL_ID])

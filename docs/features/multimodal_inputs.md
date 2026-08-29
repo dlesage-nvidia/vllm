@@ -1042,6 +1042,15 @@ vllm serve Qwen/Qwen3-VL-30B-A3B-Instruct \
   channels-last to channels-first CPU copy. It currently supports Qwen3-VL and
   Cosmos3-Edge. Like `hw_decoders`, it is fixed in server configuration and
   cannot be overridden per request.
+- `gpu_resize`: Resize sampled frames on the GPU before copying them to host
+  memory. This is off by default because CV-CUDA and the processor's host
+  resize use different bicubic kernels and are not bit-exact. When enabled,
+  vLLM derives an intermediate size from the active video processor and only
+  downsizes when that processor will still choose the same final geometry.
+  CV-CUDA HQResize is used when available, with an observable torch fallback.
+  The option currently supports Qwen3-VL and Cosmos3-Edge and cannot be changed
+  per request. Request-level processor overrides that affect video sizing or
+  sampling are rejected because the resize target is fixed at server startup.
 
 ```bash
 # Example: explicitly use the recommended 2 hardware decoders
@@ -1053,6 +1062,14 @@ vllm serve Qwen/Qwen3-VL-30B-A3B-Instruct \
 # Example: decode Qwen3-VL video directly into the processor's TCHW layout
 vllm serve Qwen/Qwen3-VL-30B-A3B-Instruct \
   --media-io-kwargs '{"video": {"backend": "pynvvideocodec", "output_layout": "tchw"}}'
+```
+
+```bash
+# Opt in to reducing the device-to-host transfer before video preprocessing
+vllm serve Qwen/Qwen3-VL-30B-A3B-Instruct \
+  --media-io-kwargs \
+    '{"video": {"backend": "pynvvideocodec", "output_layout": "tchw", "gpu_resize": true}}' \
+  --mm-ipc-gpu-memory-gb 1
 ```
 
 #### Video Frame Recovery
@@ -1118,8 +1135,10 @@ vllm serve Qwen/Qwen3-VL-30B-A3B-Instruct \
 ```
 
 Choose a budget large enough for the largest sampled video that a single API
-server process must decode. When using multiple API server processes, vLLM
-divides the configured budget evenly among them.
+server process must decode. With `gpu_resize`, allow up to twice the raw sampled
+frame bytes because decoded surfaces and resized outputs can overlap until the
+asynchronous host copy completes. When using multiple API server processes,
+vLLM divides the configured budget evenly among them.
 
 For streaming video sources, use the DeepStream backend instead.
 
