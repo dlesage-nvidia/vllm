@@ -709,7 +709,7 @@ def test_outcomes_are_logged_without_a_shutdown(monkeypatch):
     emitted = []
     monkeypatch.setattr(backend, "_log_outcomes", lambda prefix: emitted.append(prefix))
     backend._COUNTERS.clear()  # counters are process-global and accumulate
-    monkeypatch.setattr(backend, "_outcomes_logged_at", 0)
+    monkeypatch.setattr(backend, "_decisions_since_log", 0)
     try:
         for _ in range(backend._OUTCOME_LOG_EVERY - 1):
             backend._count("gpu")
@@ -727,11 +727,13 @@ def test_declined_images_also_drive_the_periodic_outcome_log():
     from vllm.multimodal.image_decoders import nvimgcodec as backend
 
     backend._COUNTERS.clear()
-    backend._outcomes_logged_at = 0
+    backend._decisions_since_log = 0
     try:
-        for _ in range(backend._OUTCOME_LOG_EVERY):
+        for _ in range(backend._OUTCOME_LOG_EVERY - 1):
             backend._count("pillow:unsupported_codec")
-        assert backend._outcomes_logged_at == backend._OUTCOME_LOG_EVERY
+        assert backend._decisions_since_log == backend._OUTCOME_LOG_EVERY - 1
+        backend._count("pillow:unsupported_codec")
+        assert backend._decisions_since_log == 0, "must reset after emitting"
     finally:
         backend._COUNTERS.clear()
-        backend._outcomes_logged_at = 0
+        backend._decisions_since_log = 0
