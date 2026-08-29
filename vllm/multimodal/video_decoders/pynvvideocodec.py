@@ -97,26 +97,84 @@ def _pynvvideocodec_exception_types(nvc) -> tuple[type[Exception], ...]:
     )
 
 
-def _pynvvc_frames_to_nhwc(frames):
-    """Return a stacked PyNvVideoCodec RGB frame batch as contiguous THWC."""
-    if frames.shape[-1] == 3:
-        return frames.contiguous()
-    if frames.shape[1] == 3:
-        return frames.permute(0, 2, 3, 1).contiguous()
-    raise ValueError(
-        "PyNvVideoCodec RGB returned frames with unexpected shape "
-        f"{tuple(frames.shape)}; expected THWC or TCHW with three channels"
-    )
+def _pynvvc_frames_to_pinned_host(
+    decoded_frames,
+    output_layout: PyNvVideoCodecOutputLayout,
+    stream,
+) -> npt.NDArray:
+    """Copy individual PyNvVideoCodec frames directly to one host batch."""
+    import torch
 
+    torch_frames = []
+    synchronized = False
+    try:
+        for frame in decoded_frames:
+            torch_frames.append(torch.from_dlpack(frame))
+        if not torch_frames:
+            stream.synchronize()
+            synchronized = True
+            return np.empty((0,), dtype=np.uint8)
 
-def _pynvvc_frames_to_tchw(frames):
-    """Validate a stacked PyNvVideoCodec RGBP frame batch as contiguous TCHW."""
-    if frames.shape[1] != 3:
-        raise ValueError(
-            "PyNvVideoCodec RGBP returned frames with unexpected shape "
-            f"{tuple(frames.shape)}; expected TCHW with three channels"
+        expected_device = torch.device(stream.device)
+        expected_shape = tuple(torch_frames[0].shape)
+        channel_dim = 0 if output_layout == "tchw" else 2
+        expected_frame_layout = "CHW" if output_layout == "tchw" else "HWC"
+
+        for index, frame in enumerate(torch_frames):
+            shape = tuple(frame.shape)
+            if frame.ndim != 3:
+                raise ValueError(
+                    "PyNvVideoCodec returned frame "
+                    f"{index} with unexpected shape {shape}; expected "
+                    f"{expected_frame_layout} with three channels"
+                )
+            if frame.dtype != torch.uint8:
+                raise ValueError(
+                    "PyNvVideoCodec returned frame "
+                    f"{index} with unexpected dtype {frame.dtype}; "
+                    "expected torch.uint8"
+                )
+            if frame.device != expected_device:
+                raise ValueError(
+                    "PyNvVideoCodec returned frame "
+                    f"{index} on {frame.device}; expected {expected_device}"
+                )
+            if not frame.is_contiguous():
+                raise ValueError(
+                    "PyNvVideoCodec returned non-contiguous frame "
+                    f"{index} with stride {tuple(frame.stride())}"
+                )
+            if shape != expected_shape:
+                raise ValueError(
+                    "PyNvVideoCodec returned frames with inconsistent shapes: "
+                    f"frame 0 is {expected_shape}, frame {index} is {shape}"
+                )
+            if any(dimension <= 0 for dimension in shape) or shape[channel_dim] != 3:
+                raise ValueError(
+                    "PyNvVideoCodec returned frame "
+                    f"{index} with unexpected shape {shape}; expected "
+                    f"{expected_frame_layout} with three channels"
+                )
+
+        host_frames = torch.empty(
+            (len(torch_frames), *expected_shape),
+            dtype=torch.uint8,
+            device="cpu",
+            pin_memory=True,
         )
-    return frames.contiguous()
+        for index, frame in enumerate(torch_frames):
+            host_frames[index].copy_(frame, non_blocking=True)
+
+        stream.synchronize()
+        synchronized = True
+        return host_frames.numpy()
+    finally:
+        # A failed DLPack conversion or copy may still leave decoder work in
+        # flight. Keep both PyNv and Torch wrappers alive until the stream is
+        # safe before the decoder slot can be reused or invalidated.
+        if not synchronized:
+            with suppress(BaseException):
+                stream.synchronize()
 
 
 class PyNvVideoCodecDecoderSlot:
@@ -352,8 +410,6 @@ class PyNvVideoCodecVideoBackendMixin:
         frame_idx: list[int],
         nvc,
     ) -> npt.NDArray:
-        import torch
-
         if not frame_idx:
             return np.empty((0,), dtype=np.uint8)
 
@@ -361,52 +417,36 @@ class PyNvVideoCodecVideoBackendMixin:
             stream = decoder_slot.stream
             with cls._torch_stream_context(stream):
                 try:
-                    decoder = decoder_slot.get_decoder(
-                        file_path, nvc, device_index=cls._DEVICE_INDEX
+                    decode_submitted = True
+                    try:
+                        decoder = decoder_slot.get_decoder(
+                            file_path, nvc, device_index=cls._DEVICE_INDEX
+                        )
+                        decoded_frames = decoder.get_batch_frames_by_index(frame_idx)
+                    except Exception as exc:
+                        if not isinstance(
+                            exc,
+                            _pynvvideocodec_exception_types(nvc) + (IndexError,),
+                        ):
+                            raise
+                        raise ValueError("Invalid or unsupported video file.") from exc
+                    if len(decoded_frames) < len(frame_idx):
+                        logger.warning(
+                            "pynvvideocodec video loading: expected %d frames "
+                            "but got %d.",
+                            len(frame_idx),
+                            len(decoded_frames),
+                        )
+                    # The helper now owns synchronization for both success and
+                    # failure while retaining the decoded frame references.
+                    decode_submitted = False
+                    return _pynvvc_frames_to_pinned_host(
+                        decoded_frames, decoder_slot.output_layout, stream
                     )
-                    decoded_frames = decoder.get_batch_frames_by_index(frame_idx)
-                except Exception as exc:
-                    if not isinstance(
-                        exc,
-                        _pynvvideocodec_exception_types(nvc) + (IndexError,),
-                    ):
-                        raise
-                    raise ValueError("Invalid or unsupported video file.") from exc
-                if len(decoded_frames) < len(frame_idx):
-                    logger.warning(
-                        "pynvvideocodec video loading: expected %d frames but got %d.",
-                        len(frame_idx),
-                        len(decoded_frames),
-                    )
-                torch_frames = [torch.from_dlpack(frame) for frame in decoded_frames]
-                if not torch_frames:
-                    return np.empty((0,), dtype=np.uint8)
-                device_frames = torch.stack(torch_frames)
-                if device_frames.ndim != 4:
-                    raise ValueError(
-                        "PyNvVideoCodec returned frames with unexpected shape "
-                        f"{tuple(device_frames.shape)}"
-                    )
-                if device_frames.dtype != torch.uint8:
-                    raise ValueError(
-                        "PyNvVideoCodec returned frames with unexpected dtype "
-                        f"{device_frames.dtype}; expected torch.uint8"
-                    )
-                if decoder_slot.output_layout == "tchw":
-                    device_frames = _pynvvc_frames_to_tchw(device_frames)
-                else:
-                    device_frames = _pynvvc_frames_to_nhwc(device_frames)
-                host_frames = torch.empty(
-                    device_frames.shape,
-                    dtype=device_frames.dtype,
-                    device="cpu",
-                    pin_memory=True,
-                )
-                host_frames.copy_(device_frames, non_blocking=True)
-                stream.synchronize()
-                host_array = host_frames.numpy()
-                del decoded_frames, torch_frames, device_frames
-                return host_array
+                finally:
+                    if decode_submitted:
+                        with suppress(BaseException):
+                            stream.synchronize()
 
     @classmethod
     def decode_frames_pynvvideocodec(

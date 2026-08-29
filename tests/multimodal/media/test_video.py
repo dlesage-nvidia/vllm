@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import binascii
 import io
+import math
 import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -36,8 +37,7 @@ from vllm.multimodal.video import (
 )
 from vllm.multimodal.video_decoders.pynvvideocodec import (
     PyNvVideoCodecVideoBackendMixin,
-    _pynvvc_frames_to_nhwc,
-    _pynvvc_frames_to_tchw,
+    _pynvvc_frames_to_pinned_host,
 )
 
 from ..utils import cosine_similarity, create_video_from_image, normalize_image
@@ -768,40 +768,254 @@ class TestMergeKwargsGpuBackendPolicy:
         assert not VIDEO_LOADER_REGISTRY.backend_requires_gpu("totally_unknown")
 
 
-@pytest.mark.parametrize("layout", ["nhwc", "nchw"])
-def test_pynvvc_frames_normalized_to_nhwc(layout: str):
-    """The default RGB path preserves the public THWC video contract."""
+@pytest.mark.parametrize(
+    ("output_layout", "frame_shape"),
+    [("thwc", (4, 5, 3)), ("tchw", (3, 4, 5))],
+)
+def test_pynvvc_frames_copy_directly_to_pinned_host(
+    monkeypatch: pytest.MonkeyPatch,
+    output_layout: str,
+    frame_shape: tuple[int, int, int],
+):
+    """Each decoded frame is copied once, without a stacked device batch."""
+    torch = pytest.importorskip("torch")
+    import weakref
+
+    frame_size = math.prod(frame_shape)
+    frames = [
+        torch.arange(frame_size, dtype=torch.uint8).reshape(frame_shape) + index
+        for index in range(2)
+    ]
+    events: list[object] = []
+    wrapper_refs: list[weakref.ReferenceType] = []
+    original_from_dlpack = torch.from_dlpack
+
+    def tracked_from_dlpack(frame):
+        wrapper = original_from_dlpack(frame)
+        wrapper_refs.append(weakref.ref(wrapper))
+        events.append("from_dlpack")
+        return wrapper
+
+    class FakeHostFrame:
+        def __init__(self, batch: "FakeHostBatch", index: int) -> None:
+            self.batch = batch
+            self.index = index
+
+        def copy_(self, frame, *, non_blocking: bool):
+            assert non_blocking
+            events.append(f"copy_{self.index}")
+            self.batch.array[self.index] = frame.numpy()
+
+    class FakeHostBatch:
+        def __init__(self, shape: tuple[int, ...]) -> None:
+            self.array = np.empty(shape, dtype=np.uint8)
+
+        def __getitem__(self, index: int) -> FakeHostFrame:
+            return FakeHostFrame(self, index)
+
+        def numpy(self) -> npt.NDArray:
+            events.append("numpy")
+            return self.array
+
+    def fake_empty(shape, *, dtype, device, pin_memory):
+        assert dtype == torch.uint8
+        assert device == "cpu"
+        assert pin_memory
+        events.append("allocate")
+        return FakeHostBatch(tuple(shape))
+
+    class FakeStream:
+        device = torch.device("cpu")
+
+        @staticmethod
+        def synchronize() -> None:
+            assert all(ref() is not None for ref in wrapper_refs)
+            events.append("synchronize")
+
+    monkeypatch.setattr(torch, "from_dlpack", tracked_from_dlpack)
+    monkeypatch.setattr(torch, "empty", fake_empty)
+    monkeypatch.setattr(
+        torch,
+        "stack",
+        lambda *args, **kwargs: pytest.fail("torch.stack must not be called"),
+    )
+
+    output = _pynvvc_frames_to_pinned_host(
+        frames,
+        output_layout,
+        FakeStream(),  # type: ignore[arg-type]
+    )
+
+    np.testing.assert_array_equal(output, np.stack([frame.numpy() for frame in frames]))
+    assert output.flags.c_contiguous
+    assert events == [
+        "from_dlpack",
+        "from_dlpack",
+        "allocate",
+        "copy_0",
+        "copy_1",
+        "synchronize",
+        "numpy",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("fault", "error_match"),
+    [
+        ("rank", "expected HWC"),
+        ("dtype", "expected torch.uint8"),
+        ("device", "expected meta"),
+        ("contiguous", "non-contiguous"),
+        ("shape", "inconsistent shapes"),
+        ("empty_dim", "expected HWC"),
+        ("layout", "expected HWC"),
+    ],
+)
+def test_pynvvc_direct_copy_validates_all_frames_and_synchronizes(
+    fault: str,
+    error_match: str,
+):
     torch = pytest.importorskip("torch")
 
-    n, h, w, c = 4, 5, 6, 3
-    nhwc = torch.arange(n * h * w * c, dtype=torch.uint8).reshape(n, h, w, c)
-    frames = nhwc if layout == "nhwc" else nhwc.permute(0, 3, 1, 2).contiguous()
+    frames = [torch.zeros((4, 5, 3), dtype=torch.uint8) for _ in range(2)]
+    stream_device = torch.device("cpu")
+    if fault == "rank":
+        frames[0] = torch.zeros((4, 5), dtype=torch.uint8)
+    elif fault == "dtype":
+        frames[0] = torch.zeros((4, 5, 3), dtype=torch.float32)
+    elif fault == "device":
+        stream_device = torch.device("meta")
+    elif fault == "contiguous":
+        frames[0] = torch.zeros((4, 3, 5), dtype=torch.uint8).permute(0, 2, 1)
+    elif fault == "shape":
+        frames[1] = torch.zeros((5, 5, 3), dtype=torch.uint8)
+    elif fault == "empty_dim":
+        frames[0] = torch.zeros((0, 5, 3), dtype=torch.uint8)
+    elif fault == "layout":
+        frames[0] = torch.zeros((3, 4, 5), dtype=torch.uint8)
 
-    out = _pynvvc_frames_to_nhwc(frames)
+    class FakeStream:
+        device = stream_device
+        synchronize_count = 0
 
-    assert out.shape == (n, h, w, c)
-    assert out.is_contiguous()
-    assert torch.equal(out, nhwc)  # content preserved / correctly transposed
+        def synchronize(self) -> None:
+            self.synchronize_count += 1
+
+    stream = FakeStream()
+    with pytest.raises(ValueError, match=error_match):
+        _pynvvc_frames_to_pinned_host(
+            frames,
+            "thwc",
+            stream,  # type: ignore[arg-type]
+        )
+
+    assert stream.synchronize_count == 1
 
 
-def test_pynvvc_rgbp_frames_remain_tchw():
+def test_pynvvc_direct_copy_retains_partial_dlpack_results_until_sync(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    torch = pytest.importorskip("torch")
+    import weakref
+
+    frames = [torch.zeros((4, 5, 3), dtype=torch.uint8) for _ in range(2)]
+    wrapper_refs: list[weakref.ReferenceType] = []
+    original_from_dlpack = torch.from_dlpack
+    conversion_count = 0
+
+    def failing_from_dlpack(frame):
+        nonlocal conversion_count
+        conversion_count += 1
+        if conversion_count == 2:
+            raise RuntimeError("DLPack conversion failed")
+        wrapper = original_from_dlpack(frame)
+        wrapper_refs.append(weakref.ref(wrapper))
+        return wrapper
+
+    monkeypatch.setattr(torch, "from_dlpack", failing_from_dlpack)
+
+    class FakeStream:
+        device = torch.device("cpu")
+        synchronize_count = 0
+
+        def synchronize(self) -> None:
+            assert all(ref() is not None for ref in wrapper_refs)
+            self.synchronize_count += 1
+
+    stream = FakeStream()
+    with pytest.raises(RuntimeError, match="DLPack conversion failed"):
+        _pynvvc_frames_to_pinned_host(
+            frames,
+            "thwc",
+            stream,  # type: ignore[arg-type]
+        )
+
+    assert conversion_count == 2
+    assert stream.synchronize_count == 1
+
+
+def test_pynvvc_direct_copy_synchronizes_empty_decode():
     torch = pytest.importorskip("torch")
 
-    frames = torch.arange(4 * 3 * 5 * 6, dtype=torch.uint8).reshape(4, 3, 5, 6)
+    class FakeStream:
+        device = torch.device("cpu")
+        synchronize_count = 0
 
-    out = _pynvvc_frames_to_tchw(frames)
+        def synchronize(self) -> None:
+            self.synchronize_count += 1
 
-    assert out.shape == (4, 3, 5, 6)
-    assert out.is_contiguous()
-    assert torch.equal(out, frames)
+    stream = FakeStream()
+    output = _pynvvc_frames_to_pinned_host(
+        [],
+        "thwc",
+        stream,  # type: ignore[arg-type]
+    )
+
+    assert output.shape == (0,)
+    assert output.dtype == np.uint8
+    assert stream.synchronize_count == 1
 
 
-def test_pynvvc_rgbp_rejects_channels_last_frames():
+def test_pynvvc_direct_copy_synchronizes_after_partial_copy_failure(
+    monkeypatch: pytest.MonkeyPatch,
+):
     torch = pytest.importorskip("torch")
-    frames = torch.zeros((4, 5, 6, 3), dtype=torch.uint8)
+    frames = [torch.zeros((4, 5, 3), dtype=torch.uint8) for _ in range(2)]
+    copied_indices: list[int] = []
 
-    with pytest.raises(ValueError, match="expected TCHW with three channels"):
-        _pynvvc_frames_to_tchw(frames)
+    class FakeHostFrame:
+        def __init__(self, index: int) -> None:
+            self.index = index
+
+        def copy_(self, frame, *, non_blocking: bool):
+            assert non_blocking
+            copied_indices.append(self.index)
+            if self.index == 1:
+                raise RuntimeError("copy failed")
+
+    class FakeHostBatch:
+        def __getitem__(self, index: int) -> FakeHostFrame:
+            return FakeHostFrame(index)
+
+    monkeypatch.setattr(torch, "empty", lambda *args, **kwargs: FakeHostBatch())
+
+    class FakeStream:
+        device = torch.device("cpu")
+        synchronize_count = 0
+
+        def synchronize(self) -> None:
+            self.synchronize_count += 1
+
+    stream = FakeStream()
+    with pytest.raises(RuntimeError, match="copy failed"):
+        _pynvvc_frames_to_pinned_host(
+            frames,
+            "thwc",
+            stream,  # type: ignore[arg-type]
+        )
+
+    assert copied_indices == [0, 1]
+    assert stream.synchronize_count == 1
 
 
 def test_pynvvideocodec_tchw_requires_audited_processor():
