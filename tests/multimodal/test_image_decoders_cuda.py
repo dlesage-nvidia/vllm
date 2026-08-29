@@ -62,7 +62,7 @@ def pool_2gb():
 @pytest.fixture
 def configured(pool_2gb):
     backend.shutdown()
-    backend.configure(num_decoders=4)
+    backend.configure(num_decoders=4, min_gpu_pixels=0)
     try:
         yield pool_2gb
     finally:
@@ -210,7 +210,7 @@ def test_image_larger_than_the_pool_routes_to_pillow():
     previous = get_mm_gpu_ipc_pool()
     set_mm_gpu_ipc_pool(MultiModalGPUMemoryPool(64 * 1024))  # far too small
     backend.shutdown()
-    backend.configure(num_decoders=1)
+    backend.configure(num_decoders=1, min_gpu_pixels=0)
     try:
         assert backend.decode_batch([_jpeg()], "RGB") == [None]
     finally:
@@ -259,7 +259,7 @@ def test_output_ownership_contract(configured, layout):
     """
     expect_owned = False
     backend.shutdown()
-    backend.configure(num_decoders=1, output_layout=layout)
+    backend.configure(num_decoders=1, output_layout=layout, min_gpu_pixels=0)
     array = backend.decode_batch([_jpeg(320, 240)], "RGB")[0]
     assert array is not None
     assert array.dtype == np.uint8
@@ -276,9 +276,9 @@ def test_output_ownership_contract(configured, layout):
 
 def test_chw_and_hwc_carry_identical_pixels(configured):
     data = _jpeg(320, 240)
-    backend.shutdown(); backend.configure(num_decoders=1, output_layout="hwc")
+    backend.shutdown(); backend.configure(num_decoders=1, output_layout="hwc", min_gpu_pixels=0)
     hwc = backend.decode_batch([data], "RGB")[0]
-    backend.shutdown(); backend.configure(num_decoders=1, output_layout="chw")
+    backend.shutdown(); backend.configure(num_decoders=1, output_layout="chw", min_gpu_pixels=0)
     chw = backend.decode_batch([data], "RGB")[0]
     np.testing.assert_array_equal(chw, np.ascontiguousarray(hwc.transpose(2, 0, 1)))
 
@@ -305,9 +305,9 @@ def test_chw_exif_orientation_matches_pillow(configured, tag):
     with Image.open(BytesIO(data)) as opened:
         reference = np.asarray(ImageOps.exif_transpose(opened).convert("RGB"))
 
-    backend.shutdown(); backend.configure(num_decoders=1, output_layout="chw")
+    backend.shutdown(); backend.configure(num_decoders=1, output_layout="chw", min_gpu_pixels=0)
     planar = backend.decode_batch([data], "RGB")[0]
-    backend.shutdown(); backend.configure(num_decoders=1, output_layout="hwc")
+    backend.shutdown(); backend.configure(num_decoders=1, output_layout="hwc", min_gpu_pixels=0)
     interleaved = backend.decode_batch([data], "RGB")[0]
 
     if planar is None or interleaved is None:
@@ -370,3 +370,243 @@ def test_reuse_does_not_corrupt_earlier_results(configured):
         backend.decode_batch([_jpeg(640, 480, seed=seed + 2)], "RGB")
     np.testing.assert_array_equal(
         first, snapshot, err_msg="a recycled buffer overwrote an earlier result")
+
+def test_device_output_matches_the_host_path(configured):
+    """A device tensor must carry exactly the pixels the host path produces.
+
+    This is the whole correctness argument for device mode: it is offered only
+    where the processor already runs on the accelerator, so what must hold is
+    that handing the image over on-device changes nothing about the pixels.
+    """
+    data = _jpeg(640, 480, seed=11)
+
+    backend.shutdown()
+    backend.configure(num_decoders=1, output_layout="chw", min_gpu_pixels=0)
+    host = backend.decode_batch([data], "RGB")[0]
+    assert host is not None, "host CHW path declined; cannot compare"
+
+    backend.shutdown()
+    backend.configure(num_decoders=1, output_layout="device", min_gpu_pixels=0)
+    dev = backend.decode_batch([data], "RGB")[0]
+    if dev is None:
+        pytest.skip("device output declined on this stack")
+
+    assert dev.__class__.__module__.startswith("torch")
+    assert dev.is_cuda and dev.dtype == torch.uint8
+    assert tuple(dev.shape) == (3, 480, 640)
+    np.testing.assert_array_equal(dev.cpu().numpy(), host)
+
+
+def test_device_output_survives_the_decoder_that_made_it(configured):
+    """DLPack must transfer ownership, not alias a buffer the pool reuses.
+
+    A __cuda_array_interface__ wrapper would not own the memory, and a later
+    decode through the same slot could overwrite it after the caller had already
+    been handed the tensor.
+    """
+    backend.shutdown()
+    backend.configure(num_decoders=1, output_layout="device", min_gpu_pixels=0)
+    first = backend.decode_batch([_jpeg(320, 240, seed=1)], "RGB")[0]
+    if first is None:
+        pytest.skip("device output declined on this stack")
+    snapshot = first.clone()
+    for seed in range(6):
+        backend.decode_batch([_jpeg(320, 240, seed=seed + 2)], "RGB")
+    assert torch.equal(first, snapshot), "device tensor changed after later decodes"
+    backend.shutdown()
+    assert torch.equal(first, snapshot), "device tensor did not survive shutdown"
+
+
+def test_reused_buffer_grows_to_high_water_mark_and_never_shrinks(configured):
+    """The reservation assumes retention equals the largest raster, not the sum.
+
+    Measured directly from the device pointer: growing past capacity reallocates
+    (pointer moves), but a smaller image afterwards reuses the larger buffer
+    rather than shrinking it. So a slot costs one raster at its high-water mark,
+    reallocation is a warm-up cost rather than per-image, and alternating sizes
+    do not thrash.
+    """
+    import nvidia.nvimgcodec as nvi
+
+    backend.shutdown()
+    backend.configure(num_decoders=1, min_gpu_pixels=0)
+    slot = backend._acquire_slot()
+    assert slot is not None
+    try:
+        def decode(w, h, reuse):
+            cs = nvi.CodeStream(_jpeg(w, h, seed=w))
+            out = (
+                slot.decoder.decode(
+                    [cs], images=[reuse], params=slot.params,
+                    cuda_stream=slot.stream.cuda_stream,
+                )
+                if reuse is not None
+                else slot.decoder.decode(
+                    [cs], params=slot.params, cuda_stream=slot.stream.cuda_stream
+                )
+            )
+            slot.stream.synchronize()
+            img = out[0]
+            return img, img.__cuda_array_interface__["data"][0], img.capacity
+
+        small, ptr_small, cap_small = decode(320, 240, None)
+        big, ptr_big, cap_big = decode(1280, 960, small)
+        assert cap_big > cap_small, "capacity did not grow for a larger image"
+
+        again, ptr_again, cap_again = decode(320, 240, big)
+        assert cap_again == cap_big, "buffer shrank; retention would be unbounded"
+        assert ptr_again == ptr_big, "smaller image reallocated instead of reusing"
+    finally:
+        backend._release_slot(slot)
+        backend.shutdown()
+
+
+def test_on_device_resize_produces_the_processor_target(configured):
+    """Resizing on the accelerator must hit the processor's own target exactly.
+
+    If it does not, the processor resizes a second time and the work is
+    duplicated rather than moved -- strictly worse than not doing it.
+    """
+    backend.shutdown()
+    target = lambda w, h: (w // 2, h // 2)
+    backend.configure(num_decoders=1, min_gpu_pixels=0, resize_target=target)
+    backend._COUNTERS.clear()  # counters are process-global and accumulate
+    try:
+        out = backend.decode_batch([_jpeg(1280, 960, seed=3)], "RGB")[0]
+        assert out is not None
+        assert out.shape == (480, 640, 3), f"got {out.shape}, want the target size"
+        assert backend.stats().get("gpu_resized", 0) == 1
+    finally:
+        backend.shutdown()
+
+
+def test_on_device_resize_is_skipped_when_target_matches(configured):
+    """A no-op target must not pay for a resize."""
+    backend.shutdown()
+    backend.configure(
+        num_decoders=1, min_gpu_pixels=0, resize_target=lambda w, h: (w, h)
+    )
+    backend._COUNTERS.clear()  # counters are process-global and accumulate
+    try:
+        out = backend.decode_batch([_jpeg(640, 480, seed=4)], "RGB")[0]
+        assert out is not None and out.shape == (480, 640, 3)
+        assert backend.stats().get("gpu_resized", 0) == 0
+    finally:
+        backend.shutdown()
+
+
+def test_on_device_resize_matches_a_host_resize_closely(configured):
+    """It is not bit-exact -- bound the deviation rather than assume it small."""
+    from PIL import Image as PILImage
+
+    data = _jpeg(1280, 960, seed=5)
+    backend.shutdown(); backend.configure(num_decoders=1, min_gpu_pixels=0)
+    full = backend.decode_batch([data], "RGB")[0]
+    backend.shutdown()
+    backend.configure(
+        num_decoders=1, min_gpu_pixels=0, resize_target=lambda w, h: (640, 480)
+    )
+    try:
+        small = backend.decode_batch([data], "RGB")[0]
+        assert small is not None
+        ref = np.asarray(
+            PILImage.fromarray(full).resize((640, 480), PILImage.BICUBIC)
+        )
+        diff = np.abs(small.astype(np.int32) - ref.astype(np.int32))
+        assert diff.mean() < 6.0, f"mean |d| {diff.mean():.2f} vs a host bicubic"
+    finally:
+        backend.shutdown()
+
+
+def test_device_resize_applies_to_a_small_downscale(configured):
+    """Every downscale resizes on the device, not just large reductions.
+
+    The raster is already in device memory, so a shrink there is strictly less
+    work than copying it whole and shrinking on the host. The size of the
+    reduction changes how much is saved, not whether anything is.
+    """
+    backend.shutdown()
+    # 4x reduction -- modest, comparable to 1080p at a pinned budget.
+    backend.configure(num_decoders=1, min_gpu_pixels=0,
+                      resize_target=lambda w, h: (w // 2, h // 2))
+    backend._COUNTERS.clear()  # counters are process-global and accumulate
+    try:
+        out = backend.decode_batch([_jpeg(1280, 960, seed=11)], "RGB")[0]
+        assert out is not None
+        assert out.shape == (480, 640, 3)
+        assert backend.stats().get("gpu_resized", 0) == 1
+    finally:
+        backend.shutdown()
+
+
+def test_device_resize_declines_a_non_downscale(configured):
+    """An upscale or equal target must fall through to the full-raster copy."""
+    backend.shutdown()
+    backend.configure(num_decoders=1, min_gpu_pixels=0,
+                      resize_target=lambda w, h: (w * 2, h * 2))
+    backend._COUNTERS.clear()
+    try:
+        out = backend.decode_batch([_jpeg(640, 480, seed=12)], "RGB")[0]
+        assert out is not None
+        assert out.shape == (480, 640, 3), "upscale target must not be applied"
+        assert backend.stats().get("gpu_resized", 0) == 0
+        assert backend.stats().get("resize_not_downscale", 0) == 1
+    finally:
+        backend.shutdown()
+
+
+def test_cvcuda_hq_resize_is_used_when_available(configured):
+    """When CV-CUDA is installed the resize must run on HQResize, not torch.
+
+    Measured on 12 real 4K photographs against a PIL bicubic reference:
+    HQResize 181 us / mean|d| 0.055 against the torch path's 806 us / 0.319 --
+    faster and closer, so a silent fallback to torch is a regression on both
+    axes and would otherwise be invisible.
+    """
+    import pytest
+
+    if backend._cvcuda() is None:
+        pytest.skip("CV-CUDA not installed")
+    backend.shutdown()
+    backend.configure(num_decoders=1, min_gpu_pixels=0,
+                      resize_target=lambda w, h: (w // 4, h // 4))
+    backend._COUNTERS.clear()  # counters are process-global and accumulate
+    try:
+        out = backend.decode_batch([_jpeg(1280, 960, seed=21)], "RGB")[0]
+        assert out is not None
+        assert out.shape == (240, 320, 3)
+        assert backend.stats().get("resize_cvcuda", 0) == 1
+        assert backend.stats().get("resize_torch", 0) == 0
+        assert backend.stats().get("gpu_resized", 0) == 1
+    finally:
+        backend.shutdown()
+
+
+def test_cvcuda_resize_tracks_pil_closely(configured):
+    """Bound the deviation, as the torch path does -- but tighter.
+
+    HQResize measured 5.8x closer to PIL than the torch resize it replaces, so
+    this holds it to a materially tighter bound than the torch path's 6.0.
+    """
+    import pytest
+
+    from PIL import Image as PILImage
+
+    if backend._cvcuda() is None:
+        pytest.skip("CV-CUDA not installed")
+    data = _jpeg(1280, 960, seed=22)
+    backend.shutdown(); backend.configure(num_decoders=1, min_gpu_pixels=0)
+    full = backend.decode_batch([data], "RGB")[0]
+    backend.shutdown()
+    backend.configure(num_decoders=1, min_gpu_pixels=0,
+                      resize_target=lambda w, h: (640, 480))
+    try:
+        small = backend.decode_batch([data], "RGB")[0]
+        assert small is not None and small.shape == (480, 640, 3)
+        ref = np.asarray(
+            PILImage.fromarray(full).resize((640, 480), PILImage.BICUBIC)
+        )
+        diff = np.abs(small.astype(np.int32) - ref.astype(np.int32))
+        assert diff.mean() < 2.0, f"mean |d| {diff.mean():.2f} vs a host bicubic"
+    finally:
+        backend.shutdown()

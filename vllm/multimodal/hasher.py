@@ -91,7 +91,7 @@ class MultiModalHasher:
 
         if (
             isinstance(obj, MediaWithBytes)
-            and isinstance(obj.media, np.ndarray)
+            and isinstance(obj.media, (np.ndarray, torch.Tensor))
             and obj.io_config
             and "image_backend" in obj.io_config
         ):

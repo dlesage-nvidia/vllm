@@ -69,6 +69,35 @@ logger = init_logger(__name__)
 _T = TypeVar("_T", bound=TokenizerLike, default=TokenizerLike)
 
 
+
+def _resolve_resize_target(mm_config, config, mm_processor):
+    """Resolve gpu_resize, and say so when it asks for something unavailable.
+
+    An opt-in flag that silently does nothing is worse than one that fails: a
+    benchmark run with gpu_resize=true and no target reports numbers for the
+    ordinary path while looking like it measured the feature. That happened --
+    an entire A/B was invalidated by it -- so an unsatisfiable request is now
+    loud.
+    """
+    from vllm.multimodal.image_decoders import processor_resize_target
+
+    if not mm_config.get_image_gpu_resize():
+        return None
+    target = processor_resize_target(
+        mm_processor, mm_config.mm_processor_kwargs
+    )
+    if target is None:
+        logger.warning(
+            "nvImageCodec: gpu_resize was requested but no resize target could "
+            "be derived for %s -- accelerator resizing is OFF. It needs integer "
+            "min_pixels and max_pixels in --mm-processor-kwargs, and a "
+            "processor exposing smart_resize.",
+            type(mm_processor).__name__,
+        )
+    else:
+        logger.info("nvImageCodec: accelerator resizing enabled.")
+    return target
+
 class BaseRenderer(ABC, Generic[_T]):
     def __init__(self, config: "VllmConfig", tokenizer: _T | None) -> None:
         super().__init__()
@@ -138,6 +167,7 @@ class BaseRenderer(ABC, Generic[_T]):
                 from vllm.multimodal.image_decoders import (
                     configure as configure_image_decoders,
                     probe_output_layout,
+                    processor_resize_target,
                 )
 
                 configure_image_decoders(
@@ -153,6 +183,10 @@ class BaseRenderer(ABC, Generic[_T]):
                     ),
                     coalesce_width=mm_config.get_image_coalesce_width(),
                     min_gpu_pixels=mm_config.get_image_min_gpu_pixels(),
+                    resize_target=_resolve_resize_target(
+                        mm_config, config, self.mm_processor
+                    ),
+                    resize_prefilter=mm_config.get_image_resize_prefilter(),
                 )
 
             if mm_processor_cache:

@@ -737,3 +737,111 @@ def test_declined_images_also_drive_the_periodic_outcome_log():
     finally:
         backend._COUNTERS.clear()
         backend._decisions_since_log = 0
+# --- device output mode -------------------------------------------------------
+
+
+def test_processor_device_gate():
+    """Device output is offered only where the processor runs on an accelerator."""
+    from vllm.multimodal.image_decoders.capability import _processor_device
+
+    assert _processor_device({"device": "cuda"}) == "cuda"
+    assert _processor_device({"device": "xpu"}) == "xpu"
+    assert _processor_device({"device": "cpu"}) is None
+    assert _processor_device({"device": "auto"}) is None
+    assert _processor_device({"device": ""}) is None
+    assert _processor_device({}) is None
+    assert _processor_device(None) is None
+    assert _processor_device({"max_pixels": 100}) is None
+
+
+def test_configure_accepts_device_layout():
+    import vllm.multimodal.image_decoders.nvimgcodec as backend
+
+    backend.shutdown()
+    try:
+        backend.configure(num_decoders=1, output_layout="device")
+        assert backend._OUTPUT_LAYOUT == "device"
+    finally:
+        backend.shutdown()
+    with pytest.raises(ValueError, match="output_layout"):
+        backend.configure(num_decoders=1, output_layout="gpu")
+
+
+def test_device_mode_requests_planar():
+    """Device mode must decode P_RGB.
+
+    Regression: the edit that added "device" to the P_RGB condition silently did
+    not apply, so the decoder emitted interleaved rasters and every image was
+    declined with a generic counter.
+    """
+    import inspect
+
+    import vllm.multimodal.image_decoders.nvimgcodec as backend
+
+    source = inspect.getsource(backend._Slot.__init__)
+    assert 'if _OUTPUT_LAYOUT in ("chw", "device")' in source
+
+
+# --- minimum-pixel gate -------------------------------------------------------
+
+
+def test_accelerator_is_not_declined_by_default():
+    """Nothing in the defaults may turn hardware decoding off.
+
+    The 1080p deficit was fixed by removing a per-image device allocation, not
+    by declining small images, so the threshold defaults to zero and exists only
+    as an operator knob.
+    """
+    from vllm.multimodal.image_decoders import DEFAULT_MIN_GPU_PIXELS
+
+    assert DEFAULT_MIN_GPU_PIXELS == 0
+    for pixels in (1920 * 1080, 3840 * 2160, 640 * 480):
+        assert pixels >= DEFAULT_MIN_GPU_PIXELS
+
+
+def test_min_gpu_pixels_is_configurable():
+    import vllm.multimodal.image_decoders.nvimgcodec as backend
+
+    backend.shutdown()
+    try:
+        backend.configure(num_decoders=1, min_gpu_pixels=0)
+        assert backend.MIN_GPU_PIXELS == 0  # host-bound deployments opt back in
+        backend.configure(num_decoders=1)
+        assert backend.MIN_GPU_PIXELS == backend.DEFAULT_MIN_GPU_PIXELS
+    finally:
+        backend.shutdown()
+
+
+def test_smart_resize_follows_the_processor_not_a_fixed_import():
+    """Resolution must track the processor's own module, and decline otherwise.
+
+    A hard-coded `transformers.models.qwen2_vl...` import ties the feature to a
+    module upstream may move, and it fails by silently doing nothing. Equally,
+    a processor from another family must NOT be handed Qwen's sizing rule: it
+    would produce targets the real processor never chose.
+    """
+    from vllm.multimodal.image_decoders.capability import _resolve_smart_resize
+
+    class Fake:
+        pass
+
+    fn, tried = _resolve_smart_resize(Fake())
+    assert fn is None, "a non-smart_resize processor must be declined"
+    assert tried, "the decline must say which modules were searched"
+
+    # A processor whose module exports smart_resize resolves to that module's
+    # copy, whatever the module is named.
+    import sys
+    import types
+
+    mod = types.ModuleType("fake_vl_processor_module")
+    sentinel = lambda *a, **k: None
+    mod.smart_resize = sentinel
+    sys.modules["fake_vl_processor_module"] = mod
+    try:
+        Family = type("FamilyImageProcessor", (), {"__module__": mod.__name__})
+        fn2, origin = _resolve_smart_resize(Family())
+        assert fn2 is sentinel, "must use the processor module's own smart_resize"
+        assert origin == mod.__name__
+    finally:
+        del sys.modules["fake_vl_processor_module"]

@@ -85,6 +85,10 @@ _EOI = b"\xff\xd9"
 #                        planar directly and no host transpose is needed.
 #                        Measured faster than HWC through the real processor.
 #   "hwc" -> (H, W, 3)   I_RGB, the interleaved layout.
+#   "device" -> a CUDA tensor (3, H, W), handed over without a host copy at
+#                        all. Offered only when the image processor itself runs
+#                        on the accelerator, which vLLM permits on an
+#                        encode-only EPD instance.
 #
 # Both array layouts are ZERO-COPY VIEWS of a decoder-allocated host buffer:
 # owndata=False, and `base` is the nvImageCodec host Image that owns the
@@ -95,6 +99,9 @@ _EOI = b"\xff\xd9"
 # tests/multimodal/test_image_decoders_cuda.py::test_output_ownership_contract.
 #   "pil" -> PIL.Image   no bypass, no capability required
 _OUTPUT_LAYOUT = "pil"
+# Optional callable (w, h) -> (w, h): the size the processor would resize to.
+# When set, the decoder resizes on the accelerator before the host copy.
+_RESIZE_TARGET = None
 
 # Widest native call a leader will assemble. This tracks the number of hardware
 # JPEG engines on the device, because that is what a wide call parallelises
@@ -150,6 +157,80 @@ _CLAIMED_GRACE_SECONDS = 0.05
 # decoded raster, so the cap must count encoded size. Counting raster bytes
 # instead would let a burst of tiny-dimension JPEGs carrying large metadata
 # retain far more than this nominal limit.
+# Smallest image the accelerator will accept. Zero by default: the accelerator
+# is the point of this feature, so it decodes everything it is eligible for.
+#
+# It exists as a knob, not a default, because of what the 1080p investigation
+# found. Accelerator decoding first measured 0.988x of baseline at 1080p on a
+# model-bound A100 (GPU already 98% busy, host cores to spare) while the NVJPG
+# engines sat at 5.7% -- the cost was not decode work but a fresh device
+# allocation per image, and cudaMalloc synchronizes the whole device, stalling
+# the model's stream. Reusing decoder buffers removed it: 0.9975x +-0.013, which
+# is parity within run-to-run spread, at 28% less host CPU (1.67 vs 2.32 cores).
+#
+# A deployment that still finds accelerator decoding unprofitable for small
+# images can raise this; nothing in the defaults declines hardware decoding.
+# Integer box-reduce before the antialiased resample. PIL does the same thing
+# via reducing_gap: a cheap prefilter shrinks the expensive convolution's input.
+# Measured at 3840x2160 -> 1024x576 against a PIL bicubic reference:
+#
+#   k=1 fp32 (was)  911 us   mean|d| 0.500  max 1
+#   k=1 fp16        801 us   mean|d| 0.461  max 1   <- strictly better, default
+#   k=2 fp16        629 us   mean|d| 0.755  max 6
+#   k=3 fp16        448 us   mean|d| 1.096  max 9
+#
+# fp16 is free: faster and marginally closer to PIL than the fp32 path it
+# replaces. Prefiltering beyond that trades accuracy for speed, so it is opt-in.
+def _load_cvcuda():
+    """CV-CUDA's HQResize, if this deployment has it. Optional, like the codec.
+
+    Measured against the torch path on 12 real 4K photographs, 3840x2160 ->
+    1024x576, with PIL bicubic as the reference:
+
+      torch fp16 bicubic+antialias   805.6 us   mean|d| 0.319
+      cvcuda HQResize CUBIC+aa       181.3 us   mean|d| 0.055
+
+    4.4x faster and 5.8x closer to PIL -- better on both axes, so there is no
+    trade to weigh. It also takes uint8 in and uint8 out, which removes the
+    full-raster float cast the torch path needs before it can resample at all.
+    """
+    if os.environ.get("VLLM_NVIMGCODEC_NO_CVCUDA") == "1":
+        # Escape hatch so the two resize paths can be A/B'd in one session on
+        # one build; cross-session comparison on this benchmark is unreliable.
+        return None
+    try:
+        import cvcuda
+    except Exception:
+        return None
+    if not hasattr(cvcuda, "hq_resize"):
+        # HQResize landed in CV-CUDA 0.16; older wheels cannot serve this path.
+        logger.info("nvImageCodec: cvcuda present but has no hq_resize; "
+                    "using the torch resize path.")
+        return None
+    return cvcuda
+
+
+_CVCUDA = None
+_CVCUDA_RESOLVED = False
+
+
+def _cvcuda():
+    global _CVCUDA, _CVCUDA_RESOLVED
+    if not _CVCUDA_RESOLVED:
+        _CVCUDA = _load_cvcuda()
+        _CVCUDA_RESOLVED = True
+    return _CVCUDA
+
+
+DEFAULT_RESIZE_PREFILTER = 1
+RESIZE_PREFILTER = DEFAULT_RESIZE_PREFILTER
+
+# fp32 is kept reachable only so the half-precision claim can be A/B'd against
+# it in one session; cross-session comparison on this benchmark is unreliable.
+_RESIZE_FP32 = os.environ.get("VLLM_NVIMGCODEC_RESIZE_FP32") == "1"
+
+DEFAULT_MIN_GPU_PIXELS = 0
+MIN_GPU_PIXELS = DEFAULT_MIN_GPU_PIXELS
 MAX_PARKED_BYTES = 64 * 1024 * 1024
 
 
@@ -240,17 +321,23 @@ def configure(
     output_layout: str = "pil",
     coalesce_width: int = DEFAULT_COALESCE_WIDTH,
     min_gpu_pixels: int = DEFAULT_MIN_GPU_PIXELS,
+    resize_target=None,
+    resize_prefilter: int = DEFAULT_RESIZE_PREFILTER,
 ) -> None:
     """Enable the backend for this process. Idempotent within a generation."""
     global _NUM_DECODERS, _CLOSED, _PID, _CREATED, _FREE, _DISABLED
     global _MAX_PARKED, _PARKED, _GENERATION, _ACTIVE, _OUTPUT_LAYOUT, _PARKED_BYTES
     global COALESCE_WIDTH, _DECODE_EWMA_SECONDS, MIN_GPU_PIXELS
+    global COALESCE_WIDTH, _DECODE_EWMA_SECONDS, MIN_GPU_PIXELS, _RESIZE_TARGET
+    global RESIZE_PREFILTER
     if not isinstance(num_decoders, int) or isinstance(num_decoders, bool):
         raise ValueError("num_decoders must be an integer")
     if not 1 <= num_decoders <= 16:
         raise ValueError("num_decoders must be between 1 and 16")
-    if output_layout not in ("pil", "hwc", "chw"):
-        raise ValueError("output_layout must be 'pil', 'hwc' or 'chw'")
+    if output_layout not in ("pil", "hwc", "chw", "device"):
+        raise ValueError(
+            "output_layout must be 'pil', 'hwc', 'chw' or 'device'"
+        )
     if not isinstance(coalesce_width, int) or not 1 <= coalesce_width <= 16:
         raise ValueError("coalesce_width must be an integer between 1 and 16")
     with _LOCK:
@@ -273,6 +360,8 @@ def configure(
         _OUTPUT_LAYOUT = output_layout
         COALESCE_WIDTH = coalesce_width
         MIN_GPU_PIXELS = int(min_gpu_pixels)
+        _RESIZE_TARGET = resize_target
+        RESIZE_PREFILTER = max(1, int(resize_prefilter))
         _DISABLED = False
         _CLOSED = False
 
@@ -303,6 +392,29 @@ def shutdown() -> None:
     for waiter in stranded:
         waiter.result = None
         waiter.done.set()
+    for slot in slots:
+        # Order matters. The torch view is an ExternalStream: it does NOT own
+        # the stream, so releasing the cvcuda Stream that created it first
+        # leaves torch holding a freed handle, and dropping both without
+        # syncing destroys a stream that may still have work queued. Either is
+        # a segfault, observed here as one during fixture teardown.
+        cv = getattr(slot, "cvstream", None)
+        if cv is None:
+            continue
+        try:
+            cv.sync()
+        except Exception:
+            logger.debug("nvImageCodec: stream sync failed during shutdown.",
+                         exc_info=True)
+        # Inner to outer. The retained decode buffers and the decoder own
+        # device memory associated with this stream, so they must go while it
+        # is still alive; the torch view is an ExternalStream and does not own
+        # the stream, so it must go before the cvcuda Stream that created it.
+        # Releasing in any other order segfaults here during teardown.
+        slot.reusable = []
+        slot.decoder = None
+        slot.stream = None
+        slot.cvstream = None
     del slots
     # R10. Without this a run where every image quietly fell back to Pillow is
     # indistinguishable from a run where the backend simply did not help.
@@ -334,7 +446,19 @@ class _Slot:
         # legacy default stream, which serialises them on the device: N decoder
         # slots would give N-way host concurrency and 1-way device concurrency,
         # silently capping the pool at one decoder's throughput.
-        self.stream = torch.cuda.Stream(device=0)
+        #
+        # When CV-CUDA is present the stream is created by cvcuda and torch is
+        # handed a view of it via ExternalStream: cvcuda cannot wrap a stream it
+        # did not create, but torch can wrap one it did not, so ownership has to
+        # sit on the cvcuda side. Both libraries then submit to the same stream,
+        # which is what orders the resize after the decode without a sync.
+        cv = _cvcuda()
+        if cv is not None:
+            self.cvstream = cv.Stream()
+            self.stream = torch.cuda.ExternalStream(self.cvstream.handle, device=0)
+        else:
+            self.cvstream = None
+            self.stream = torch.cuda.Stream(device=0)
         # One decoded-image buffer retained between calls. Without it every
         # decode allocates fresh device memory, and cudaMalloc synchronizes the
         # whole device: on an instance whose GPU already serves the model that
@@ -382,7 +506,7 @@ class _Slot:
             # per image). Verified bit-identical to transposing I_RGB.
             sample_format=(
                 nvimgcodec.SampleFormat.P_RGB
-                if _OUTPUT_LAYOUT == "chw"
+                if _OUTPUT_LAYOUT in ("chw", "device")
                 else nvimgcodec.SampleFormat.I_RGB
             ),
         )
@@ -495,6 +619,11 @@ def _eligible(data: bytes, image_mode: str | None, nvimgcodec, pool) -> Any:
         return None
     if width <= 0 or height <= 0:
         _count("pillow:bad_dimensions")
+        return None
+    if width * height < MIN_GPU_PIXELS:
+        # Too small for accelerator decoding to repay its contention. See
+        # MIN_GPU_PIXELS.
+        _count("pillow:below_min_pixels")
         return None
     # E8: 4-channel CMYK/YCCK and 2-channel LA are declined. The one CMYK
     # fixture measured clean, but the YCCK and inverted-Adobe variants are not
@@ -674,6 +803,7 @@ def _decode_on_slot(
             # width 5, 1.13x at width 8). COALESCE_WIDTH bounds adopted
             # waiters; it must bound this too.
             decoded = []
+            # Device output hands the buffer to the caller, so it must not be
             for start in range(0, len(streams), COALESCE_WIDTH):
                 part = streams[start : start + COALESCE_WIDTH]
                 # Retain a buffer only for width-1 calls. Each retained buffer
@@ -681,7 +811,14 @@ def _decode_on_slot(
                 # and serving counters read native_width_1 for every image, so
                 # this keeps the win while bounding retention at one raster per
                 # slot rather than COALESCE_WIDTH of them.
-                reuse = len(part) == 1 and len(slot.reusable) == 1
+                # Device output hands the buffer to the caller, so it must
+                # not be recycled underneath them; every other layout copies
+                # to the host first, which is what makes reuse safe.
+                reuse = (
+                    len(part) == 1
+                    and len(slot.reusable) == 1
+                    and _OUTPUT_LAYOUT != "device"
+                )
                 if reuse:
                     out = slot.decoder.decode(
                         part,
@@ -693,7 +830,12 @@ def _decode_on_slot(
                     out = slot.decoder.decode(
                         part, params=slot.params, cuda_stream=slot.stream.cuda_stream
                     )
-                    if len(part) == 1 and out and out[0] is not None:
+                    if (
+                        len(part) == 1
+                        and _OUTPUT_LAYOUT != "device"
+                        and out
+                        and out[0] is not None
+                    ):
                         slot.reusable = [out[0]]
                 decoded.extend(out)
                 _count_width(len(part))
@@ -701,6 +843,11 @@ def _decode_on_slot(
                 _count("pillow:result_count")
                 _fail_parked(adopted)
                 return
+            if _OUTPUT_LAYOUT == "device":
+                # Device results are handed over without a host copy, so nothing
+                # else establishes produce-before-consume ordering. Image.cpu()
+                # does that implicitly for every other layout.
+                slot.stream.synchronize()
             mine, theirs = decoded[: len(admitted)], decoded[len(admitted) :]
             # Everything below copies to the host. Drop the batch reference now
             # so the only live device handles are the per-image ones consumed
@@ -710,14 +857,23 @@ def _decode_on_slot(
                 if image is None:
                     _count("pillow:native_miss")
                     continue
-                array = _to_array(image, stream, datas[index])
+                convert = (
+                    _to_device_tensor if _OUTPUT_LAYOUT == "device" else _to_array
+                )
+                array = convert(image, stream, datas[index], slot.cvstream)
                 if array is None:
                     continue
                 results[index] = array
                 _count("gpu")
             for waiter, image in zip(adopted, theirs):
                 if image is not None:
-                    waiter.result = _to_array(image, waiter.stream, waiter.data)
+                    convert = (
+                        _to_device_tensor
+                        if _OUTPUT_LAYOUT == "device"
+                        else _to_array
+                    )
+                    waiter.result = convert(image, waiter.stream, waiter.data,
+                                            slot.cvstream)
                 if waiter.result is not None:
                     _count("gpu")
                 else:
@@ -825,9 +981,141 @@ def _fail_parked(adopted: list[_Waiter]) -> None:
         waiter.done.set()
 
 
-def _to_array(image: Any, stream: Any, data: bytes) -> np.ndarray | None:
+def _to_device_tensor(image: Any, stream: Any, data: bytes, cvstream: Any = None) -> Any:
+    """Hand the decoded image over as a CUDA tensor, without touching the host.
+
+    Only reachable when the model's image processor itself runs on the
+    accelerator. In that configuration the host path is decode-on-GPU, copy the
+    full raster down, copy it straight back up, then resize on GPU -- measured
+    at 6.07 ms/image at 4K against 0.79 ms for handing the tensor over directly.
+
+    DLPack rather than __cuda_array_interface__ so the exporter's buffer is kept
+    alive by the consumer; a CAI wrapper would not own it and a later decode
+    through the same slot could reuse the memory underneath.
+    """
+    import torch
+
+    try:
+        planar = True  # device mode always decodes P_RGB
+        height, width = int(stream.height), int(stream.width)
+        tensor = torch.from_dlpack(image)
+        expected = (3, height, width)
+        if tuple(tensor.shape) != expected or tensor.dtype != torch.uint8:
+            # Distinguishable from a legitimate decline: an interleaved shape
+            # here means the decoder was not asked for P_RGB, which is a
+            # configuration bug, not a property of the image.
+            _count("pillow:unexpected_raster")
+            logger.warning_once(
+                "nvImageCodec: device output expected %s uint8 but got %s %s; "
+                "declining to Pillow. This is a decoder configuration problem, "
+                "not a property of the image.",
+                expected, tuple(tensor.shape), tensor.dtype,
+            )
+            return None
+        orientation = _exif_orientation(data)
+        if orientation != 1:
+            # EXIF transforms are defined on the interleaved table; applying the
+            # planar one here would need a second table with no test coverage,
+            # and orientation-bearing JPEGs are rare enough that declining is
+            # cheaper than carrying that risk.
+            _count("pillow:exif_on_device")
+            return None
+        return tensor
+    except Exception:
+        _count("pillow:conversion_error")
+        return None
+
+
+def _resized_host_array(image: Any, stream: Any, cvstream: Any = None) -> "np.ndarray | None":
+    """Shrink on the accelerator, then copy only the result to the host.
+
+    The processor immediately resizes the decoded image to a pinned budget, so
+    the full raster crossing the bus is waste: 24.9 MB at 4K against about
+    1.7 MB for what the model actually consumes. Resizing here moves that work
+    to the device and shrinks the copy roughly 15x.
+
+    The target comes from the processor's own smart_resize, so the processor's
+    resize becomes a no-op rather than a second resampling. The kernel differs
+    (torchvision on device vs PIL), so this is NOT bit-exact and is opt-in.
+
+    Applied to every downscale, not only large ones. The image is already on the
+    device, so the resize is strictly less work than copying the full raster and
+    resizing on the host; how much less depends on the reduction, but the sign
+    does not change. Where the GPU is the bottleneck rather than the host, the
+    contention can still outweigh it -- see the throughput note in the PR -- and
+    a deployment in that regime should leave gpu_resize off entirely.
+    """
+    import torch
+    import torch.nn.functional as F
+
+    _RESIZE_DTYPE = torch.float32 if _RESIZE_FP32 else torch.float16
+    width, height = int(stream.width), int(stream.height)
+    target = _RESIZE_TARGET(width, height)
+    if target is None:
+        return None
+    tw, th = target
+    if tw * th >= width * height:
+        # Downscaling is the whole point: the raster is already in device
+        # memory, so shrinking it here both moves the work to faster hardware
+        # and cuts the host copy. Neither holds if the target is not smaller --
+        # the copy would grow, and the processor would resize again anyway.
+        _count("resize_not_downscale")
+        return None
+    t = torch.from_dlpack(image)
+    if t.ndim != 3:
+        return None
+    planar = _OUTPUT_LAYOUT == "chw"
+    cv = _cvcuda()
+    if cv is not None and cvstream is not None:
+        # uint8 in, uint8 out: no cast over the full source raster, which is the
+        # torch path's second-largest cost. Submitted on the slot's stream, the
+        # same one the decode used, so the ordering needs no extra sync.
+        out = cv.hq_resize(
+            cv.as_tensor(t, "CHW" if planar else "HWC"), (th, tw),
+            antialias=True, interpolation=cv.Interp.CUBIC, stream=cvstream,
+        )
+        _count("resize_cvcuda")
+        # No explicit stream sync: this runs inside the slot's torch stream
+        # context and that stream IS this cvcuda stream, so .cpu() already
+        # orders after the resize. An extra sync here would just add a second
+        # host barrier per image. HQResize returns the requested layout, so
+        # there is no permute and no strided copy to undo.
+        return torch.as_tensor(out.cuda(), device=t.device).cpu().numpy()
+    _count("resize_torch")
+    chw = t if planar else t.permute(2, 0, 1)
+    # half, not float: the cast runs over the FULL source raster before anything
+    # is discarded, so at 4K it moves 99.5 MB in fp32 against 49.7 MB in fp16.
+    x = chw.unsqueeze(0).to(_RESIZE_DTYPE)
+    if RESIZE_PREFILTER > 1:
+        k = min(height // th, width // tw, RESIZE_PREFILTER)
+        if k > 1:
+            x = F.avg_pool2d(x, k)
+    out = F.interpolate(
+        x, size=(th, tw), mode="bicubic", align_corners=False, antialias=True,
+    )
+    out = out.clamp_(0, 255).to(torch.uint8).squeeze(0)
+    if not planar:
+        # .contiguous() on the DEVICE, before the copy. Without it the permuted
+        # view forces a strided device-to-host copy and numpy then re-packs the
+        # whole raster on the host: measured 1469 us per 1024x576 image against
+        # 300 us for the same copy made contiguous first. For scale, PR-1's
+        # copy of the entire un-resized 1080p raster -- 3.5x more data -- is
+        # 456 us, so the resize path was paying 3.2x more to move far less.
+        out = out.permute(1, 2, 0).contiguous()
+    return out.cpu().numpy()
+
+
+def _to_array(image: Any, stream: Any, data: bytes, cvstream: Any = None) -> np.ndarray | None:
     """Copy one decoded image to a host array, applying EXIF orientation."""
     try:
+        if _RESIZE_TARGET is not None and _exif_orientation(data) == 1:
+            # Orientation is skipped here on purpose: the target was computed
+            # for the un-rotated dimensions, and 90-degree orientations swap
+            # them. Those images take the ordinary path below.
+            resized = _resized_host_array(image, stream, cvstream)
+            if resized is not None:
+                _count("gpu_resized")
+                return resized
         host = np.asarray(image.cpu())
         planar = _OUTPUT_LAYOUT == "chw"
         height, width = int(stream.height), int(stream.width)

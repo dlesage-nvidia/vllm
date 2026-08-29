@@ -37,10 +37,12 @@ _STARTUP_ONLY_KWARGS = (
     "image_output",
     "coalesce_width",
     "min_gpu_pixels",
+    "gpu_resize",
+    "resize_prefilter",
 )
 
 
-def _as_pil(array: np.ndarray, source_layout: str) -> Image.Image:
+def _as_pil(array, source_layout: str) -> Image.Image:
     """Wrap a decoded array as a PIL image, given the layout it is actually in.
 
     The layout is negotiated once at startup and is known to every caller, so it
@@ -51,7 +53,13 @@ def _as_pil(array: np.ndarray, source_layout: str) -> Image.Image:
     and 4. Only reachable when a deployment overrides image_output="pil" while
     a raw-array layout was negotiated.
     """
-    if source_layout == "chw":
+    if source_layout == "device":
+        # Device mode is only negotiated when the processor itself runs on the
+        # accelerator, so materializing a PIL image here would undo the copy the
+        # mode exists to avoid. It is still supported rather than refused,
+        # because image_output="pil" is a documented escape hatch.
+        array = array.permute(1, 2, 0).cpu().numpy()
+    elif source_layout == "chw":
         array = np.ascontiguousarray(array.transpose(1, 2, 0))
     return Image.fromarray(array)
 

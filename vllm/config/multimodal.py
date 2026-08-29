@@ -611,6 +611,50 @@ class MultiModalConfig:
             raise ValueError("coalesce_width must be between 1 and 16")
         return width
 
+    def get_image_min_gpu_pixels(self) -> int:
+        """Smallest image the accelerator decoder will accept.
+
+        Exposed because the right value is a property of the deployment, not the
+        image: a model-bound instance loses throughput decoding small images on
+        the accelerator, a host-bound one gains.
+        """
+        from vllm.multimodal.image_decoders import DEFAULT_MIN_GPU_PIXELS
+
+        image_kwargs = self.media_io_kwargs.get("image", {})
+        value = image_kwargs.get("min_gpu_pixels", DEFAULT_MIN_GPU_PIXELS)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError("min_gpu_pixels must be a non-negative integer")
+        return value
+
+    def get_image_resize_prefilter(self) -> int:
+        """Integer box-reduce applied before the accelerator resample.
+
+        1 disables it. Higher values cut resize cost but move the result
+        further from PIL, so the right value is a deployment's own accuracy
+        budget, not something this code can infer.
+        """
+        from vllm.multimodal.image_decoders import DEFAULT_RESIZE_PREFILTER
+
+        image_kwargs = self.media_io_kwargs.get("image", {})
+        value = image_kwargs.get("resize_prefilter", DEFAULT_RESIZE_PREFILTER)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise ValueError("resize_prefilter must be an integer >= 1")
+        return value
+
+    def get_image_gpu_resize(self) -> bool:
+        """Whether to resize on the accelerator before copying to the host.
+
+        Off by default: it moves the processor's resize onto the GPU using a
+        different resampling kernel, so output is close to but not bit-identical
+        with the CPU path (measured mean |d| 0.010, max 0.49 on pixel_values).
+        Everything else in this feature is bit-exact by construction, so this
+        has to be chosen explicitly rather than inherited.
+        """
+        value = self.media_io_kwargs.get("image", {}).get("gpu_resize", False)
+        if not isinstance(value, bool):
+            raise ValueError("gpu_resize must be a boolean")
+        return value
+
     def is_multimodal_pruning_enabled(self):
         return self.get_video_pruning_spec() is not None
 
