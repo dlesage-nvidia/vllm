@@ -30,6 +30,8 @@ class InternS2PreviewProcessingInfo(Qwen3VLProcessingInfo):
     dummy_inputs=Qwen3VLDummyInputsBuilder,
 )
 class InternS2PreviewForConditionalGeneration(Qwen3_5MoeForConditionalGeneration):
+    supports_mm_device_do_normalize = False
+
     # `mtp.` is already dropped by `Qwen3_5ForConditionalGeneration`.
     hf_to_vllm_mapper = Qwen3_5MoeForConditionalGeneration.hf_to_vllm_mapper | (
         WeightsMapper(

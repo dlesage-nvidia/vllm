@@ -52,7 +52,7 @@ from vllm.compilation.decorators import (
     should_torch_compile_mm_encoder,
     support_torch_compile,
 )
-from vllm.config import VllmConfig
+from vllm.config import ModelConfig, VllmConfig
 from vllm.config.multimodal import (
     BaseDummyOptions,
     MultiModalConfig,
@@ -154,6 +154,7 @@ from .utils import (
     maybe_prefix,
 )
 from .vision import (
+    FusedInputNorm,
     get_fp8_padded_hidden_size,
     get_vit_attn_backend,
     is_vit_use_data_parallel,
@@ -564,6 +565,7 @@ class Qwen3_VisionTransformer(nn.Module):
     def __init__(
         self,
         vision_config: Qwen3VLVisionConfig,
+        model_config: ModelConfig,
         norm_eps: float = 1e-6,
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
@@ -582,6 +584,7 @@ class Qwen3_VisionTransformer(nn.Module):
             else []
         )
         self.num_grid_per_side = int(self.num_position_embeddings**0.5)
+        self.input_norm = FusedInputNorm.from_model_config(model_config)
 
         use_data_parallel = is_vit_use_data_parallel()
         self.tp_size = (
@@ -848,7 +851,8 @@ class Qwen3_VisionTransformer(nn.Module):
         *,
         encoder_metadata: dict[str, torch.Tensor] | None = None,
     ) -> torch.Tensor:
-        hidden_states = x.to(device=self.device, dtype=self.dtype, non_blocking=True)
+        hidden_states = x.to(device=self.device, non_blocking=True)
+        hidden_states = self.input_norm(hidden_states, self.dtype)
         hidden_states = self.patch_embed(hidden_states)
 
         if encoder_metadata is None:
@@ -1779,6 +1783,7 @@ class Qwen3VLForConditionalGeneration(
     }
 
     supports_encoder_tp_data = True
+    supports_mm_device_do_normalize = True
     supports_tower_connector_lora = True
 
     supported_video_pruning_methods = ("evs", "vidcom2")
@@ -1828,6 +1833,7 @@ class Qwen3VLForConditionalGeneration(
         with self._mark_tower_model(vllm_config, {"image", "video"}):
             self.visual = Qwen3_VisionTransformer(
                 config.vision_config,
+                model_config=vllm_config.model_config,
                 norm_eps=getattr(config, "rms_norm_eps", 1e-6),
                 quant_config=quant_config,
                 prefix=maybe_prefix(prefix, "visual"),
@@ -2134,9 +2140,17 @@ class Qwen3VLForConditionalGeneration(
         flattened_patch_size = (
             in_channels * temporal_patch_size * patch_size * patch_size
         )
-        dummy_pixel_values = torch.randn(
-            total_patches, flattened_patch_size, device=device, dtype=dtype
-        )
+        if self.multimodal_config.mm_device_do_normalize:
+            dummy_pixel_values = torch.zeros(
+                total_patches,
+                flattened_patch_size,
+                device=device,
+                dtype=torch.uint8,
+            )
+        else:
+            dummy_pixel_values = torch.randn(
+                total_patches, flattened_patch_size, device=device, dtype=dtype
+            )
 
         # Override max_seqlen with a safe upper bound for capture.
         # max_seqlen.item() gets baked into the CUDA graph (not replayed),
@@ -2269,7 +2283,7 @@ class Qwen3VLForConditionalGeneration(
         if image_input["type"] == "image_embeds":
             image_embeds = image_input["image_embeds"].type(self.visual.dtype)
         else:
-            pixel_values = image_input["pixel_values"].type(self.visual.dtype)
+            pixel_values = image_input["pixel_values"]
             if self.use_data_parallel:
                 return run_dp_sharded_mrope_vision_model(
                     self.visual, pixel_values, grid_thw.tolist(), rope_type="rope_3d"
@@ -2291,9 +2305,7 @@ class Qwen3VLForConditionalGeneration(
         if video_input["type"] == "video_embeds":
             video_embeds = video_input["video_embeds"].type(self.visual.dtype)
         else:
-            pixel_values_videos = video_input["pixel_values_videos"].type(
-                self.visual.dtype
-            )
+            pixel_values_videos = video_input["pixel_values_videos"]
             if self.use_data_parallel:
                 grid_thw_list = grid_thw.tolist()
                 return run_dp_sharded_mrope_vision_model(

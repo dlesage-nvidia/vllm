@@ -112,6 +112,22 @@ def test_registry_model_property(model_arch, is_mm, init_cuda, score_type):
 
 @create_new_process_for_each_test()
 @pytest.mark.parametrize(
+    "model_arch",
+    [
+        "ColQwen3",
+        "Cosmos3ForConditionalGeneration",
+        "InternS1ProForConditionalGeneration",
+        "InternS2PreviewForConditionalGeneration",
+    ],
+)
+def test_inherited_qwen3_models_device_normalization_opt_out(model_arch: str):
+    model_info = ModelRegistry._try_inspect_model_cls(model_arch)
+    assert model_info is not None
+    assert model_info.supports_mm_device_do_normalize is False
+
+
+@create_new_process_for_each_test()
+@pytest.mark.parametrize(
     "model_arch,is_pp,init_cuda",
     [
         # TODO(woosuk): Re-enable this once the MLP Speculator is supported

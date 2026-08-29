@@ -538,6 +538,7 @@ class InternS1ProMoeMixtureOfExperts(MixtureOfExperts):
 class InternS1ProForConditionalGeneration(
     Qwen3VLForConditionalGeneration, InternS1ProMoeMixtureOfExperts
 ):
+    supports_mm_device_do_normalize = False
     is_3d_moe_weight: bool = True
     packed_modules_mapping = {
         "qkv_proj": [
@@ -569,6 +570,7 @@ class InternS1ProForConditionalGeneration(
         with self._mark_tower_model(vllm_config, {"image", "video"}):
             self.visual = Qwen3_VisionTransformer(
                 config.vision_config,
+                model_config=vllm_config.model_config,
                 norm_eps=getattr(config, "rms_norm_eps", 1e-6),
                 prefix=maybe_prefix(prefix, "visual"),
             )

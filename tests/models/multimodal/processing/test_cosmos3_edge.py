@@ -88,6 +88,15 @@ def _assert_video_outputs(processor, processed) -> None:
     )
 
 
+def test_device_normalization_is_disabled() -> None:
+    ctx = build_model_context(
+        MODEL_ID,
+        limit_mm_per_prompt={"image": 1, "video": 1},
+    )
+
+    assert ctx.model_config.multimodal_config.mm_device_do_normalize is False
+
+
 @pytest.mark.parametrize("num_images", [1, 2])
 def test_process_images(
     processor,
