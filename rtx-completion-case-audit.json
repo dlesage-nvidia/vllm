@@ -1,0 +1,92 @@
+{
+  "audited_repetitions": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+  ],
+  "audited_response_pair_count": 3696,
+  "casefold_equal_text_mismatch_count": 1087,
+  "completion_token_ids_mismatch_count": 1087,
+  "exact_text_match_count": 2609,
+  "first_character_case_only_text_mismatch_count": 1087,
+  "input_token_parity_path": "token-parity.json",
+  "input_token_parity_sha256": "95847b5fc14c21da776116fb31e61ed65ab30855792d4e8f39e49be50d48790d",
+  "manifest_compared_response_pair_count": 3696,
+  "manifest_mismatch_counts": {
+    "common_configuration": 0,
+    "completion_token_ids": 1087,
+    "finish_reason": 0,
+    "prompt_token_ids": 0,
+    "reasoning_content_sha256": 0,
+    "request_identity": 0,
+    "stop_reason": 0,
+    "text_sha256": 1087,
+    "treatment_configuration": 0
+  },
+  "mismatch_by_concurrency_and_phase": [
+    {
+      "concurrency": 8,
+      "count": 143,
+      "phase": "measured"
+    },
+    {
+      "concurrency": 8,
+      "count": 38,
+      "phase": "warmup"
+    },
+    {
+      "concurrency": 16,
+      "count": 225,
+      "phase": "measured"
+    },
+    {
+      "concurrency": 16,
+      "count": 87,
+      "phase": "warmup"
+    },
+    {
+      "concurrency": 32,
+      "count": 411,
+      "phase": "measured"
+    },
+    {
+      "concurrency": 32,
+      "count": 183,
+      "phase": "warmup"
+    }
+  ],
+  "mismatch_by_repetition": {
+    "1": 122,
+    "2": 246,
+    "3": 240,
+    "4": 153,
+    "5": 199,
+    "6": 127
+  },
+  "non_casefold_equal_examples": [],
+  "non_casefold_equal_text_mismatch_count": 0,
+  "other_text_difference_examples": [],
+  "other_text_mismatch_count": 0,
+  "schema": "qwen3vl-base-head-text-case-audit-v1",
+  "single_token_transitions": [
+    {
+      "base_token_id": 32,
+      "count": 1087,
+      "head_token_id": 64,
+      "position": 0
+    }
+  ],
+  "text_mismatch_count": 1087,
+  "text_mismatch_without_token_mismatch_count": 0,
+  "token_mismatch_without_text_mismatch_count": 0,
+  "unique_text_mismatch_pairs": [
+    {
+      "base": "A woman is walking on the side of a bridge while a car drives by.\n\n\n\n\n",
+      "count": 1087,
+      "head": "a woman is walking on the side of a bridge while a car drives by.\n\n\n\n\n"
+    }
+  ]
+}

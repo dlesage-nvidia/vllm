@@ -1,0 +1,105 @@
+diff --git a/tests/models/multimodal/generation/test_qwen3_vl_2b_eval.py b/tests/models/multimodal/generation/test_qwen3_vl_2b_eval.py
+new file mode 100644
+index 0000000..2364835
+--- /dev/null
++++ b/tests/models/multimodal/generation/test_qwen3_vl_2b_eval.py
+@@ -0,0 +1,99 @@
++# SPDX-License-Identifier: Apache-2.0
++# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
++"""Temporary Qwen3-VL-2B HF/vLLM video logprob comparison."""
++
++import os
++from dataclasses import replace
++from pathlib import Path
++
++from transformers import AutoModelForImageTextToText
++
++from ....conftest import HfRunner, VideoTestAssets, VllmRunner
++from ...registry import HF_EXAMPLE_MODELS
++from .vlm_utils import model_utils, runners
++from .vlm_utils.case_filtering import get_wrapped_test_sizes
++from .vlm_utils.types import ExpandableVLMTestArgs, VLMTestInfo, VLMTestType
++
++
++MODEL_ID = "Qwen/Qwen3-VL-2B-Instruct"
++MODEL_REVISION = "89644892e4d85e24eaac8bacfd4f463576704203"
++MODEL_SNAPSHOT = Path(os.environ["QWEN3_VL_2B_SNAPSHOT"]).resolve()
++
++MODEL_TEST_INFO = VLMTestInfo(
++    models=[str(MODEL_SNAPSHOT)],
++    test_type=VLMTestType.VIDEO,
++    enforce_eager=False,
++    needs_video_metadata=True,
++    prompt_formatter=lambda video_prompt: (
++        f"<|im_start|>User\n{video_prompt}<|im_end|>\n"
++        "<|im_start|>assistant\n"
++    ),
++    img_idx_to_prompt=lambda idx: (
++        "<|vision_start|><|image_pad|><|vision_end|>"
++    ),
++    video_idx_to_prompt=lambda idx: (
++        "<|vision_start|><|video_pad|><|vision_end|>"
++    ),
++    max_model_len=4096,
++    max_num_seqs=2,
++    num_logprobs=20,
++    auto_cls=AutoModelForImageTextToText,
++    vllm_output_post_proc=model_utils.qwen2_vllm_to_hf_output,
++    patch_hf_runner=model_utils.qwen3_vl_patch_hf_runner,
++    image_size_factors=[(0.25,), (0.25, 0.25, 0.25), (0.25, 0.2, 0.15)],
++)
++
++
++def test_qwen3_vl_2b_video_hf_top20_logprobs(
++    monkeypatch,
++    hf_runner: type[HfRunner],
++    vllm_runner: type[VllmRunner],
++    video_assets: VideoTestAssets,
++):
++    """Run the standard Qwen3-VL ndarray-video comparison at a pinned revision."""
++    assert MODEL_SNAPSHOT.is_dir()
++    assert MODEL_SNAPSHOT.name == MODEL_REVISION
++    assert (MODEL_SNAPSHOT / "model.safetensors").is_file()
++
++    qwen3_info = HF_EXAMPLE_MODELS.get_hf_info(
++        "Qwen3VLForConditionalGeneration"
++    )
++    monkeypatch.setitem(
++        HF_EXAMPLE_MODELS.hf_models,
++        "Qwen3VLForConditionalGeneration-2B-eval",
++        replace(
++            qwen3_info,
++            default=str(MODEL_SNAPSHOT),
++            revision=MODEL_REVISION,
++        ),
++    )
++
++    test_case = ExpandableVLMTestArgs(
++        model=str(MODEL_SNAPSHOT),
++        max_tokens=MODEL_TEST_INFO.max_tokens,
++        num_logprobs=MODEL_TEST_INFO.num_logprobs,
++        dtype=MODEL_TEST_INFO.dtype,
++        distributed_executor_backend=MODEL_TEST_INFO.distributed_executor_backend,
++        size_wrappers=get_wrapped_test_sizes(
++            MODEL_TEST_INFO, VLMTestType.VIDEO
++        ),
++        num_video_frames=MODEL_TEST_INFO.num_video_frames,
++        needs_video_metadata=MODEL_TEST_INFO.needs_video_metadata,
++    )
++
++    print(f"MODEL_ID={MODEL_ID}")
++    print(f"MODEL_REVISION={MODEL_REVISION}")
++    print(f"MODEL_SNAPSHOT={MODEL_SNAPSHOT}")
++    print("MODALITY=video")
++    print("INPUT_PATH=VideoTestAsset.np_ndarrays plus metadata")
++    print(f"NUM_LOGPROBS={test_case.num_logprobs}")
++    print(f"MAX_TOKENS={test_case.max_tokens}")
++    print(f"NUM_VIDEO_FRAMES={test_case.num_video_frames}")
++
++    runners.run_video_test(
++        model_test_info=MODEL_TEST_INFO,
++        test_case=test_case,
++        hf_runner=hf_runner,
++        vllm_runner=vllm_runner,
++        video_assets=video_assets,
++    )
