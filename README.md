@@ -1,5 +1,8 @@
 # Qwen3-VL-2B PyNvVideoCodec throughput
 
+The upstream-vs-PR Qwen2.5-VL-3B results are in
+[`qwen2.5-vl/`](qwen2.5-vl/README.md).
+
 This data compares the exact pull-request base
 `bc8abf31fef015339473f6071eda0de0305dd9b2` (tree
 `09423356278c6c4bd871ccda98499474fad78bdd`) with benchmark head

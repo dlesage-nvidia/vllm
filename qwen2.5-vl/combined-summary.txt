@@ -1,0 +1,51 @@
+Status: timing_passed_completion_mismatch (timing validation passed; 12 runs and 36 measured blocks per GPU)
+Exact output parity (warmup + measured): completion_or_text_mismatch (completion IDs 4611/7392, text 4598/7392)
+Metric: measured request throughput (requests/second); sample order is r1..r6
+
+A100 C8
+  base:  0.6339, 0.6294, 0.6316, 0.6270, 0.6283, 0.6286
+  head:  0.6324, 0.6258, 0.6303, 0.6260, 0.6304, 0.6305
+  delta: -0.24%, -0.59%, -0.20%, -0.17%, +0.34%, +0.30%
+  delta stats: median=-0.19%, min=-0.59%, max=+0.34%, population_stdev=0.32 pp
+  throughput stats: base median=0.6290 [0.6270, 0.6339], head median=0.6304 [0.6258, 0.6324]
+  output parity: completion_or_text_mismatch; completion IDs 265/528, text 265/528
+
+A100 C16
+  base:  0.6339, 0.6304, 0.6325, 0.6266, 0.6262, 0.6287
+  head:  0.6341, 0.6281, 0.6320, 0.6270, 0.6311, 0.6330
+  delta: +0.03%, -0.36%, -0.08%, +0.06%, +0.79%, +0.68%
+  delta stats: median=+0.05%, min=-0.36%, max=+0.79%, population_stdev=0.41 pp
+  throughput stats: base median=0.6295 [0.6262, 0.6339], head median=0.6316 [0.6270, 0.6341]
+  output parity: completion_or_text_mismatch; completion IDs 534/1056, text 534/1056
+
+A100 C32
+  base:  0.6357, 0.6327, 0.6330, 0.6278, 0.6280, 0.6315
+  head:  0.6337, 0.6299, 0.6330, 0.6271, 0.6328, 0.6330
+  delta: -0.31%, -0.44%, -0.01%, -0.11%, +0.76%, +0.23%
+  delta stats: median=-0.06%, min=-0.44%, max=+0.76%, population_stdev=0.40 pp
+  throughput stats: base median=0.6321 [0.6278, 0.6357], head median=0.6329 [0.6271, 0.6337]
+  output parity: completion_or_text_mismatch; completion IDs 1046/2112, text 1046/2112
+
+RTX C8
+  base:  1.1521, 1.1434, 1.1564, 1.1320, 1.1526, 1.1459
+  head:  1.1427, 1.1455, 1.1351, 1.1485, 1.1465, 1.1347
+  delta: -0.82%, +0.18%, -1.84%, +1.45%, -0.53%, -0.97%
+  delta stats: median=-0.67%, min=-1.84%, max=+1.45%, population_stdev=1.03 pp
+  throughput stats: base median=1.1490 [1.1320, 1.1564], head median=1.1441 [1.1347, 1.1485]
+  output parity: completion_or_text_mismatch; completion IDs 414/528, text 414/528
+
+RTX C16
+  base:  1.1458, 1.1497, 1.1512, 1.1468, 1.1469, 1.1420
+  head:  1.1426, 1.1533, 1.1454, 1.1526, 1.1451, 1.1465
+  delta: -0.28%, +0.32%, -0.51%, +0.50%, -0.16%, +0.39%
+  delta stats: median=+0.08%, min=-0.51%, max=+0.50%, population_stdev=0.38 pp
+  throughput stats: base median=1.1469 [1.1420, 1.1512], head median=1.1460 [1.1426, 1.1533]
+  output parity: completion_or_text_mismatch; completion IDs 777/1056, text 772/1056
+
+RTX C32
+  base:  1.1475, 1.1537, 1.1453, 1.1406, 1.1420, 1.1528
+  head:  1.1475, 1.1469, 1.1419, 1.1472, 1.1499, 1.1481
+  delta: +0.00%, -0.59%, -0.30%, +0.57%, +0.69%, -0.41%
+  delta stats: median=-0.15%, min=-0.59%, max=+0.69%, population_stdev=0.48 pp
+  throughput stats: base median=1.1464 [1.1406, 1.1537], head median=1.1474 [1.1419, 1.1499]
+  output parity: completion_or_text_mismatch; completion IDs 1575/2112, text 1567/2112

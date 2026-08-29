@@ -1,0 +1,570 @@
+{
+  "SPDX-FileCopyrightText": "Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.",
+  "SPDX-License-Identifier": "Apache-2.0",
+  "schema": "qwen25vl-output-variability-audit-v1",
+  "created_date": "2026-08-29",
+  "campaign": {
+    "model": "Qwen/Qwen2.5-VL-3B-Instruct",
+    "model_revision": "66285546d2b821cf421d4f5eb2576359d3770cd3",
+    "commits": {
+      "base": "d1e5e66ee30ba4bc020ac8e14b05e7a8c41b9302",
+      "head": "fc52204ce7e0203456ceca030b90283dde28232a"
+    },
+    "repetitions": [1, 2, 3, 4, 5, 6],
+    "concurrencies": [8, 16, 32],
+    "included_phases": ["warmup", "measured"],
+    "responses_per_gpu": 7392,
+    "base_head_pairs_per_gpu": 3696
+  },
+  "methodology": {
+    "base_head_pair_key": [
+      "repetition",
+      "concurrency",
+      "phase",
+      "request_index"
+    ],
+    "base_head_pair_validation": [
+      "both records present",
+      "video_index equality",
+      "video_sha256 equality",
+      "request_payload_sha256 equality",
+      "both records passed"
+    ],
+    "text_comparison": "Exact Unicode string equality, including trailing newlines and rendered role text.",
+    "completion_id_comparison": "Exact ordered completion_token_ids array equality.",
+    "prompt_id_comparison": "prompt_token_count and prompt_token_ids_sha256 equality.",
+    "same_variant_cross_repetition_comparison": "Within each GPU and variant, group by concurrency, phase, request_index, and video_index, then compare all 15 unordered pairs among the six repetitions.",
+    "same_variant_coordinate_cells_per_variant": 616,
+    "same_variant_pairwise_comparisons_per_variant": 9240,
+    "rate_definition": "mismatch_count / comparison_count",
+    "total_variation_definition": "0.5 * sum(abs(base_mode_fraction - head_mode_fraction))",
+    "text_mismatch_classes": {
+      "exact": "Strings are identical.",
+      "capitalization_or_punctuation_only": "Alphanumeric word sequence is identical after case folding and removal of punctuation and whitespace.",
+      "control_suffix_or_whitespace_only": "Natural-language sentence is identical after trimming trailing whitespace and the rendered user/assistant role suffix.",
+      "wording_or_content": "At least one natural-language word or described detail differs."
+    },
+    "source_path_policy": "All source result directories in this public audit are relative to the audit file."
+  },
+  "canonical_text_modes": {
+    "T1": {
+      "text": "A bridge with cars driving on it. A man is walking on the sidewalk.\n\n\n\n\n\n\n",
+      "completion_token_ids_sha256": [
+        "5e0ee83f6a8d5451bba59511191e4006f8884f003f618011e3d76f1ac5ba025c"
+      ]
+    },
+    "T2": {
+      "text": "A bridge with cars driving on it. A man in a yellow shirt is walking on the sidewalk.\n\nuser\n\nassistant",
+      "completion_token_ids_sha256": [
+        "5ef290a4fc8910efd2032beb7b3eac29246c8c00c65903b77b32675b35794927"
+      ]
+    },
+    "T3": {
+      "text": "A bridge is shown with cars driving on it. A man in a neon green shirt is walking along the side of the bridge.\n\n",
+      "completion_token_ids_sha256": [
+        "fd448cb72e0e63b045ad71ba2afd31ac59c7400d8d86e30598fe61e1bc9b0581",
+        "717c3abd5ccb6dab0f24e06c7c1c1a521501af412ac43ffc5acb0d4fd81921f9"
+      ]
+    },
+    "T4": {
+      "text": "A bridge with cars driving on it. A man in a yellow shirt is walking on the sidewalk.\n\n\n\n\n",
+      "completion_token_ids_sha256": [
+        "41aaf2849ac6ee62bc9967b7177aee933e7ce558836f2799c42c696a3b4b4c93"
+      ]
+    },
+    "T5": {
+      "text": "A bridge with cars driving on it. A man is walking on the side of the bridge.\n\n\n\n\n\n",
+      "completion_token_ids_sha256": [
+        "c6295690a0a54654b5a6375e38aea21be58d44a07ba931a66b97d54b2a2afdd4"
+      ]
+    }
+  },
+  "sources": {
+    "a100": {
+      "result_directory": "results-a100",
+      "matrix_schema": "qwen25-vl-pynvvideocodec-paired-matrix-v1",
+      "matrix_status": "passed",
+      "files_sha256": {
+        "matrix-manifest.json": "bcfa80915ab8dfafa10b1e2bda8d6f82c95167cb33febda7ede04948c3273446",
+        "r01-p01-base-c8-16-32.json": "9f5e69e0d9fc70eb1a18076e613f49cb760f1ea13ed328cf2ccecd52631ca92c",
+        "r01-p02-head-c8-16-32.json": "64467c49ef914819c98aa0a3c9779437f06513305822663d40f71af010235b9f",
+        "r02-p03-head-c32-16-8.json": "40dd80f20917655801920b2c2e89331f733ad3a71cbca0f8d27159350b130275",
+        "r02-p04-base-c32-16-8.json": "de191eb06888471384e5929dcf844c125749231e67ec1994971d8c25f1ef4cb5",
+        "r03-p05-base-c16-32-8.json": "26b1c1ca49b6fe8a8803c8ce57247e99dda3a8370327bac24d041d6e198a0929",
+        "r03-p06-head-c16-32-8.json": "6e00cb4143dd39f766fa6894438549555ff5bc50939494686d8e291cab79ddac",
+        "r04-p07-head-c8-32-16.json": "18eb5ded9907cc53f1a86a1ae67476d44eb95305aa518c5d422353dd5a765b6e",
+        "r04-p08-base-c8-32-16.json": "7ab4ad86548626d6d5696ba3935faa5b4d54fc2566bdcfd5eac3367a3b069bb3",
+        "r05-p09-base-c32-8-16.json": "463c93cf522c43512ec6e0dd6dbb3ac34145de681313558a356024a1db9150c1",
+        "r05-p10-head-c32-8-16.json": "6cd59d0279beda69295d88d3c8d3d346851cf18a7120de00a0ae61e7ebe4c80f",
+        "r06-p11-head-c16-8-32.json": "832b0c9117f8f6addf1e160e1de424b0e6f7f42b1c525840faf8b9cb4c5d5ba0",
+        "r06-p12-base-c16-8-32.json": "f8266ffd9809f109ef90e632fa71889311c7c88a0022577b1d2286ebcc05570f"
+      }
+    },
+    "rtx": {
+      "result_directory": "results-rtx",
+      "matrix_schema": "qwen25-vl-pynvvideocodec-paired-matrix-v1",
+      "matrix_status": "passed",
+      "files_sha256": {
+        "matrix-manifest.json": "8c5b754401aa81fbc6216b4df49643ff3ed13f54f258e574595890860918338c",
+        "r01-p01-base-c8-16-32.json": "6ca9fcff42124b953328d0597146f3cc5507bfc0c975fc09487b31bbfcf5e9a5",
+        "r01-p02-head-c8-16-32.json": "be57b773cd7daee9ecbc7a5731064be07f723cab7dd9820141d798b4d74c58af",
+        "r02-p03-head-c32-16-8.json": "49d9f875784d4b2418136dfce92edef187f8f773f1ea46ca446008272e43e129",
+        "r02-p04-base-c32-16-8.json": "793eff098ae7e96542b0d05616bf5a43cbb2a4a20c116b7f5d03cb09acd2ac37",
+        "r03-p05-base-c16-32-8.json": "b77fd2c30a7f774d1b7606f08dd4dc5d0159a490578f47d55708e921d66e4c7a",
+        "r03-p06-head-c16-32-8.json": "675b337d7ca06869dc9cddb4c80f016d2f6b70622f4a1eacd4a694dcd3ddef0f",
+        "r04-p07-head-c8-32-16.json": "3f227ff86a46cfae3c0b341bd554321e856e6776e75c4b6442c90647fecac9fe",
+        "r04-p08-base-c8-32-16.json": "2a7d189a330598a3fd73cb1e35e9be7887a9cd13fe6e78c6d8505b360856d7f0",
+        "r05-p09-base-c32-8-16.json": "a8b75d7589003ec5e950ab3d1f44971932c82f9d940eefedb43114061c0098c1",
+        "r05-p10-head-c32-8-16.json": "0aa02be8a12563df65216f44892596b624d58fb7148787aae4d981caa79f976e",
+        "r06-p11-head-c16-8-32.json": "153d4ba4e99a50659c54b71a383d9656d7373feb6faf873de54ca6a1118e786d",
+        "r06-p12-base-c16-8-32.json": "fe73dedd6e034373695c8bead94d8f1f86ab6096b411d29124fcc45958c7e42b"
+      }
+    }
+  },
+  "gpu_audits": {
+    "a100": {
+      "gpu_name": "NVIDIA A100 80GB PCIe",
+      "base_head_comparison": {
+        "by_concurrency": {
+          "8": {
+            "pairs": 528,
+            "text_mismatches": 265,
+            "text_mismatch_rate": 0.501893939394,
+            "completion_id_mismatches": 265,
+            "completion_id_mismatch_rate": 0.501893939394
+          },
+          "16": {
+            "pairs": 1056,
+            "text_mismatches": 534,
+            "text_mismatch_rate": 0.505681818182,
+            "completion_id_mismatches": 534,
+            "completion_id_mismatch_rate": 0.505681818182
+          },
+          "32": {
+            "pairs": 2112,
+            "text_mismatches": 1046,
+            "text_mismatch_rate": 0.495265151515,
+            "completion_id_mismatches": 1046,
+            "completion_id_mismatch_rate": 0.495265151515
+          }
+        },
+        "by_phase_overall": {
+          "warmup": {
+            "pairs": 1008,
+            "text_mismatches": 479,
+            "completion_id_mismatches": 479
+          },
+          "measured": {
+            "pairs": 2688,
+            "text_mismatches": 1366,
+            "completion_id_mismatches": 1366
+          }
+        },
+        "overall": {
+          "pairs": 3696,
+          "text_matches": 1851,
+          "text_mismatches": 1845,
+          "text_mismatch_rate": 0.499188311688,
+          "completion_id_matches": 1851,
+          "completion_id_mismatches": 1845,
+          "completion_id_mismatch_rate": 0.499188311688,
+          "exact_text_but_completion_id_mismatch": 0,
+          "different_text_but_completion_ids_match": 0
+        },
+        "text_pair_classification": {
+          "exact": 1851,
+          "capitalization_or_punctuation_only": 0,
+          "control_suffix_or_whitespace_only": 1,
+          "wording_or_content": 1844
+        }
+      },
+      "same_variant_cross_repetition": {
+        "base": {
+          "8": {
+            "coordinate_cells": 88,
+            "pairwise_comparisons": 1320,
+            "text_mismatches": 648,
+            "text_mismatch_rate": 0.490909090909,
+            "completion_id_mismatches": 648,
+            "completion_id_mismatch_rate": 0.490909090909,
+            "variable_text_cells": 83,
+            "variable_completion_id_cells": 83
+          },
+          "16": {
+            "coordinate_cells": 176,
+            "pairwise_comparisons": 2640,
+            "text_mismatches": 1258,
+            "text_mismatch_rate": 0.476515151515,
+            "completion_id_mismatches": 1258,
+            "completion_id_mismatch_rate": 0.476515151515,
+            "variable_text_cells": 171,
+            "variable_completion_id_cells": 171
+          },
+          "32": {
+            "coordinate_cells": 352,
+            "pairwise_comparisons": 5280,
+            "text_mismatches": 2583,
+            "text_mismatch_rate": 0.489204545455,
+            "completion_id_mismatches": 2583,
+            "completion_id_mismatch_rate": 0.489204545455,
+            "variable_text_cells": 342,
+            "variable_completion_id_cells": 342
+          },
+          "overall": {
+            "coordinate_cells": 616,
+            "pairwise_comparisons": 9240,
+            "text_mismatches": 4489,
+            "text_mismatch_rate": 0.485822510823,
+            "completion_id_mismatches": 4489,
+            "completion_id_mismatch_rate": 0.485822510823,
+            "variable_text_cells": 596,
+            "variable_completion_id_cells": 596
+          }
+        },
+        "head": {
+          "8": {
+            "coordinate_cells": 88,
+            "pairwise_comparisons": 1320,
+            "text_mismatches": 637,
+            "text_mismatch_rate": 0.482575757576,
+            "completion_id_mismatches": 637,
+            "completion_id_mismatch_rate": 0.482575757576,
+            "variable_text_cells": 84,
+            "variable_completion_id_cells": 84
+          },
+          "16": {
+            "coordinate_cells": 176,
+            "pairwise_comparisons": 2640,
+            "text_mismatches": 1279,
+            "text_mismatch_rate": 0.48446969697,
+            "completion_id_mismatches": 1279,
+            "completion_id_mismatch_rate": 0.48446969697,
+            "variable_text_cells": 167,
+            "variable_completion_id_cells": 167
+          },
+          "32": {
+            "coordinate_cells": 352,
+            "pairwise_comparisons": 5280,
+            "text_mismatches": 2603,
+            "text_mismatch_rate": 0.492992424242,
+            "completion_id_mismatches": 2603,
+            "completion_id_mismatch_rate": 0.492992424242,
+            "variable_text_cells": 338,
+            "variable_completion_id_cells": 338
+          },
+          "overall": {
+            "coordinate_cells": 616,
+            "pairwise_comparisons": 9240,
+            "text_mismatches": 4519,
+            "text_mismatch_rate": 0.489069264069,
+            "completion_id_mismatches": 4519,
+            "completion_id_mismatch_rate": 0.489069264069,
+            "variable_text_cells": 589,
+            "variable_completion_id_cells": 589
+          }
+        }
+      },
+      "invariant_metadata": {
+        "response_count": 7392,
+        "record_status": {"passed": 7392},
+        "completion_token_count": {"32": 7392},
+        "prompt_token_count": {"11551": 7392},
+        "finish_reason": {"length": 7392},
+        "stop_reason": {"null": 7392},
+        "prompt_token_ids_sha256": {
+          "47b2e3783a02dea3f924166b215029e83fcdc4b68399d368038ca8e10e49b92d": 7392
+        },
+        "paired_field_mismatch_counts": {
+          "video_index": 0,
+          "video_sha256": 0,
+          "request_payload_sha256": 0,
+          "record_status": 0,
+          "completion_token_count": 0,
+          "prompt_token_count": 0,
+          "finish_reason": 0,
+          "stop_reason": 0,
+          "prompt_token_ids_sha256": 0
+        }
+      },
+      "mode_distribution": {
+        "unique_text_modes_observed": 4,
+        "unique_completion_sequences_observed": 4,
+        "by_mode": {
+          "T1": {
+            "total": 3982,
+            "base": {"8": 286, "16": 584, "32": 1127, "overall": 1997},
+            "head": {"8": 283, "16": 562, "32": 1140, "overall": 1985}
+          },
+          "T2": {
+            "total": 3403,
+            "base": {"8": 242, "16": 471, "32": 985, "overall": 1698},
+            "head": {"8": 245, "16": 492, "32": 968, "overall": 1705}
+          },
+          "T3": {
+            "total": 0,
+            "base": {"8": 0, "16": 0, "32": 0, "overall": 0},
+            "head": {"8": 0, "16": 0, "32": 0, "overall": 0}
+          },
+          "T4": {
+            "total": 3,
+            "base": {"8": 0, "16": 1, "32": 0, "overall": 1},
+            "head": {"8": 0, "16": 1, "32": 1, "overall": 2}
+          },
+          "T5": {
+            "total": 4,
+            "base": {"8": 0, "16": 0, "32": 0, "overall": 0},
+            "head": {"8": 0, "16": 1, "32": 3, "overall": 4}
+          }
+        },
+        "completion_sequence_counts": {
+          "5e0ee83f6a8d5451bba59511191e4006f8884f003f618011e3d76f1ac5ba025c": 3982,
+          "5ef290a4fc8910efd2032beb7b3eac29246c8c00c65903b77b32675b35794927": 3403,
+          "41aaf2849ac6ee62bc9967b7177aee933e7ce558836f2799c42c696a3b4b4c93": 3,
+          "c6295690a0a54654b5a6375e38aea21be58d44a07ba931a66b97d54b2a2afdd4": 4
+        },
+        "total_variation_distance_base_vs_head": {
+          "8": 0.005681818182,
+          "16": 0.020833333333,
+          "32": 0.008049242424,
+          "overall": 0.003246753247
+        },
+        "head_minus_base_overall_counts": {
+          "T1": -12,
+          "T2": 7,
+          "T3": 0,
+          "T4": 1,
+          "T5": 4
+        }
+      },
+      "conclusion": {
+        "classification": "base_head_variability_matches_same_variant_run_to_run_variability",
+        "statement": "Base/head disagreement is 49.919%, close to base/base 48.582% and head/head 48.907% cross-repetition disagreement. T1 and T2 account for 7,385 of 7,392 responses, and base/head mode-distribution TV is only 0.325%. There is no material patch-specific output shift in these results; the four head-only T5 responses are rare and use a mode also observed on RTX."
+      }
+    },
+    "rtx": {
+      "gpu_name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "base_head_comparison": {
+        "by_concurrency": {
+          "8": {
+            "pairs": 528,
+            "text_mismatches": 414,
+            "text_mismatch_rate": 0.784090909091,
+            "completion_id_mismatches": 414,
+            "completion_id_mismatch_rate": 0.784090909091
+          },
+          "16": {
+            "pairs": 1056,
+            "text_mismatches": 772,
+            "text_mismatch_rate": 0.731060606061,
+            "completion_id_mismatches": 777,
+            "completion_id_mismatch_rate": 0.735795454545
+          },
+          "32": {
+            "pairs": 2112,
+            "text_mismatches": 1567,
+            "text_mismatch_rate": 0.741950757576,
+            "completion_id_mismatches": 1575,
+            "completion_id_mismatch_rate": 0.745738636364
+          }
+        },
+        "by_phase_overall": {
+          "warmup": {
+            "pairs": 1008,
+            "text_mismatches": 741,
+            "completion_id_mismatches": 742
+          },
+          "measured": {
+            "pairs": 2688,
+            "text_mismatches": 2012,
+            "completion_id_mismatches": 2024
+          }
+        },
+        "overall": {
+          "pairs": 3696,
+          "text_matches": 943,
+          "text_mismatches": 2753,
+          "text_mismatch_rate": 0.744859307359,
+          "completion_id_matches": 930,
+          "completion_id_mismatches": 2766,
+          "completion_id_mismatch_rate": 0.748376623377,
+          "exact_text_but_completion_id_mismatch": 13,
+          "different_text_but_completion_ids_match": 0
+        },
+        "text_pair_classification": {
+          "exact": 943,
+          "capitalization_or_punctuation_only": 0,
+          "control_suffix_or_whitespace_only": 184,
+          "wording_or_content": 2569
+        }
+      },
+      "same_variant_cross_repetition": {
+        "base": {
+          "8": {
+            "coordinate_cells": 88,
+            "pairwise_comparisons": 1320,
+            "text_mismatches": 984,
+            "text_mismatch_rate": 0.745454545455,
+            "completion_id_mismatches": 984,
+            "completion_id_mismatch_rate": 0.745454545455,
+            "variable_text_cells": 88,
+            "variable_completion_id_cells": 88
+          },
+          "16": {
+            "coordinate_cells": 176,
+            "pairwise_comparisons": 2640,
+            "text_mismatches": 1903,
+            "text_mismatch_rate": 0.720833333333,
+            "completion_id_mismatches": 1911,
+            "completion_id_mismatch_rate": 0.723863636364,
+            "variable_text_cells": 176,
+            "variable_completion_id_cells": 176
+          },
+          "32": {
+            "coordinate_cells": 352,
+            "pairwise_comparisons": 5280,
+            "text_mismatches": 3877,
+            "text_mismatch_rate": 0.73428030303,
+            "completion_id_mismatches": 3904,
+            "completion_id_mismatch_rate": 0.739393939394,
+            "variable_text_cells": 351,
+            "variable_completion_id_cells": 351
+          },
+          "overall": {
+            "coordinate_cells": 616,
+            "pairwise_comparisons": 9240,
+            "text_mismatches": 6764,
+            "text_mismatch_rate": 0.732034632035,
+            "completion_id_mismatches": 6799,
+            "completion_id_mismatch_rate": 0.735822510823,
+            "variable_text_cells": 615,
+            "variable_completion_id_cells": 615
+          }
+        },
+        "head": {
+          "8": {
+            "coordinate_cells": 88,
+            "pairwise_comparisons": 1320,
+            "text_mismatches": 979,
+            "text_mismatch_rate": 0.741666666667,
+            "completion_id_mismatches": 979,
+            "completion_id_mismatch_rate": 0.741666666667,
+            "variable_text_cells": 88,
+            "variable_completion_id_cells": 88
+          },
+          "16": {
+            "coordinate_cells": 176,
+            "pairwise_comparisons": 2640,
+            "text_mismatches": 1968,
+            "text_mismatch_rate": 0.745454545455,
+            "completion_id_mismatches": 1978,
+            "completion_id_mismatch_rate": 0.749242424242,
+            "variable_text_cells": 175,
+            "variable_completion_id_cells": 175
+          },
+          "32": {
+            "coordinate_cells": 352,
+            "pairwise_comparisons": 5280,
+            "text_mismatches": 3952,
+            "text_mismatch_rate": 0.748484848485,
+            "completion_id_mismatches": 3973,
+            "completion_id_mismatch_rate": 0.752462121212,
+            "variable_text_cells": 352,
+            "variable_completion_id_cells": 352
+          },
+          "overall": {
+            "coordinate_cells": 616,
+            "pairwise_comparisons": 9240,
+            "text_mismatches": 6899,
+            "text_mismatch_rate": 0.746645021645,
+            "completion_id_mismatches": 6930,
+            "completion_id_mismatch_rate": 0.75,
+            "variable_text_cells": 615,
+            "variable_completion_id_cells": 615
+          }
+        }
+      },
+      "invariant_metadata": {
+        "response_count": 7392,
+        "record_status": {"passed": 7392},
+        "completion_token_count": {"32": 7392},
+        "prompt_token_count": {"11551": 7392},
+        "finish_reason": {"length": 7392},
+        "stop_reason": {"null": 7392},
+        "prompt_token_ids_sha256": {
+          "47b2e3783a02dea3f924166b215029e83fcdc4b68399d368038ca8e10e49b92d": 7392
+        },
+        "paired_field_mismatch_counts": {
+          "video_index": 0,
+          "video_sha256": 0,
+          "request_payload_sha256": 0,
+          "record_status": 0,
+          "completion_token_count": 0,
+          "prompt_token_count": 0,
+          "finish_reason": 0,
+          "stop_reason": 0,
+          "prompt_token_ids_sha256": 0
+        }
+      },
+      "mode_distribution": {
+        "unique_text_modes_observed": 5,
+        "unique_completion_sequences_observed": 6,
+        "by_mode": {
+          "T1": {
+            "total": 2412,
+            "base": {"8": 168, "16": 358, "32": 719, "overall": 1245},
+            "head": {"8": 164, "16": 343, "32": 660, "overall": 1167}
+          },
+          "T2": {
+            "total": 1974,
+            "base": {"8": 150, "16": 290, "32": 590, "overall": 1030},
+            "head": {"8": 138, "16": 255, "32": 551, "overall": 944}
+          },
+          "T3": {
+            "total": 1938,
+            "base": {"8": 137, "16": 272, "32": 522, "overall": 931},
+            "head": {"8": 145, "16": 292, "32": 570, "overall": 1007}
+          },
+          "T4": {
+            "total": 686,
+            "base": {"8": 44, "16": 90, "32": 185, "overall": 319},
+            "head": {"8": 50, "16": 102, "32": 215, "overall": 367}
+          },
+          "T5": {
+            "total": 382,
+            "base": {"8": 29, "16": 46, "32": 96, "overall": 171},
+            "head": {"8": 31, "16": 64, "32": 116, "overall": 211}
+          }
+        },
+        "completion_sequence_counts": {
+          "5e0ee83f6a8d5451bba59511191e4006f8884f003f618011e3d76f1ac5ba025c": 2412,
+          "5ef290a4fc8910efd2032beb7b3eac29246c8c00c65903b77b32675b35794927": 1974,
+          "fd448cb72e0e63b045ad71ba2afd31ac59c7400d8d86e30598fe61e1bc9b0581": 1887,
+          "717c3abd5ccb6dab0f24e06c7c1c1a521501af412ac43ffc5acb0d4fd81921f9": 51,
+          "41aaf2849ac6ee62bc9967b7177aee933e7ce558836f2799c42c696a3b4b4c93": 686,
+          "c6295690a0a54654b5a6375e38aea21be58d44a07ba931a66b97d54b2a2afdd4": 382
+        },
+        "total_variation_distance_base_vs_head": {
+          "8": 0.030303030303,
+          "16": 0.047348484848,
+          "32": 0.046401515152,
+          "overall": 0.044372294372
+        },
+        "head_minus_base_overall_counts": {
+          "T1": -78,
+          "T2": -86,
+          "T3": 76,
+          "T4": 48,
+          "T5": 40
+        }
+      },
+      "conclusion": {
+        "classification": "dominant_same_variant_run_to_run_variability_with_small_distribution_shift_not_excluded",
+        "statement": "Base/head text disagreement is 74.486% and completion-ID disagreement is 74.838%, comparable to base/base 73.203% and head/head 74.665% text disagreement. Both variants produce the same five text modes and six completion-ID sequences, and 615 of 616 coordinates vary within each variant. Individual mismatches are not patch-specific, but the 4.437% aggregate mode-distribution TV leaves a modest frequency shift possible."
+      }
+    }
+  },
+  "cross_gpu_summary": {
+    "pooled_mode_distribution_total_variation_a100_vs_rtx": 0.405708874459,
+    "statement": "GPU-to-GPU output-mode distribution differs far more than base-to-head distribution within either GPU. A100 is almost entirely T1/T2, while RTX uses all five modes. Within each GPU, base/head disagreement closely tracks same-variant repetition disagreement."
+  }
+}
