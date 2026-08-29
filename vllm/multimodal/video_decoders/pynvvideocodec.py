@@ -5,7 +5,7 @@ import os
 import tempfile
 import threading
 from contextlib import contextmanager, suppress
-from typing import ClassVar, NamedTuple
+from typing import ClassVar, NamedTuple, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -15,6 +15,8 @@ from vllm.utils.mem_constants import MiB_bytes
 
 from .base import (
     PYNVVIDEOCODEC_DEFAULT_HW_DECODERS,
+    PYNVVIDEOCODEC_DEFAULT_OUTPUT_LAYOUT,
+    PyNvVideoCodecOutputLayout,
     VideoSourceMetadata,
     VideoTargetMetadata,
     check_frame_pixel_limit,
@@ -30,8 +32,9 @@ def decode_pynvvideocodec(
     sampling_kwargs: dict,
     *,
     hw_decoders: int = PYNVVIDEOCODEC_DEFAULT_HW_DECODERS,
+    output_layout: PyNvVideoCodecOutputLayout = PYNVVIDEOCODEC_DEFAULT_OUTPUT_LAYOUT,
 ) -> tuple[npt.NDArray, VideoSourceMetadata, list[int], list[int]]:
-    PyNvVideoCodecVideoBackendMixin._configure_decoder_slots(hw_decoders)
+    PyNvVideoCodecVideoBackendMixin._configure_decoder_slots(hw_decoders, output_layout)
     return PyNvVideoCodecVideoBackendMixin.decode_frames_pynvvideocodec(
         loader_cls,
         data,
@@ -66,6 +69,24 @@ def validate_pynvvideocodec_hw_decoders(hw_decoders: object) -> int:
     return hw_decoders
 
 
+def validate_pynvvideocodec_output_layout(
+    output_layout: object,
+) -> PyNvVideoCodecOutputLayout:
+    if output_layout not in ("thwc", "tchw"):
+        raise ValueError("output_layout must be either 'thwc' or 'tchw'")
+    return cast(PyNvVideoCodecOutputLayout, output_layout)
+
+
+def configure_pynvvideocodec_decoder_pool(
+    hw_decoders: object = PYNVVIDEOCODEC_DEFAULT_HW_DECODERS,
+    output_layout: object = PYNVVIDEOCODEC_DEFAULT_OUTPUT_LAYOUT,
+) -> None:
+    """Freeze the process-wide decoder capacity and output layout."""
+    validated_hw_decoders = validate_pynvvideocodec_hw_decoders(hw_decoders)
+    validated_output_layout = validate_pynvvideocodec_output_layout(output_layout)
+    _pynv_decoder_pool.configure(validated_hw_decoders, validated_output_layout)
+
+
 def _pynvvideocodec_exception_types(nvc) -> tuple[type[Exception], ...]:
     return tuple(
         exception_type
@@ -77,9 +98,24 @@ def _pynvvideocodec_exception_types(nvc) -> tuple[type[Exception], ...]:
 
 
 def _pynvvc_frames_to_nhwc(frames):
-    """Return a stacked PyNvVideoCodec frame batch as contiguous NHWC."""
-    if frames.shape[-1] != 3 and frames.shape[-3] == 3:
-        frames = frames.permute(0, 2, 3, 1)
+    """Return a stacked PyNvVideoCodec RGB frame batch as contiguous THWC."""
+    if frames.shape[-1] == 3:
+        return frames.contiguous()
+    if frames.shape[1] == 3:
+        return frames.permute(0, 2, 3, 1).contiguous()
+    raise ValueError(
+        "PyNvVideoCodec RGB returned frames with unexpected shape "
+        f"{tuple(frames.shape)}; expected THWC or TCHW with three channels"
+    )
+
+
+def _pynvvc_frames_to_tchw(frames):
+    """Validate a stacked PyNvVideoCodec RGBP frame batch as contiguous TCHW."""
+    if frames.shape[1] != 3:
+        raise ValueError(
+            "PyNvVideoCodec RGBP returned frames with unexpected shape "
+            f"{tuple(frames.shape)}; expected TCHW with three channels"
+        )
     return frames.contiguous()
 
 
@@ -95,8 +131,15 @@ class PyNvVideoCodecDecoderSlot:
     metadata decoder.
     """
 
-    def __init__(self, stream) -> None:
+    def __init__(
+        self,
+        stream,
+        output_layout: PyNvVideoCodecOutputLayout = (
+            PYNVVIDEOCODEC_DEFAULT_OUTPUT_LAYOUT
+        ),
+    ) -> None:
         self.stream = stream
+        self.output_layout = validate_pynvvideocodec_output_layout(output_layout)
         self.decoder = None
         self.source_path: str | None = None
 
@@ -106,9 +149,18 @@ class PyNvVideoCodecDecoderSlot:
 
     def _construct(self, file_path: str, nvc, device_index: int) -> None:
         self.invalidate()
+        color_type_name = "RGBP" if self.output_layout == "tchw" else "RGB"
+        try:
+            output_color_type = getattr(nvc.OutputColorType, color_type_name)
+        except AttributeError:
+            raise RuntimeError(
+                "The installed PyNvVideoCodec does not support "
+                f"OutputColorType.{color_type_name}, required for "
+                f"output_layout={self.output_layout!r}."
+            ) from None
         decoder = nvc.SimpleDecoder(
             file_path,
-            output_color_type=nvc.OutputColorType.RGB,
+            output_color_type=output_color_type,
             use_device_memory=True,
             need_scanned_stream_metadata=True,
             gpu_id=device_index,
@@ -145,15 +197,26 @@ class _PyNvDecoderPool:
         self.active: int = 0
         self.cond: threading.Condition = threading.Condition()
         self.max_slots: int | None = None
+        self.output_layout: PyNvVideoCodecOutputLayout | None = None
 
-    def configure(self, hw_decoders: int) -> None:
+    def configure(
+        self,
+        hw_decoders: int,
+        output_layout: PyNvVideoCodecOutputLayout,
+    ) -> None:
         with self.cond:
             if self.max_slots is None:
                 self.max_slots = hw_decoders
+                self.output_layout = output_layout
             elif self.max_slots != hw_decoders:
                 raise RuntimeError(
                     "PyNvVideoCodec decoder count is already configured as "
                     f"{self.max_slots}, got {hw_decoders}"
+                )
+            elif self.output_layout != output_layout:
+                raise RuntimeError(
+                    "PyNvVideoCodec output layout is already configured as "
+                    f"{self.output_layout!r}, got {output_layout!r}"
                 )
 
 
@@ -169,12 +232,20 @@ class PyNvVideoCodecVideoBackendMixin:
     def _create_decoder_slot(cls) -> PyNvVideoCodecDecoderSlot:
         import torch
 
-        return PyNvVideoCodecDecoderSlot(torch.cuda.Stream(device=cls._DEVICE_INDEX))
+        output_layout = _pynv_decoder_pool.output_layout
+        if output_layout is None:
+            raise RuntimeError("PyNvVideoCodec output layout is not configured")
+        return PyNvVideoCodecDecoderSlot(
+            torch.cuda.Stream(device=cls._DEVICE_INDEX), output_layout
+        )
 
     @classmethod
-    def _configure_decoder_slots(cls, hw_decoders: object) -> None:
-        hw_decoders = validate_pynvvideocodec_hw_decoders(hw_decoders)
-        _pynv_decoder_pool.configure(hw_decoders)
+    def _configure_decoder_slots(
+        cls,
+        hw_decoders: object,
+        output_layout: object = PYNVVIDEOCODEC_DEFAULT_OUTPUT_LAYOUT,
+    ) -> None:
+        configure_pynvvideocodec_decoder_pool(hw_decoders, output_layout)
 
     @staticmethod
     @contextmanager
@@ -316,7 +387,15 @@ class PyNvVideoCodecVideoBackendMixin:
                         "PyNvVideoCodec returned frames with unexpected shape "
                         f"{tuple(device_frames.shape)}"
                     )
-                device_frames = _pynvvc_frames_to_nhwc(device_frames)
+                if device_frames.dtype != torch.uint8:
+                    raise ValueError(
+                        "PyNvVideoCodec returned frames with unexpected dtype "
+                        f"{device_frames.dtype}; expected torch.uint8"
+                    )
+                if decoder_slot.output_layout == "tchw":
+                    device_frames = _pynvvc_frames_to_tchw(device_frames)
+                else:
+                    device_frames = _pynvvc_frames_to_nhwc(device_frames)
                 host_frames = torch.empty(
                     device_frames.shape,
                     dtype=device_frames.dtype,

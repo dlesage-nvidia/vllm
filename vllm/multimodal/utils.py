@@ -383,7 +383,9 @@ def fetch_video(
     """
     Args:
         video_url: URL of the video file to fetch.
-        video_io_kwargs: Additional kwargs passed to handle video IO.
+        video_io_kwargs: Additional kwargs passed to handle video IO. This
+            standalone helper only supports PyNvVideoCodec's default THWC
+            output; TCHW requires processor validation in the serving path.
 
     Warning:
         This method has direct access to local files and is only intended

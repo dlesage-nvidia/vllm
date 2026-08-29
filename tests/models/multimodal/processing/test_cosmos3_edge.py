@@ -3,11 +3,14 @@
 
 import os
 
+import numpy as np
 import pytest
+import torch
 
 from vllm.assets.video import VideoAsset
 from vllm.config import ModelConfig
 from vllm.multimodal import MULTIMODAL_REGISTRY
+from vllm.multimodal.video import VLLM_VIDEO_INPUT_DATA_FORMAT_KEY
 
 from ....conftest import ImageTestAssets
 from ...utils import build_model_context
@@ -111,3 +114,57 @@ def test_process_video(processor) -> None:
     )
 
     _assert_video_outputs(processor, processed)
+
+
+def test_tchw_video_matches_thwc(processor) -> None:
+    num_frames, height, width = 4, 65, 97
+    thwc = np.arange(num_frames * height * width * 3, dtype=np.uint8).reshape(
+        num_frames, height, width, 3
+    )
+    tchw = np.ascontiguousarray(thwc.transpose(0, 3, 1, 2))
+    metadata = {
+        "fps": 2.0,
+        "duration": num_frames / 2,
+        "total_num_frames": num_frames,
+        "frames_indices": list(range(num_frames)),
+        "video_backend": "pynvvideocodec",
+        "do_sample_frames": False,
+    }
+
+    def process(video, video_metadata):
+        return processor(
+            VIDEO_PLACEHOLDER,
+            mm_items=processor.info.parse_mm_data({"video": [(video, video_metadata)]}),
+            hf_processor_mm_kwargs={},
+        )
+
+    baseline = process(thwc, metadata)
+    candidate = process(
+        tchw,
+        {
+            **metadata,
+            VLLM_VIDEO_INPUT_DATA_FORMAT_KEY: "channels_first",
+        },
+    )
+
+    assert candidate.keys() == baseline.keys()
+    assert candidate["type"] == baseline["type"]
+    assert candidate["prompt_token_ids"] == baseline["prompt_token_ids"]
+    baseline_mm = baseline["mm_kwargs"].get_data()
+    candidate_mm = candidate["mm_kwargs"].get_data()
+    assert candidate_mm.keys() == baseline_mm.keys()
+    assert torch.equal(
+        candidate_mm["pixel_values_videos"], baseline_mm["pixel_values_videos"]
+    )
+    assert torch.equal(candidate_mm["video_grid_thw"], baseline_mm["video_grid_thw"])
+    assert candidate_mm["timestamps"] == baseline_mm["timestamps"]
+
+    baseline_phs = baseline["mm_placeholders"]["video"]
+    candidate_phs = candidate["mm_placeholders"]["video"]
+    assert len(candidate_phs) == len(baseline_phs)
+    for candidate_ph, baseline_ph in zip(candidate_phs, baseline_phs):
+        assert candidate_ph.offset == baseline_ph.offset
+        assert candidate_ph.length == baseline_ph.length
+        assert torch.equal(candidate_ph.is_embed, baseline_ph.is_embed)
+
+    assert candidate["mm_hashes"]["video"] != baseline["mm_hashes"]["video"]

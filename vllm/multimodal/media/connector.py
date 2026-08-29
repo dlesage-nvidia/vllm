@@ -33,7 +33,10 @@ from vllm.connections import (
 from vllm.exceptions import VLLMUnprocessableEntityError, VLLMValidationError
 from vllm.logger import init_logger
 from vllm.multimodal.image_decoders import NVIMAGECODEC_IMAGE_BACKEND
-from vllm.multimodal.video import get_video_loader_backend_for_processor
+from vllm.multimodal.video import (
+    resolve_video_io_kwargs,
+    validate_video_processor_output_layout,
+)
 from vllm.utils.registry import ExtensionManager
 
 from .audio import AudioEmbeddingMediaIO, AudioMediaIO
@@ -819,11 +822,13 @@ class MediaConnector:
         image_io = ImageMediaIO(
             **({"image_mode": image_mode} | self.media_io_kwargs.get("image", {}))
         )
-        video_io_kwargs = dict(self.media_io_kwargs.get("video", {}))
-        if "video_backend" not in video_io_kwargs and (
-            video_backend := get_video_loader_backend_for_processor(video_processor)
-        ):
-            video_io_kwargs["video_backend"] = video_backend
+        video_io_kwargs = resolve_video_io_kwargs(
+            self.media_io_kwargs.get("video"), video_processor
+        )
+        if VideoMediaIO.uses_pynvvideocodec(video_io_kwargs):
+            validate_video_processor_output_layout(
+                video_processor, video_io_kwargs.get("output_layout")
+            )
         video_io = VideoMediaIO(image_io, **video_io_kwargs)
 
         return self.load_from_url(
@@ -849,11 +854,13 @@ class MediaConnector:
         image_io = ImageMediaIO(
             **({"image_mode": image_mode} | self.media_io_kwargs.get("image", {}))
         )
-        video_io_kwargs = dict(self.media_io_kwargs.get("video", {}))
-        if "video_backend" not in video_io_kwargs and (
-            video_backend := get_video_loader_backend_for_processor(video_processor)
-        ):
-            video_io_kwargs["video_backend"] = video_backend
+        video_io_kwargs = resolve_video_io_kwargs(
+            self.media_io_kwargs.get("video"), video_processor
+        )
+        if VideoMediaIO.uses_pynvvideocodec(video_io_kwargs):
+            validate_video_processor_output_layout(
+                video_processor, video_io_kwargs.get("output_layout")
+            )
         video_io = VideoMediaIO(image_io, **video_io_kwargs)
 
         return await self.load_from_url_async(

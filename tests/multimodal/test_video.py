@@ -19,6 +19,7 @@ from vllm.models.minimax_m3.common.mm_preprocess import MiniMaxM3VideoBackend
 from vllm.multimodal.video import (
     PYNVVIDEOCODEC_VIDEO_BACKEND,
     VIDEO_LOADER_REGISTRY,
+    VLLM_VIDEO_INPUT_DATA_FORMAT_KEY,
     DynamicVideoBackend,
     GLM46VVideoBackend,
     Molmo2VideoBackend,
@@ -28,6 +29,7 @@ from vllm.multimodal.video import (
     VideoLoader,
     VideoSourceMetadata,
     VideoTargetMetadata,
+    configure_pynvvideocodec_video_io,
     get_video_loader_backend_for_processor,
 )
 from vllm.multimodal.video_decoders import decode_video, resolve_video_backend_kwargs
@@ -36,6 +38,7 @@ from vllm.multimodal.video_decoders.pynvvideocodec import (
     PyNvVideoCodecDecoderSlot,
     PyNvVideoCodecVideoBackendMixin,
     _pynv_decoder_pool,
+    validate_pynvvideocodec_output_layout,
 )
 from vllm.platforms import current_platform
 from vllm.transformers_utils.processor import get_video_processor_cls_name_from_config
@@ -64,10 +67,12 @@ def _fresh_decoder_pool():
     old_active = pool.active
     old_cond = pool.cond
     old_max = pool.max_slots
+    old_output_layout = pool.output_layout
     pool.slots = []
     pool.active = 0
     pool.cond = threading.Condition()
     pool.max_slots = None
+    pool.output_layout = None
     try:
         yield pool
     finally:
@@ -75,6 +80,7 @@ def _fresh_decoder_pool():
         pool.active = old_active
         pool.cond = old_cond
         pool.max_slots = old_max
+        pool.output_layout = old_output_layout
 
 
 @VIDEO_LOADER_REGISTRY.register("test_video_loader_1")
@@ -394,6 +400,49 @@ def test_pynvvideocodec_corrupted_videos_raise_value_error():
         assert frames.shape[0] == 1
 
 
+@pytest.mark.skipif(not current_platform.is_cuda(), reason="Requires CUDA")
+def test_pynvvideocodec_rgbp_matches_rgb_and_tchw_host_contract(tmp_path: Path):
+    import PyNvVideoCodec as nvc
+    import torch
+
+    video = create_long_gop_video(num_frames=12, width=320, height=240, fps=6)
+    video_path = tmp_path / "rgbp-parity.mp4"
+    video_path.write_bytes(video)
+    stream = torch.cuda.Stream()
+    rgb_slot = PyNvVideoCodecDecoderSlot(stream, "thwc")
+    rgbp_slot = PyNvVideoCodecDecoderSlot(stream, "tchw")
+    frame_indices = [0, 3, 7, 11]
+
+    with torch.cuda.stream(stream):
+        rgb_decoder = rgb_slot.get_decoder(str(video_path), nvc, device_index=0)
+        rgbp_decoder = rgbp_slot.get_decoder(str(video_path), nvc, device_index=0)
+        rgb_refs = rgb_decoder.get_batch_frames_by_index(frame_indices)
+        rgbp_refs = rgbp_decoder.get_batch_frames_by_index(frame_indices)
+        rgb = torch.stack([torch.from_dlpack(frame) for frame in rgb_refs])
+        rgbp = torch.stack([torch.from_dlpack(frame) for frame in rgbp_refs])
+        stream.synchronize()
+
+    assert rgb.shape == (4, 240, 320, 3)
+    assert rgbp.shape == (4, 3, 240, 320)
+    assert torch.equal(rgb, rgbp.permute(0, 2, 3, 1))
+
+    with _fresh_decoder_pool():
+        loader = VIDEO_LOADER_REGISTRY.load(PYNVVIDEOCODEC_VIDEO_BACKEND)
+        host_frames, metadata = loader.load_bytes(
+            video,
+            num_frames=4,
+            hw_decoders=1,
+            output_layout="tchw",
+        )
+
+    assert host_frames.shape == (4, 3, 240, 320)
+    assert host_frames.dtype == np.uint8
+    assert host_frames.flags.c_contiguous
+    np.testing.assert_array_equal(host_frames.transpose(0, 2, 3, 1), rgb.cpu().numpy())
+    assert metadata[VLLM_VIDEO_INPUT_DATA_FORMAT_KEY] == "channels_first"
+    assert metadata["frames_indices"] == frame_indices
+
+
 @pytest.mark.parametrize("hw_decoders", [1, 3])
 def test_pynvvideocodec_decoder_slots_are_bounded(
     monkeypatch: pytest.MonkeyPatch,
@@ -451,12 +500,50 @@ def test_pynvvideocodec_decoder_slots_are_configured_once(
     monkeypatch: pytest.MonkeyPatch,
 ):
     monkeypatch.setattr(_pynv_decoder_pool, "max_slots", None)
+    monkeypatch.setattr(_pynv_decoder_pool, "output_layout", None)
 
     PyNvVideoCodecVideoBackendMixin._configure_decoder_slots(2)
     PyNvVideoCodecVideoBackendMixin._configure_decoder_slots(2)
 
     with pytest.raises(RuntimeError, match="already configured as 2, got 3"):
         PyNvVideoCodecVideoBackendMixin._configure_decoder_slots(3)
+
+    with pytest.raises(RuntimeError, match="already configured as 'thwc'"):
+        PyNvVideoCodecVideoBackendMixin._configure_decoder_slots(2, "tchw")
+
+
+def test_pynvvideocodec_static_config_freezes_pool_before_decode():
+    video_kwargs = {
+        "backend": "pynvvideocodec",
+        "hw_decoders": 3,
+        "output_layout": "tchw",
+    }
+
+    with _fresh_decoder_pool() as pool:
+        configure_pynvvideocodec_video_io(video_kwargs, "Qwen3VLVideoProcessor")
+        configure_pynvvideocodec_video_io(video_kwargs, "Qwen3VLVideoProcessor")
+
+        assert pool.max_slots == 3
+        assert pool.output_layout == "tchw"
+
+        with pytest.raises(RuntimeError, match="already configured as 3"):
+            PyNvVideoCodecVideoBackendMixin._configure_decoder_slots(2, "tchw")
+        with pytest.raises(RuntimeError, match="already configured as 'tchw'"):
+            PyNvVideoCodecVideoBackendMixin._configure_decoder_slots(3, "thwc")
+
+
+def test_custom_video_layout_does_not_configure_pynvvideocodec_pool():
+    with _fresh_decoder_pool() as pool:
+        configure_pynvvideocodec_video_io(
+            {
+                "video_backend": "test_video_loader_1",
+                "output_layout": "tchw",
+            },
+            "plugin-owned",
+        )
+
+        assert pool.max_slots is None
+        assert pool.output_layout is None
 
 
 def test_pynvvideocodec_failed_rebuild_invalidates_decoder_slot():
@@ -494,11 +581,13 @@ def test_pynvvideocodec_failed_rebuild_invalidates_decoder_slot():
     old_active = pool.active
     old_cond = pool.cond
     old_max = pool.max_slots
+    old_output_layout = pool.output_layout
     try:
         pool.slots = [slot]
         pool.active = 1
         pool.cond = threading.Condition()
         pool.max_slots = 1
+        pool.output_layout = "thwc"
 
         with (
             pytest.raises(RuntimeError, match="construct failed"),
@@ -524,6 +613,7 @@ def test_pynvvideocodec_failed_rebuild_invalidates_decoder_slot():
         pool.active = old_active
         pool.cond = old_cond
         pool.max_slots = old_max
+        pool.output_layout = old_output_layout
 
 
 @pytest.mark.skipif(not current_platform.is_cuda(), reason="Requires CUDA")
@@ -541,11 +631,13 @@ def test_pynvvideocodec_h200_recovers_after_unsupported_8k():
     old_active = _pynv_decoder_pool.active
     old_cond = _pynv_decoder_pool.cond
     old_max = _pynv_decoder_pool.max_slots
+    old_output_layout = _pynv_decoder_pool.output_layout
     try:
         _pynv_decoder_pool.slots = []
         _pynv_decoder_pool.active = 0
         _pynv_decoder_pool.cond = threading.Condition()
         _pynv_decoder_pool.max_slots = None
+        _pynv_decoder_pool.output_layout = None
 
         loader = VIDEO_LOADER_REGISTRY.load(PYNVVIDEOCODEC_VIDEO_BACKEND)
         frames_before, _ = loader.load_bytes(
@@ -581,6 +673,7 @@ def test_pynvvideocodec_h200_recovers_after_unsupported_8k():
         _pynv_decoder_pool.active = old_active
         _pynv_decoder_pool.cond = old_cond
         _pynv_decoder_pool.max_slots = old_max
+        _pynv_decoder_pool.output_layout = old_output_layout
 
 
 def test_pynvvideocodec_cross_subclass_shares_single_pool():
@@ -609,6 +702,7 @@ def test_pynvvideocodec_cross_subclass_shares_single_pool():
 
     with _fresh_decoder_pool() as pool:
         pool.max_slots = 2
+        pool.output_layout = "thwc"
 
         orig_create = PyNvVideoCodecVideoBackendMixin._create_decoder_slot
         PyNvVideoCodecVideoBackendMixin._create_decoder_slot = classmethod(
@@ -653,7 +747,20 @@ def test_pynvvideocodec_rejects_invalid_hw_decoders(hw_decoders: object):
         )
 
 
-def test_pynvvideocodec_decoder_slot_retains_simple_decoder():
+@pytest.mark.parametrize("output_layout", [None, True, "nhwc", "nchw", "TCHW"])
+def test_pynvvideocodec_rejects_invalid_output_layout(output_layout: object):
+    with pytest.raises(ValueError, match="output_layout must be either"):
+        validate_pynvvideocodec_output_layout(output_layout)
+
+
+@pytest.mark.parametrize(
+    ("output_layout", "expected_color_type"),
+    [("thwc", "rgb"), ("tchw", "rgbp")],
+)
+def test_pynvvideocodec_decoder_slot_retains_simple_decoder(
+    output_layout: str,
+    expected_color_type: str,
+):
     events: list[tuple[object, ...]] = []
 
     class FakeStream:
@@ -668,6 +775,7 @@ def test_pynvvideocodec_decoder_slot_retains_simple_decoder():
                     kwargs["gpu_id"],
                     kwargs["cuda_stream"],
                     kwargs["decoder_cache_size"],
+                    kwargs["output_color_type"],
                 )
             )
 
@@ -677,10 +785,11 @@ def test_pynvvideocodec_decoder_slot_retains_simple_decoder():
     class FakeNvc:
         class OutputColorType:
             RGB = "rgb"
+            RGBP = "rgbp"
 
         SimpleDecoder = FakeDecoder
 
-    slot = PyNvVideoCodecDecoderSlot(FakeStream())
+    slot = PyNvVideoCodecDecoderSlot(FakeStream(), output_layout)  # type: ignore[arg-type]
 
     decoder = slot.get_decoder("first.mp4", FakeNvc, device_index=7)
     assert slot.get_decoder("first.mp4", FakeNvc, device_index=7) is decoder
@@ -693,10 +802,25 @@ def test_pynvvideocodec_decoder_slot_retains_simple_decoder():
             7,
             "cuda-stream",
             PYNVVIDEOCODEC_DECODER_CACHE_SIZE,
+            expected_color_type,
         ),
         ("reconfigure", "second.mp4"),
     ]
     assert slot.source_path == "second.mp4"
+
+
+def test_pynvvideocodec_tchw_requires_rgbp_support():
+    class FakeStream:
+        cuda_stream = "cuda-stream"
+
+    class FakeNvc:
+        class OutputColorType:
+            RGB = "rgb"
+
+    slot = PyNvVideoCodecDecoderSlot(FakeStream(), "tchw")
+
+    with pytest.raises(RuntimeError, match="does not support OutputColorType.RGBP"):
+        slot.get_decoder("video.mp4", FakeNvc, device_index=0)
 
 
 # ============================================================================

@@ -15,7 +15,12 @@ from vllm import envs
 from vllm.logger import init_logger
 from vllm.multimodal.image_decoders import NVIMAGECODEC_IMAGE_BACKEND
 
-from ..video import VIDEO_LOADER_REGISTRY
+from ..video import (
+    PYNVVIDEOCODEC_VIDEO_BACKEND,
+    VIDEO_LOADER_REGISTRY,
+    VLLM_VIDEO_INPUT_DATA_FORMAT_KEY,
+    uses_pynvvideocodec_video_io,
+)
 from .base import MediaIO, MediaWithBytes
 from .image import ImageMediaIO
 from .image_decode_service import (
@@ -45,12 +50,19 @@ class VideoMediaIO(MediaIO[MediaWithBytes[tuple[npt.NDArray, dict[str, Any]]]]):
     error handling.
     """
 
+    @staticmethod
+    def uses_pynvvideocodec(kwargs: dict[str, Any]) -> bool:
+        return uses_pynvvideocodec_video_io(kwargs)
+
     @classmethod
     def merge_kwargs(
         cls,
         default_kwargs: dict[str, Any] | None,
         runtime_kwargs: dict[str, Any] | None,
     ) -> dict[str, Any]:
+        default_kwargs = dict(default_kwargs or {})
+        default_uses_pynvvideocodec = cls.uses_pynvvideocodec(default_kwargs)
+        stripped_pynvvideocodec_backend = False
         if runtime_kwargs:
             # Decoder GPU memory is reserved from the startup value.
             runtime_kwargs = dict(runtime_kwargs)
@@ -73,8 +85,29 @@ class VideoMediaIO(MediaIO[MediaWithBytes[tuple[npt.NDArray, dict[str, Any]]]]):
                         runtime_kwargs = {
                             k: v for k, v in runtime_kwargs.items() if k != key
                         }
+                        stripped_pynvvideocodec_backend |= (
+                            requested == PYNVVIDEOCODEC_VIDEO_BACKEND
+                        )
+
+            if stripped_pynvvideocodec_backend:
+                runtime_kwargs.pop("output_layout", None)
 
         merged = super().merge_kwargs(default_kwargs, runtime_kwargs)
+        if default_uses_pynvvideocodec:
+            if cls.uses_pynvvideocodec(merged):
+                # The static PyNvVideoCodec layout owns the retained decoder
+                # slots and cannot be changed by a request.
+                if "output_layout" in default_kwargs:
+                    merged["output_layout"] = default_kwargs["output_layout"]
+                else:
+                    merged.pop("output_layout", None)
+            else:
+                # A request may fall back to another loader or codec. Remove
+                # static PyNv-only options, while preserving an explicitly
+                # request-owned output_layout for a custom loader.
+                merged.pop("hw_decoders", None)
+                if not runtime_kwargs or "output_layout" not in runtime_kwargs:
+                    merged.pop("output_layout", None)
         # fps and num_frames interact with each other, so if either is
         # overridden at request time, wipe the other from defaults to
         # avoid unintuitive cross-field interactions.
@@ -118,7 +151,17 @@ class VideoMediaIO(MediaIO[MediaWithBytes[tuple[npt.NDArray, dict[str, Any]]]]):
         video = self.video_loader.load_bytes(
             data, num_frames=self.num_frames, **self.kwargs
         )
-        return MediaWithBytes(video, data)
+        input_data_format = (
+            video[1].get(VLLM_VIDEO_INPUT_DATA_FORMAT_KEY)
+            if isinstance(video, tuple) and isinstance(video[1], dict)
+            else None
+        )
+        io_config = (
+            {"pynvvideocodec_input_data_format": input_data_format}
+            if input_data_format is not None
+            else None
+        )
+        return MediaWithBytes(video, data, io_config)
 
     def _jpeg_sequence_frame_count(self, data: str) -> int:
         if self.num_frames == 0:
@@ -300,15 +343,13 @@ class VideoMediaIO(MediaIO[MediaWithBytes[tuple[npt.NDArray, dict[str, Any]]]]):
         *,
         video_format: str = "JPEG",
     ) -> str:
-        video = media
-
         if video_format == "JPEG":
             encode_frame = partial(
                 self.image_io.encode_base64,
                 image_format=video_format,
             )
 
-            return ",".join(encode_frame(Image.fromarray(frame)) for frame in video)
+            return ",".join(encode_frame(Image.fromarray(frame)) for frame in media)
 
         msg = "Only JPEG format is supported for now."
         raise NotImplementedError(msg)

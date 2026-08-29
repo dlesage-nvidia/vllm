@@ -117,6 +117,21 @@ class BaseRenderer(ABC, Generic[_T]):
             # is 0). Lives in the API-server process only.
             mm_config = config.model_config.multimodal_config
             if mm_config is not None:
+                from vllm.multimodal.video import (
+                    configure_pynvvideocodec_video_io,
+                    uses_pynvvideocodec_video_io,
+                )
+
+                video_io_kwargs = mm_config.media_io_kwargs.get("video", {})
+                if uses_pynvvideocodec_video_io(video_io_kwargs):
+                    from vllm.transformers_utils.processor import (
+                        get_video_processor_cls_name,
+                    )
+
+                    configure_pynvvideocodec_video_io(
+                        video_io_kwargs,
+                        get_video_processor_cls_name(config.model_config),
+                    )
                 maybe_init_mm_gpu_ipc_pool(
                     mm_config.mm_ipc_gpu_memory_gb,
                     config.parallel_config._api_process_count,

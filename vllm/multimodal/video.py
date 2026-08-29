@@ -8,8 +8,11 @@ import numpy as np
 import numpy.typing as npt
 import torch
 
+from vllm import envs
 from vllm.logger import init_logger
 from vllm.multimodal.video_decoders import (
+    PYNVVIDEOCODEC_DEFAULT_HW_DECODERS,
+    PYNVVIDEOCODEC_DEFAULT_OUTPUT_LAYOUT,
     PYNVVIDEOCODEC_VIDEO_BACKEND,
     VideoDecoderBackend,
     VideoSourceMetadata,
@@ -27,6 +30,73 @@ except ImportError:
 
 
 logger = init_logger(__name__)
+
+VLLM_VIDEO_INPUT_DATA_FORMAT_KEY = "_vllm_input_data_format"
+PYNVVIDEOCODEC_TCHW_VIDEO_PROCESSORS = frozenset(
+    {
+        "Cosmos3EdgeVideoProcessor",
+        "Qwen3VLVideoProcessor",
+    }
+)
+
+
+def validate_video_processor_output_layout(
+    video_processor: str | None,
+    output_layout: object,
+) -> None:
+    if (
+        output_layout == "tchw"
+        and video_processor not in PYNVVIDEOCODEC_TCHW_VIDEO_PROCESSORS
+    ):
+        raise ValueError(
+            "PyNvVideoCodec output_layout='tchw' is not supported by video "
+            f"processor {video_processor!r}; supported processors: "
+            f"{sorted(PYNVVIDEOCODEC_TCHW_VIDEO_PROCESSORS)}"
+        )
+
+
+def resolve_video_io_kwargs(
+    video_kwargs: dict[str, Any] | None,
+    video_processor: str | None,
+) -> dict[str, Any]:
+    resolved = dict(video_kwargs or {})
+    if "video_backend" not in resolved and (
+        video_backend := get_video_loader_backend_for_processor(video_processor)
+    ):
+        resolved["video_backend"] = video_backend
+    return resolved
+
+
+def uses_pynvvideocodec_video_io(video_kwargs: dict[str, Any]) -> bool:
+    video_loader_backend = (
+        video_kwargs.get("video_backend") or envs.VLLM_VIDEO_LOADER_BACKEND
+    )
+    return (
+        video_loader_backend == PYNVVIDEOCODEC_VIDEO_BACKEND
+        or video_kwargs.get("backend") == PYNVVIDEOCODEC_VIDEO_BACKEND
+    )
+
+
+def configure_pynvvideocodec_video_io(
+    video_kwargs: dict[str, Any] | None,
+    video_processor: str | None,
+) -> None:
+    """Validate and freeze a statically configured PyNvVideoCodec path."""
+    resolved = resolve_video_io_kwargs(video_kwargs, video_processor)
+    if not uses_pynvvideocodec_video_io(resolved):
+        return
+
+    output_layout = resolved.get("output_layout", PYNVVIDEOCODEC_DEFAULT_OUTPUT_LAYOUT)
+    validate_video_processor_output_layout(video_processor, output_layout)
+
+    from vllm.multimodal.video_decoders.pynvvideocodec import (
+        configure_pynvvideocodec_decoder_pool,
+    )
+
+    configure_pynvvideocodec_decoder_pool(
+        resolved.get("hw_decoders", PYNVVIDEOCODEC_DEFAULT_HW_DECODERS),
+        output_layout,
+    )
 
 
 class VideoLoaderRegistry(ExtensionManager):
@@ -251,6 +321,9 @@ class VideoBackend(VideoLoader):
                 - ``hw_decoders`` (PyNvVideoCodec): maximum number of
                   concurrent decoder slots. Defaults to 2 and must be a
                   positive integer.
+                - ``output_layout`` (PyNvVideoCodec): decoded host layout,
+                  either ``"thwc"`` (default) or ``"tchw"``. The latter uses
+                  planar RGBP output and is restricted to audited processors.
                 - ``pool_size`` / ``timeout_sec`` (DeepStream): decoder pool
                   size and pool acquisition timeout in seconds.
 
@@ -279,11 +352,17 @@ class VideoBackend(VideoLoader):
                 len(valid),
             )
 
-        return frames, cls.create_hf_metadata(
+        metadata = cls.create_hf_metadata(
             source=source,
             video_backend=f"{backend}{cls._sampling_suffix}",
             valid_frame_indices=valid,
         )
+        if (
+            backend == PYNVVIDEOCODEC_VIDEO_BACKEND
+            and backend_kwargs["output_layout"] == "tchw"
+        ):
+            metadata[VLLM_VIDEO_INPUT_DATA_FORMAT_KEY] = "channels_first"
+        return frames, metadata
 
 
 @VIDEO_LOADER_REGISTRY.register(PYNVVIDEOCODEC_VIDEO_BACKEND, requires_gpu=True)
@@ -295,7 +374,8 @@ class PyNvVideoCodecVideoBackend(VideoBackend):
     the process-local multimodal GPU memory pool before decoding the selected
     frames into VRAM. Decoded frames are copied into pinned host memory before
     the lease is released, so downstream preprocessing continues to receive a
-    CPU ``np.ndarray`` in NHWC RGB format.
+    CPU ``np.ndarray``. The default is THWC RGB; audited processors may opt
+    into TCHW RGBP to avoid a downstream CPU layout copy.
     """
 
     @classmethod

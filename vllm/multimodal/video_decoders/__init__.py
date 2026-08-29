@@ -6,7 +6,9 @@ from typing import Any, Literal
 
 from .base import (
     PYNVVIDEOCODEC_DEFAULT_HW_DECODERS,
+    PYNVVIDEOCODEC_DEFAULT_OUTPUT_LAYOUT,
     PYNVVIDEOCODEC_VIDEO_BACKEND,
+    PyNvVideoCodecOutputLayout,
     VideoSourceMetadata,
     VideoTargetMetadata,
     check_frame_pixel_limit,
@@ -25,6 +27,7 @@ _BACKEND_OPTION_DEFAULTS: dict[str, dict[str, Any]] = {
     },
     PYNVVIDEOCODEC_VIDEO_BACKEND: {
         "hw_decoders": PYNVVIDEOCODEC_DEFAULT_HW_DECODERS,
+        "output_layout": PYNVVIDEOCODEC_DEFAULT_OUTPUT_LAYOUT,
     },
     "deepstream": {
         "pool_size": None,
@@ -100,7 +103,9 @@ def decode_video(
 
 __all__ = [
     "PYNVVIDEOCODEC_DEFAULT_HW_DECODERS",
+    "PYNVVIDEOCODEC_DEFAULT_OUTPUT_LAYOUT",
     "PYNVVIDEOCODEC_VIDEO_BACKEND",
+    "PyNvVideoCodecOutputLayout",
     "VideoDecoderBackend",
     "VideoSourceMetadata",
     "VideoTargetMetadata",

@@ -1037,11 +1037,22 @@ vllm serve Qwen/Qwen3-VL-30B-A3B-Instruct \
   Because vLLM reserves GPU memory for these slots at startup, this value cannot
   be overridden per request. Benchmark before increasing it because each
   additional slot increases the GPU memory reservation.
+- `output_layout`: Host output layout, either `"thwc"` (default) or `"tchw"`.
+  The `"tchw"` path requests planar RGBP output and avoids the subsequent
+  channels-last to channels-first CPU copy. It currently supports Qwen3-VL and
+  Cosmos3-Edge. Like `hw_decoders`, it is fixed in server configuration and
+  cannot be overridden per request.
 
 ```bash
 # Example: explicitly use the recommended 2 hardware decoders
 vllm serve Qwen/Qwen3-VL-30B-A3B-Instruct \
   --media-io-kwargs '{"video": {"backend": "pynvvideocodec", "hw_decoders": 2}}'
+```
+
+```bash
+# Example: decode Qwen3-VL video directly into the processor's TCHW layout
+vllm serve Qwen/Qwen3-VL-30B-A3B-Instruct \
+  --media-io-kwargs '{"video": {"backend": "pynvvideocodec", "output_layout": "tchw"}}'
 ```
 
 #### Video Frame Recovery

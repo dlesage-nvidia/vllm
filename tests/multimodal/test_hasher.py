@@ -151,10 +151,16 @@ def test_hash_separates_video_frame_decode_config():
     nvimagecodec = item_for_hash(
         {"frame_io_configs": [{"backend": "nvimagecodec"}, None]}
     )
+    pynvvideocodec_tchw = item_for_hash(
+        {"pynvvideocodec_input_data_format": "channels_first"}
+    )
 
     hasher = MultiModalHasher
     assert hasher.hash_kwargs("blake3", video=pillow) != hasher.hash_kwargs(
         "blake3", video=nvimagecodec
+    )
+    assert hasher.hash_kwargs("blake3", video=pillow) != hasher.hash_kwargs(
+        "blake3", video=pynvvideocodec_tchw
     )
 
 

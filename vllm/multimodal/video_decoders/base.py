@@ -7,6 +7,8 @@ from vllm import envs
 
 PYNVVIDEOCODEC_VIDEO_BACKEND: Literal["pynvvideocodec"] = "pynvvideocodec"
 PYNVVIDEOCODEC_DEFAULT_HW_DECODERS = 2
+PyNvVideoCodecOutputLayout = Literal["thwc", "tchw"]
+PYNVVIDEOCODEC_DEFAULT_OUTPUT_LAYOUT: PyNvVideoCodecOutputLayout = "thwc"
 
 
 class VideoTargetMetadata(NamedTuple):

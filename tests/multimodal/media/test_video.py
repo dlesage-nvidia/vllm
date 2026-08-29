@@ -23,17 +23,21 @@ from vllm.assets.video import (
     video_to_pil_images_list,
 )
 from vllm.multimodal.media import ImageMediaIO, MediaWithBytes, VideoMediaIO
+from vllm.multimodal.media.connector import MediaConnector
 from vllm.multimodal.media.image_decode_service import (
     shutdown_nvimagecodec_decode_service,
 )
 from vllm.multimodal.video import (
     PYNVVIDEOCODEC_VIDEO_BACKEND,
     VIDEO_LOADER_REGISTRY,
+    VLLM_VIDEO_INPUT_DATA_FORMAT_KEY,
     VideoLoader,
+    validate_video_processor_output_layout,
 )
 from vllm.multimodal.video_decoders.pynvvideocodec import (
     PyNvVideoCodecVideoBackendMixin,
     _pynvvc_frames_to_nhwc,
+    _pynvvc_frames_to_tchw,
 )
 
 from ..utils import cosine_similarity, create_video_from_image, normalize_image
@@ -53,6 +57,18 @@ class Assert10Frames1FPSVideoLoader(VideoLoader):
         assert num_frames == 10, "bad num_frames"
         assert fps == 1.0, "bad fps"
         return FAKE_OUTPUT_2
+
+
+@VIDEO_LOADER_REGISTRY.register("test_layout_kwargs_passthrough")
+class LayoutKwargsPassthroughVideoLoader(VideoLoader):
+    received_kwargs: dict = {}
+
+    @classmethod
+    def load_bytes(
+        cls, data: bytes, num_frames: int = -1, **kwargs
+    ) -> tuple[npt.NDArray, dict]:
+        cls.received_kwargs = kwargs
+        return np.zeros((1, 2, 4, 3), dtype=np.uint8), {}
 
 
 def test_video_media_io_kwargs(monkeypatch: pytest.MonkeyPatch):
@@ -623,6 +639,56 @@ class TestMergeKwargsGpuBackendPolicy:
         )
         assert result["hw_decoders"] == 2
 
+    def test_prevents_request_level_output_layout_override(self):
+        result = VideoMediaIO.merge_kwargs(
+            default_kwargs={
+                "backend": "pynvvideocodec",
+                "output_layout": "tchw",
+            },
+            runtime_kwargs={"output_layout": "thwc"},
+        )
+        assert result["output_layout"] == "tchw"
+
+    @pytest.mark.parametrize("backend", ["opencv", "pyav", "torchcodec"])
+    def test_cpu_codec_fallback_drops_static_pynv_options(self, backend: str):
+        result = VideoMediaIO.merge_kwargs(
+            default_kwargs={
+                "backend": "pynvvideocodec",
+                "hw_decoders": 2,
+                "output_layout": "tchw",
+            },
+            runtime_kwargs={"backend": backend},
+        )
+        assert result["backend"] == backend
+        assert "hw_decoders" not in result
+        assert "output_layout" not in result
+
+    def test_custom_loader_output_layout_passes_through(self):
+        result = VideoMediaIO.merge_kwargs(
+            default_kwargs={"video_backend": "test_layout_kwargs_passthrough"},
+            runtime_kwargs={"output_layout": "custom-layout"},
+        )
+        assert result["output_layout"] == "custom-layout"
+
+    def test_custom_loader_fallback_keeps_request_owned_output_layout(self):
+        result = VideoMediaIO.merge_kwargs(
+            default_kwargs={
+                "backend": "pynvvideocodec",
+                "hw_decoders": 2,
+                "output_layout": "tchw",
+            },
+            runtime_kwargs={
+                "video_backend": "test_layout_kwargs_passthrough",
+                "backend": "opencv",
+                "output_layout": "custom-layout",
+            },
+        )
+        assert result == {
+            "video_backend": "test_layout_kwargs_passthrough",
+            "backend": "opencv",
+            "output_layout": "custom-layout",
+        }
+
     @pytest.mark.parametrize("backend", ["opencv", "pyav", "torchcodec"])
     def test_software_video_backend_passes_through(self, backend: str):
         result = VideoMediaIO.merge_kwargs(
@@ -704,10 +770,7 @@ class TestMergeKwargsGpuBackendPolicy:
 
 @pytest.mark.parametrize("layout", ["nhwc", "nchw"])
 def test_pynvvc_frames_normalized_to_nhwc(layout: str):
-    """PyNvVideoCodec frame batches are normalized to NHWC regardless of the
-    per-frame layout the decoder emits (it has varied across versions), so the
-    HF video processors (which materialize a PIL image per frame) receive the
-    same NHWC shape as every other video backend."""
+    """The default RGB path preserves the public THWC video contract."""
     torch = pytest.importorskip("torch")
 
     n, h, w, c = 4, 5, 6, 3
@@ -719,3 +782,139 @@ def test_pynvvc_frames_normalized_to_nhwc(layout: str):
     assert out.shape == (n, h, w, c)
     assert out.is_contiguous()
     assert torch.equal(out, nhwc)  # content preserved / correctly transposed
+
+
+def test_pynvvc_rgbp_frames_remain_tchw():
+    torch = pytest.importorskip("torch")
+
+    frames = torch.arange(4 * 3 * 5 * 6, dtype=torch.uint8).reshape(4, 3, 5, 6)
+
+    out = _pynvvc_frames_to_tchw(frames)
+
+    assert out.shape == (4, 3, 5, 6)
+    assert out.is_contiguous()
+    assert torch.equal(out, frames)
+
+
+def test_pynvvc_rgbp_rejects_channels_last_frames():
+    torch = pytest.importorskip("torch")
+    frames = torch.zeros((4, 5, 6, 3), dtype=torch.uint8)
+
+    with pytest.raises(ValueError, match="expected TCHW with three channels"):
+        _pynvvc_frames_to_tchw(frames)
+
+
+def test_pynvvideocodec_tchw_requires_audited_processor():
+    with pytest.raises(ValueError, match="not supported by video processor"):
+        validate_video_processor_output_layout(
+            "Qwen2VLVideoProcessor",
+            "tchw",
+        )
+
+
+@pytest.mark.parametrize(
+    "video_processor",
+    ["Qwen3VLVideoProcessor", "Cosmos3EdgeVideoProcessor"],
+)
+def test_pynvvideocodec_tchw_accepts_audited_processor(video_processor: str):
+    validate_video_processor_output_layout(video_processor, "tchw")
+
+
+def test_pynvvideocodec_processor_gate_runs_in_connector():
+    connector = MediaConnector(
+        media_io_kwargs={
+            "video": {
+                "backend": "pynvvideocodec",
+                "output_layout": "tchw",
+            }
+        }
+    )
+
+    with pytest.raises(ValueError, match="not supported by video processor"):
+        connector.fetch_video("unused", video_processor="Qwen2VLVideoProcessor")
+
+
+def test_custom_loader_receives_layout_and_video_processor_kwargs(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    connector = MediaConnector(
+        media_io_kwargs={
+            "video": {
+                "video_backend": "test_layout_kwargs_passthrough",
+                "output_layout": "custom-layout",
+                "video_processor": "custom-value",
+            }
+        }
+    )
+    monkeypatch.setattr(
+        connector,
+        "load_from_url",
+        lambda _url, media_io, **_kwargs: media_io.load_bytes(b"video"),
+    )
+
+    connector.fetch_video("unused", video_processor="Qwen3VLVideoProcessor")
+
+    assert LayoutKwargsPassthroughVideoLoader.received_kwargs == {
+        "output_layout": "custom-layout",
+        "video_processor": "custom-value",
+    }
+
+
+def test_pynvvideocodec_tchw_marks_media_hash_config():
+    frames = np.zeros((4, 3, 8, 10), dtype=np.uint8)
+    video_io = VideoMediaIO(
+        ImageMediaIO(),
+        backend="pynvvideocodec",
+        output_layout="tchw",
+    )
+    video_io.video_loader = SimpleNamespace(
+        load_bytes=lambda *args, **kwargs: (
+            frames,
+            {VLLM_VIDEO_INPUT_DATA_FORMAT_KEY: "channels_first"},
+        )
+    )
+
+    loaded = video_io.load_bytes(b"encoded-video")
+
+    assert loaded.io_config == {"pynvvideocodec_input_data_format": "channels_first"}
+
+
+def test_encode_base64_preserves_thwc_with_tchw_decoder_config():
+    captured: list[np.ndarray] = []
+    image_io = ImageMediaIO()
+
+    def capture_frame(image: Image.Image, **_kwargs) -> str:
+        captured.append(np.asarray(image))
+        return "encoded"
+
+    image_io.encode_base64 = capture_frame  # type: ignore[method-assign]
+    video_io = VideoMediaIO(
+        image_io,
+        backend="pynvvideocodec",
+        output_layout="tchw",
+    )
+    thwc = np.arange(2 * 5 * 7 * 3, dtype=np.uint8).reshape(2, 5, 7, 3)
+
+    encoded = video_io.encode_base64(thwc)
+
+    assert encoded == "encoded,encoded"
+    np.testing.assert_array_equal(captured, thwc)
+
+
+@pytest.mark.parametrize("shape", [(2, 5, 7), (2, 5, 7, 4)])
+def test_encode_base64_preserves_legacy_frame_shape(shape: tuple[int, ...]):
+    captured: list[np.ndarray] = []
+    image_io = ImageMediaIO()
+
+    def capture_frame(image: Image.Image, **_kwargs) -> str:
+        captured.append(np.asarray(image))
+        return "encoded"
+
+    image_io.encode_base64 = capture_frame  # type: ignore[method-assign]
+    video_io = VideoMediaIO(image_io)
+    video = np.arange(np.prod(shape), dtype=np.uint8).reshape(shape)
+
+    encoded = video_io.encode_base64(video)
+
+    assert encoded == "encoded,encoded"
+    np.testing.assert_array_equal(captured, video)

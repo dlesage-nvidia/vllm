@@ -10,8 +10,10 @@ from typing import Any
 
 import numpy as np
 import pytest
+import torch
 
 from vllm.multimodal import MULTIMODAL_REGISTRY
+from vllm.multimodal.video import VLLM_VIDEO_INPUT_DATA_FORMAT_KEY
 
 from ...utils import build_model_context
 
@@ -184,3 +186,66 @@ def test_processor_multi_video_list_kwargs(
     assert len(video_phs) == 2, (
         f"Expected exactly 2 video placeholders, got {len(video_phs)}"
     )
+
+
+def test_processor_tchw_matches_thwc() -> None:
+    ctx = build_model_context(
+        MODEL_ID,
+        limit_mm_per_prompt={"image": 0, "video": 1},
+    )
+    processor = MULTIMODAL_REGISTRY.create_processor(ctx.model_config)
+
+    num_frames, height, width = 8, 128, 160
+    thwc = np.arange(num_frames * height * width * 3, dtype=np.uint8).reshape(
+        num_frames, height, width, 3
+    )
+    metadata = {
+        "fps": 2.0,
+        "duration": num_frames / 2.0,
+        "total_num_frames": num_frames,
+        "frames_indices": list(range(num_frames)),
+        "video_backend": "pynvvideocodec",
+        "do_sample_frames": False,
+    }
+    prompt = "<|vision_start|><|video_pad|><|vision_end|>"
+
+    baseline = processor(
+        prompt,
+        mm_items=processor.info.parse_mm_data({"video": [(thwc, metadata)]}),
+        hf_processor_mm_kwargs={},
+    )
+    tchw_metadata = {
+        **metadata,
+        VLLM_VIDEO_INPUT_DATA_FORMAT_KEY: "channels_first",
+    }
+    candidate = processor(
+        prompt,
+        mm_items=processor.info.parse_mm_data(
+            {"video": [(thwc.transpose(0, 3, 1, 2).copy(), tchw_metadata)]}
+        ),
+        hf_processor_mm_kwargs={},
+    )
+
+    assert candidate.keys() == baseline.keys()
+    assert candidate["type"] == baseline["type"]
+    assert candidate["prompt_token_ids"] == baseline["prompt_token_ids"]
+    baseline_mm = baseline["mm_kwargs"].get_data()
+    candidate_mm = candidate["mm_kwargs"].get_data()
+    assert candidate_mm.keys() == baseline_mm.keys()
+    assert torch.equal(
+        candidate_mm["pixel_values_videos"], baseline_mm["pixel_values_videos"]
+    )
+    assert torch.equal(candidate_mm["video_grid_thw"], baseline_mm["video_grid_thw"])
+    assert candidate_mm["timestamps"] == baseline_mm["timestamps"]
+
+    baseline_phs = baseline["mm_placeholders"]["video"]
+    candidate_phs = candidate["mm_placeholders"]["video"]
+    assert len(candidate_phs) == len(baseline_phs)
+    for candidate_ph, baseline_ph in zip(candidate_phs, baseline_phs):
+        assert candidate_ph.offset == baseline_ph.offset
+        assert candidate_ph.length == baseline_ph.length
+        assert torch.equal(candidate_ph.is_embed, baseline_ph.is_embed)
+
+    # Raw THWC and TCHW representations intentionally have distinct cache
+    # hashes even though every model-visible processor output is identical.
+    assert candidate["mm_hashes"]["video"] != baseline["mm_hashes"]["video"]

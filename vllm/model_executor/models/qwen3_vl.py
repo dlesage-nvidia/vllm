@@ -94,6 +94,7 @@ from vllm.multimodal.processing import (
     PromptUpdate,
     PromptUpdateDetails,
 )
+from vllm.multimodal.video import VLLM_VIDEO_INPUT_DATA_FORMAT_KEY
 from vllm.multimodal.video_prune.evs import (
     compute_mrope_for_media,
     compute_retained_tokens_count,
@@ -1315,6 +1316,7 @@ class Qwen3VLMultiModalProcessor(BaseMultiModalProcessor[Qwen3VLProcessingInfo])
 
             for item_idx, item in enumerate(videos):
                 video_array, metadata = item
+                input_data_format = metadata.get(VLLM_VIDEO_INPUT_DATA_FORMAT_KEY)
 
                 # NOTE: @JJJYmmm new attr metadata.frames_indices indicates
                 # the sampled frames indices of pre-sampled videos, which is
@@ -1351,7 +1353,15 @@ class Qwen3VLMultiModalProcessor(BaseMultiModalProcessor[Qwen3VLProcessingInfo])
                     )
 
                 metadata = VideoMetadata(
-                    **{k: metadata[k] for k in metadata if k != "do_sample_frames"}
+                    **{
+                        k: metadata[k]
+                        for k in metadata
+                        if k
+                        not in (
+                            "do_sample_frames",
+                            VLLM_VIDEO_INPUT_DATA_FORMAT_KEY,
+                        )
+                    }
                 )
 
                 # Compute timestamps here where we have access to metadata
@@ -1373,6 +1383,8 @@ class Qwen3VLMultiModalProcessor(BaseMultiModalProcessor[Qwen3VLProcessingInfo])
                 # which would conflict with num_frames (mutually exclusive).
                 if "num_frames" in video_mm_kwargs and "fps" not in video_mm_kwargs:
                     video_mm_kwargs["fps"] = None
+                if input_data_format is not None:
+                    video_mm_kwargs["input_data_format"] = input_data_format
 
                 video_outputs = self.info.ctx.call_hf_processor(
                     self.info.get_hf_processor(**video_mm_kwargs),
