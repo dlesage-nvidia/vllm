@@ -36,6 +36,7 @@ _STARTUP_ONLY_KWARGS = (
     "num_decoders",
     "image_output",
     "coalesce_width",
+    "min_gpu_pixels",
 )
 
 

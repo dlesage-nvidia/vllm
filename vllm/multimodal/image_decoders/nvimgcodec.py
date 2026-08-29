@@ -107,6 +107,22 @@ _OUTPUT_LAYOUT = "pil"
 # On a device with no hardware engines the curve is flat (1.03x at every width)
 # and this value is irrelevant -- see the backends list in _Slot.
 DEFAULT_COALESCE_WIDTH = 5
+
+# Smallest image the accelerator will accept. Zero by default: nothing in the
+# defaults declines hardware decoding.
+#
+# It exists because the trade is host-vs-GPU, and which side is scarce is a
+# property of the deployment. Measured end to end at a 1024x576 pixel budget,
+# three arms in one session: on an RTX PRO 6000 at 1080p this backend is 1.17x
+# upstream, while on an A100 at 1080p it is 0.989x -- reproducibly below
+# parity, with the tightest error bars in that matrix (+-0.07 and +-0.03 over
+# three runs). The A100 sits at 98-99% GPU in every arm there, so it has no
+# headroom in which to spend the 23% of host CPU this frees, and the remaining
+# cost is putting decode work on an already-saturated device. Such a deployment
+# can raise this to keep hardware decoding for the large images that pay for
+# themselves while leaving small ones on Pillow.
+DEFAULT_MIN_GPU_PIXELS = 0
+MIN_GPU_PIXELS = DEFAULT_MIN_GPU_PIXELS
 COALESCE_WIDTH = DEFAULT_COALESCE_WIDTH
 # How long a caller parks hoping to be adopted. A fixed 2 ms was measured to be
 # self-defeating: a leader adopts only at the *start* of its native call, so
@@ -177,6 +193,35 @@ def _count(reason: str) -> None:
     # Plain Counter mutation under the GIL; contention here is irrelevant and a
     # lost increment in a stats counter is not worth a lock on the hot path.
     _COUNTERS[reason] += 1
+    _maybe_log_outcomes()
+
+
+# R10 is only satisfied if the outcomes actually reach a log. Emitting them
+# solely from shutdown() ties that to a clean renderer teardown, which does not
+# happen for every API server process: with --api-server-count 2 and 4, serving
+# 2560 images each, no outcome line was emitted at all. A run where the backend
+# silently declined everything was therefore indistinguishable from one where it
+# worked -- the exact confusion the counters exist to prevent. Emit periodically
+# as well, so the record survives any teardown path.
+_OUTCOME_LOG_EVERY = 4096
+_outcomes_logged_at = 0
+
+
+def _maybe_log_outcomes() -> None:
+    global _outcomes_logged_at
+    total = _COUNTERS.get("gpu", 0) + sum(
+        v for k, v in _COUNTERS.items() if k.startswith("pillow:")
+    )
+    if total - _outcomes_logged_at < _OUTCOME_LOG_EVERY:
+        return
+    _outcomes_logged_at = total
+    _log_outcomes("nvImageCodec image decode outcomes (running)")
+
+
+def _log_outcomes(prefix: str) -> None:
+    outcomes = stats()
+    if outcomes:
+        logger.info("%s: %s", prefix, json.dumps(dict(sorted(outcomes.items()))))
 
 
 def output_layout() -> str:
@@ -193,11 +238,12 @@ def configure(
     num_decoders: int = DEFAULT_NUM_DECODERS,
     output_layout: str = "pil",
     coalesce_width: int = DEFAULT_COALESCE_WIDTH,
+    min_gpu_pixels: int = DEFAULT_MIN_GPU_PIXELS,
 ) -> None:
     """Enable the backend for this process. Idempotent within a generation."""
     global _NUM_DECODERS, _CLOSED, _PID, _CREATED, _FREE, _DISABLED
     global _MAX_PARKED, _PARKED, _GENERATION, _ACTIVE, _OUTPUT_LAYOUT, _PARKED_BYTES
-    global COALESCE_WIDTH, _DECODE_EWMA_SECONDS
+    global COALESCE_WIDTH, _DECODE_EWMA_SECONDS, MIN_GPU_PIXELS
     if not isinstance(num_decoders, int) or isinstance(num_decoders, bool):
         raise ValueError("num_decoders must be an integer")
     if not 1 <= num_decoders <= 16:
@@ -225,6 +271,7 @@ def configure(
         _GENERATION += 1
         _OUTPUT_LAYOUT = output_layout
         COALESCE_WIDTH = coalesce_width
+        MIN_GPU_PIXELS = int(min_gpu_pixels)
         _DISABLED = False
         _CLOSED = False
 
@@ -258,9 +305,7 @@ def shutdown() -> None:
     del slots
     # R10. Without this a run where every image quietly fell back to Pillow is
     # indistinguishable from a run where the backend simply did not help.
-    outcomes = stats()
-    if outcomes:
-        logger.info("nvImageCodec image decode outcomes: %s", json.dumps(dict(sorted(outcomes.items()))))
+    _log_outcomes("nvImageCodec image decode outcomes")
 
 
 def _load_nvimgcodec():
@@ -459,6 +504,11 @@ def _eligible(data: bytes, image_mode: str | None, nvimgcodec, pool) -> Any:
     # E9: >8-bit would be silently rescaled with allow_any_depth=False.
     if precision != 8:
         _count("pillow:precision")
+        return None
+    if width * height < MIN_GPU_PIXELS:
+        # Deployment says images this small are not worth the accelerator; see
+        # MIN_GPU_PIXELS.
+        _count("pillow:below_min_gpu_pixels")
         return None
     # E10: preserve the existing pixel-limit error verbatim by leaving it to
     # the Pillow path rather than raising a second, differently-worded one.

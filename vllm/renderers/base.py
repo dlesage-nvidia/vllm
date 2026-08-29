@@ -152,6 +152,7 @@ class BaseRenderer(ABC, Generic[_T]):
                         mm_config.mm_processor_kwargs,
                     ),
                     coalesce_width=mm_config.get_image_coalesce_width(),
+                    min_gpu_pixels=mm_config.get_image_min_gpu_pixels(),
                 )
 
             if mm_processor_cache:

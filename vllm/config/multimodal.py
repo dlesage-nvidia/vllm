@@ -536,6 +536,21 @@ class MultiModalConfig:
             and VIDEO_LOADER_REGISTRY.backend_requires_gpu(codec_backend)
         )
 
+    def get_image_min_gpu_pixels(self) -> int:
+        """Smallest image the accelerator decoder will accept.
+
+        Exposed because the right value is a property of the deployment, not
+        the image: a model-bound instance can lose throughput decoding small
+        images on the accelerator, a host-bound one gains.
+        """
+        from vllm.multimodal.image_decoders import DEFAULT_MIN_GPU_PIXELS
+
+        image_kwargs = self.media_io_kwargs.get("image", {})
+        value = image_kwargs.get("min_gpu_pixels", DEFAULT_MIN_GPU_PIXELS)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError("min_gpu_pixels must be a non-negative integer")
+        return value
+
     def use_gpu_image_backend(self) -> bool:
         """Return whether the configured image decoder uses the GPU."""
         from vllm.multimodal.image_decoders import NVIMGCODEC_BACKEND

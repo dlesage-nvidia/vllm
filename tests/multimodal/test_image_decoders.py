@@ -662,3 +662,76 @@ def test_probe_is_fed_the_config_that_actually_carries_processor_kwargs():
         "None; it must read mm_config.mm_processor_kwargs"
     )
     assert "mm_config.mm_processor_kwargs" in probe_call
+
+
+def test_min_gpu_pixels_declines_small_images():
+    """The knob must actually keep small images off the accelerator.
+
+    It exists for deployments where the GPU, not the host, is scarce: measured
+    at 1080p on a GPU-saturated A100 this backend is reproducibly 0.989x
+    upstream, while on a host-bound RTX PRO 6000 it is 1.17x. The threshold
+    lets one deployment keep the large-image win without the small-image cost.
+    """
+    from vllm.config.multimodal import MultiModalConfig
+
+    c = MultiModalConfig(media_io_kwargs={"image": {"min_gpu_pixels": 2_000_000}})
+    assert c.get_image_min_gpu_pixels() == 2_000_000
+    assert MultiModalConfig().get_image_min_gpu_pixels() == 0
+
+    for bad in (-1, True, 1.5, "x"):
+        with pytest.raises(ValueError, match="min_gpu_pixels"):
+            MultiModalConfig(
+                media_io_kwargs={"image": {"min_gpu_pixels": bad}}
+            ).get_image_min_gpu_pixels()
+
+
+def test_min_gpu_pixels_is_startup_only():
+    """A request must not be able to change a process-wide resource setting."""
+    from vllm.multimodal.media.image import _STARTUP_ONLY_KWARGS
+
+    assert "min_gpu_pixels" in _STARTUP_ONLY_KWARGS
+
+
+def test_outcomes_are_logged_without_a_shutdown(monkeypatch):
+    """R10 must not depend on a clean renderer teardown.
+
+    Outcomes were emitted only from shutdown(). With --api-server-count 2 and
+    4, serving 2560 images each, no outcome line appeared at all -- so a run
+    where the backend silently declined everything was indistinguishable from
+    one where it worked, which is exactly what these counters exist to rule
+    out. They are now also emitted periodically.
+
+    Asserts the trigger rather than the log record: vLLM's logger does not
+    propagate to caplog, so capturing it would test the logging plumbing.
+    """
+    from vllm.multimodal.image_decoders import nvimgcodec as backend
+
+    emitted = []
+    monkeypatch.setattr(backend, "_log_outcomes", lambda prefix: emitted.append(prefix))
+    backend._COUNTERS.clear()  # counters are process-global and accumulate
+    monkeypatch.setattr(backend, "_outcomes_logged_at", 0)
+    try:
+        for _ in range(backend._OUTCOME_LOG_EVERY - 1):
+            backend._count("gpu")
+        assert not emitted, "emitted before reaching the threshold"
+        backend._count("gpu")
+        assert emitted, "no periodic outcome line emitted at the threshold"
+        assert "running" in emitted[0]
+    finally:
+        backend._COUNTERS.clear()
+
+
+def test_declined_images_also_drive_the_periodic_outcome_log():
+    """A run that declines everything is the case R10 exists for, so the
+    periodic emit must count fallbacks too, not just successful GPU decodes."""
+    from vllm.multimodal.image_decoders import nvimgcodec as backend
+
+    backend._COUNTERS.clear()
+    backend._outcomes_logged_at = 0
+    try:
+        for _ in range(backend._OUTCOME_LOG_EVERY):
+            backend._count("pillow:unsupported_codec")
+        assert backend._outcomes_logged_at == backend._OUTCOME_LOG_EVERY
+    finally:
+        backend._COUNTERS.clear()
+        backend._outcomes_logged_at = 0
