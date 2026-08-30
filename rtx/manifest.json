@@ -1,0 +1,6428 @@
+{
+  "cells": [
+    {
+      "command": [
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "/home/ubuntu/work/pynv_video_base_head_publication_freeze_v11/run_with_gpu_monitor_refined.py",
+        "--output",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r01-pr1-c8-16-32-gpu-monitor.json",
+        "--timeout-seconds",
+        "3600",
+        "--timeout-grace-seconds",
+        "120",
+        "--",
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "/home/ubuntu/work/pynv_video_base_head_publication_freeze_v11/benchmark_pynvvideocodec_e2e_persistent.py",
+        "--source-root",
+        "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "--python",
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "--pythonpath-extra",
+        "/home/ubuntu/work/vllm-pynv-e2e-transformers-5.14.1-20260827",
+        "--variant",
+        "pr1-r01",
+        "--allowed-local-media-path",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus",
+        "--backend",
+        "pynvvideocodec",
+        "--backend-kwargs",
+        "{\"hw_decoders\":2,\"output_layout\":\"tchw\"}",
+        "--model",
+        "Qwen/Qwen3-VL-2B-Instruct",
+        "--revision",
+        "89644892e4d85e24eaac8bacfd4f463576704203",
+        "--frames",
+        "32",
+        "--video-pixel-budget",
+        "1024x576",
+        "--warmup-requests",
+        "1",
+        "--warmup-requests-by-concurrency",
+        "{\"8\":24,\"16\":48,\"32\":96}",
+        "--requests",
+        "1",
+        "--requests-by-concurrency",
+        "{\"8\":64,\"16\":128,\"32\":256}",
+        "--output-len",
+        "32",
+        "--max-model-len",
+        "32768",
+        "--max-num-batched-tokens",
+        "9216",
+        "--max-num-seqs",
+        "32",
+        "--mm-ipc-gpu-memory-gb",
+        "2",
+        "--kv-cache-memory-bytes",
+        "42949672960",
+        "--settle-seconds",
+        "1.0",
+        "--request-timeout",
+        "1200",
+        "--startup-timeout",
+        "600",
+        "--shutdown-timeout",
+        "60",
+        "--port",
+        "18700",
+        "--output",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r01-pr1-c8-16-32.json",
+        "--server-arg=--mm-device-do-normalize",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-00.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-01.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-02.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-03.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-04.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-05.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-06.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-07.mp4",
+        "--concurrency",
+        "8",
+        "--concurrency",
+        "16",
+        "--concurrency",
+        "32"
+      ],
+      "concurrencies": [
+        8,
+        16,
+        32
+      ],
+      "finished_utc": "2026-08-30T00:59:13.736004+00:00",
+      "log": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r01-pr1-c8-16-32.log",
+      "log_sha256": "019e40ceb284866763da905e593bd5383917656c1e182dae3521c4be6e12258b",
+      "metrics": {
+        "blocks": {
+          "16": {
+            "e2e_latency_p50_ms": 8893.7531915,
+            "e2e_latency_p95_ms": 9469.78190595,
+            "generated_token_throughput_per_second": 57.11898369386681,
+            "request_throughput_per_second": 1.7849682404333378
+          },
+          "32": {
+            "e2e_latency_p50_ms": 17843.48811,
+            "e2e_latency_p95_ms": 18348.548424,
+            "generated_token_throughput_per_second": 57.09040183452613,
+            "request_throughput_per_second": 1.7840750573289417
+          },
+          "8": {
+            "e2e_latency_p50_ms": 3988.638219,
+            "e2e_latency_p95_ms": 6721.39294635,
+            "generated_token_throughput_per_second": 56.65780300432521,
+            "request_throughput_per_second": 1.7705563438851628
+          }
+        },
+        "gpu_monitor_sample_count": 2139,
+        "gpu_resize_outcomes": null,
+        "peak_gpu_memory_used_mib": 45630
+      },
+      "monitor": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r01-pr1-c8-16-32-gpu-monitor.json",
+      "monitor_sha256": "04702786f300ee89e8cabbf1193395bc254457a7d670dcf425440dbf5efd1300",
+      "rep": 1,
+      "result": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r01-pr1-c8-16-32.json",
+      "result_sha256": "bbb706dba9214f8baa0f46d4271cb12a0b33f8b0b8b5d369cd14c00e8a65230e",
+      "returncode": 0,
+      "server_log": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r01-pr1-c8-16-32.server.log",
+      "server_log_sha256": "dc90f3fe9426a1ec7c57e3cfc3c1089fecbb1dfa6935bd54d72f9b8d2acc8bf0",
+      "source_after": {
+        "commit": "fc52204ce7e0203456ceca030b90283dde28232a",
+        "root": "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "status": "",
+        "tree": "ae2af5c1d60f346efbb8a2375f46663b95835802"
+      },
+      "source_before": {
+        "commit": "fc52204ce7e0203456ceca030b90283dde28232a",
+        "root": "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "status": "",
+        "tree": "ae2af5c1d60f346efbb8a2375f46663b95835802"
+      },
+      "started_utc": "2026-08-30T00:52:05.593738+00:00",
+      "status": "passed",
+      "variant": "pr1"
+    },
+    {
+      "command": [
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "/home/ubuntu/work/pynv_video_base_head_publication_freeze_v11/run_with_gpu_monitor_refined.py",
+        "--output",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r01-gpu-resize-c8-16-32-gpu-monitor.json",
+        "--timeout-seconds",
+        "3600",
+        "--timeout-grace-seconds",
+        "120",
+        "--",
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "/home/ubuntu/work/pynv_video_base_head_publication_freeze_v11/benchmark_pynvvideocodec_e2e_persistent.py",
+        "--source-root",
+        "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "--python",
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "--pythonpath-extra",
+        "/home/ubuntu/work/vllm-pynv-e2e-transformers-5.14.1-20260827",
+        "--variant",
+        "gpu-resize-r01",
+        "--allowed-local-media-path",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus",
+        "--backend",
+        "pynvvideocodec",
+        "--backend-kwargs",
+        "{\"gpu_resize\":true,\"hw_decoders\":2,\"output_layout\":\"tchw\"}",
+        "--model",
+        "Qwen/Qwen3-VL-2B-Instruct",
+        "--revision",
+        "89644892e4d85e24eaac8bacfd4f463576704203",
+        "--frames",
+        "32",
+        "--video-pixel-budget",
+        "1024x576",
+        "--warmup-requests",
+        "1",
+        "--warmup-requests-by-concurrency",
+        "{\"8\":24,\"16\":48,\"32\":96}",
+        "--requests",
+        "1",
+        "--requests-by-concurrency",
+        "{\"8\":64,\"16\":128,\"32\":256}",
+        "--output-len",
+        "32",
+        "--max-model-len",
+        "32768",
+        "--max-num-batched-tokens",
+        "9216",
+        "--max-num-seqs",
+        "32",
+        "--mm-ipc-gpu-memory-gb",
+        "2",
+        "--kv-cache-memory-bytes",
+        "42949672960",
+        "--settle-seconds",
+        "1.0",
+        "--request-timeout",
+        "1200",
+        "--startup-timeout",
+        "600",
+        "--shutdown-timeout",
+        "60",
+        "--port",
+        "18700",
+        "--output",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r01-gpu-resize-c8-16-32.json",
+        "--server-arg=--mm-device-do-normalize",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-00.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-01.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-02.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-03.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-04.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-05.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-06.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-07.mp4",
+        "--concurrency",
+        "8",
+        "--concurrency",
+        "16",
+        "--concurrency",
+        "32"
+      ],
+      "concurrencies": [
+        8,
+        16,
+        32
+      ],
+      "finished_utc": "2026-08-30T01:05:53.332252+00:00",
+      "log": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r01-gpu-resize-c8-16-32.log",
+      "log_sha256": "9965c977977ef74747fadb084892e1bb029aae6fd821e6ce939791044592cd09",
+      "metrics": {
+        "blocks": {
+          "16": {
+            "e2e_latency_p50_ms": 8264.465781,
+            "e2e_latency_p95_ms": 10361.53526445,
+            "generated_token_throughput_per_second": 61.56321437734712,
+            "request_throughput_per_second": 1.9238504492920976
+          },
+          "32": {
+            "e2e_latency_p50_ms": 16607.495641499998,
+            "e2e_latency_p95_ms": 17315.519381,
+            "generated_token_throughput_per_second": 61.51123228151359,
+            "request_throughput_per_second": 1.9222260087972998
+          },
+          "8": {
+            "e2e_latency_p50_ms": 3132.876984,
+            "e2e_latency_p95_ms": 5371.303312599999,
+            "generated_token_throughput_per_second": 61.02319924868521,
+            "request_throughput_per_second": 1.9069749765214128
+          }
+        },
+        "gpu_monitor_sample_count": 1990,
+        "gpu_resize_outcomes": {
+          "gpu_resized": 19712,
+          "resize_cvcuda": 19712
+        },
+        "peak_gpu_memory_used_mib": 46086
+      },
+      "monitor": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r01-gpu-resize-c8-16-32-gpu-monitor.json",
+      "monitor_sha256": "31148e883b3a1167e65b72b1521b0d8a38454c9373bcbb2a1843ddd780252a1d",
+      "rep": 1,
+      "result": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r01-gpu-resize-c8-16-32.json",
+      "result_sha256": "1b39b345911b231cb952f739c69c99a21af7c51c2f6ff82c66679f4bf9e67578",
+      "returncode": 0,
+      "server_log": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r01-gpu-resize-c8-16-32.server.log",
+      "server_log_sha256": "772f86617a25a5271fc79b8b2eb8ec830b1517838b96f4e309efc07901c9e8f0",
+      "source_after": {
+        "commit": "3a64f5325f8e27581461c983902e23c52d906989",
+        "root": "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "status": "",
+        "tree": "a4ff4b35a27b1a59fb42628acf8db403cd1ec44f"
+      },
+      "source_before": {
+        "commit": "3a64f5325f8e27581461c983902e23c52d906989",
+        "root": "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "status": "",
+        "tree": "a4ff4b35a27b1a59fb42628acf8db403cd1ec44f"
+      },
+      "started_utc": "2026-08-30T00:59:15.050109+00:00",
+      "status": "passed",
+      "variant": "gpu-resize"
+    },
+    {
+      "command": [
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "/home/ubuntu/work/pynv_video_base_head_publication_freeze_v11/run_with_gpu_monitor_refined.py",
+        "--output",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r02-gpu-resize-c32-16-8-gpu-monitor.json",
+        "--timeout-seconds",
+        "3600",
+        "--timeout-grace-seconds",
+        "120",
+        "--",
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "/home/ubuntu/work/pynv_video_base_head_publication_freeze_v11/benchmark_pynvvideocodec_e2e_persistent.py",
+        "--source-root",
+        "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "--python",
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "--pythonpath-extra",
+        "/home/ubuntu/work/vllm-pynv-e2e-transformers-5.14.1-20260827",
+        "--variant",
+        "gpu-resize-r02",
+        "--allowed-local-media-path",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus",
+        "--backend",
+        "pynvvideocodec",
+        "--backend-kwargs",
+        "{\"gpu_resize\":true,\"hw_decoders\":2,\"output_layout\":\"tchw\"}",
+        "--model",
+        "Qwen/Qwen3-VL-2B-Instruct",
+        "--revision",
+        "89644892e4d85e24eaac8bacfd4f463576704203",
+        "--frames",
+        "32",
+        "--video-pixel-budget",
+        "1024x576",
+        "--warmup-requests",
+        "1",
+        "--warmup-requests-by-concurrency",
+        "{\"8\":24,\"16\":48,\"32\":96}",
+        "--requests",
+        "1",
+        "--requests-by-concurrency",
+        "{\"8\":64,\"16\":128,\"32\":256}",
+        "--output-len",
+        "32",
+        "--max-model-len",
+        "32768",
+        "--max-num-batched-tokens",
+        "9216",
+        "--max-num-seqs",
+        "32",
+        "--mm-ipc-gpu-memory-gb",
+        "2",
+        "--kv-cache-memory-bytes",
+        "42949672960",
+        "--settle-seconds",
+        "1.0",
+        "--request-timeout",
+        "1200",
+        "--startup-timeout",
+        "600",
+        "--shutdown-timeout",
+        "60",
+        "--port",
+        "18700",
+        "--output",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r02-gpu-resize-c32-16-8.json",
+        "--server-arg=--mm-device-do-normalize",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-00.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-01.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-02.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-03.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-04.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-05.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-06.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-07.mp4",
+        "--concurrency",
+        "32",
+        "--concurrency",
+        "16",
+        "--concurrency",
+        "8"
+      ],
+      "concurrencies": [
+        32,
+        16,
+        8
+      ],
+      "finished_utc": "2026-08-30T01:12:42.615768+00:00",
+      "log": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r02-gpu-resize-c32-16-8.log",
+      "log_sha256": "9fc8c9d574ab1147cf93ba856aca012ac7ea34b3b09b48117edfdfdf06f256fe",
+      "metrics": {
+        "blocks": {
+          "16": {
+            "e2e_latency_p50_ms": 8324.951224,
+            "e2e_latency_p95_ms": 9408.9293465,
+            "generated_token_throughput_per_second": 61.33161591005179,
+            "request_throughput_per_second": 1.9166129971891184
+          },
+          "32": {
+            "e2e_latency_p50_ms": 16648.584828,
+            "e2e_latency_p95_ms": 17694.478463,
+            "generated_token_throughput_per_second": 61.32887914496888,
+            "request_throughput_per_second": 1.9165274732802775
+          },
+          "8": {
+            "e2e_latency_p50_ms": 3142.6977054999998,
+            "e2e_latency_p95_ms": 5197.1975089,
+            "generated_token_throughput_per_second": 60.97598198386629,
+            "request_throughput_per_second": 1.9054994369958216
+          }
+        },
+        "gpu_monitor_sample_count": 2038,
+        "gpu_resize_outcomes": {
+          "gpu_resized": 19712,
+          "resize_cvcuda": 19712
+        },
+        "peak_gpu_memory_used_mib": 46086
+      },
+      "monitor": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r02-gpu-resize-c32-16-8-gpu-monitor.json",
+      "monitor_sha256": "58a63c897bc233343a6c64bbfa34444db2f872a4e6fd962b328a2e536eb0a654",
+      "rep": 2,
+      "result": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r02-gpu-resize-c32-16-8.json",
+      "result_sha256": "054d2a9f10f6d7bed2582871918b256f2eb9bd0c090399d4f04893bdce7430bd",
+      "returncode": 0,
+      "server_log": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r02-gpu-resize-c32-16-8.server.log",
+      "server_log_sha256": "b7e1126b298e052ee8058f7813a931f394909fad5255f299fc8ea1cdfb857c49",
+      "source_after": {
+        "commit": "3a64f5325f8e27581461c983902e23c52d906989",
+        "root": "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "status": "",
+        "tree": "a4ff4b35a27b1a59fb42628acf8db403cd1ec44f"
+      },
+      "source_before": {
+        "commit": "3a64f5325f8e27581461c983902e23c52d906989",
+        "root": "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "status": "",
+        "tree": "a4ff4b35a27b1a59fb42628acf8db403cd1ec44f"
+      },
+      "started_utc": "2026-08-30T01:05:54.716644+00:00",
+      "status": "passed",
+      "variant": "gpu-resize"
+    },
+    {
+      "command": [
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "/home/ubuntu/work/pynv_video_base_head_publication_freeze_v11/run_with_gpu_monitor_refined.py",
+        "--output",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r02-pr1-c32-16-8-gpu-monitor.json",
+        "--timeout-seconds",
+        "3600",
+        "--timeout-grace-seconds",
+        "120",
+        "--",
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "/home/ubuntu/work/pynv_video_base_head_publication_freeze_v11/benchmark_pynvvideocodec_e2e_persistent.py",
+        "--source-root",
+        "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "--python",
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "--pythonpath-extra",
+        "/home/ubuntu/work/vllm-pynv-e2e-transformers-5.14.1-20260827",
+        "--variant",
+        "pr1-r02",
+        "--allowed-local-media-path",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus",
+        "--backend",
+        "pynvvideocodec",
+        "--backend-kwargs",
+        "{\"hw_decoders\":2,\"output_layout\":\"tchw\"}",
+        "--model",
+        "Qwen/Qwen3-VL-2B-Instruct",
+        "--revision",
+        "89644892e4d85e24eaac8bacfd4f463576704203",
+        "--frames",
+        "32",
+        "--video-pixel-budget",
+        "1024x576",
+        "--warmup-requests",
+        "1",
+        "--warmup-requests-by-concurrency",
+        "{\"8\":24,\"16\":48,\"32\":96}",
+        "--requests",
+        "1",
+        "--requests-by-concurrency",
+        "{\"8\":64,\"16\":128,\"32\":256}",
+        "--output-len",
+        "32",
+        "--max-model-len",
+        "32768",
+        "--max-num-batched-tokens",
+        "9216",
+        "--max-num-seqs",
+        "32",
+        "--mm-ipc-gpu-memory-gb",
+        "2",
+        "--kv-cache-memory-bytes",
+        "42949672960",
+        "--settle-seconds",
+        "1.0",
+        "--request-timeout",
+        "1200",
+        "--startup-timeout",
+        "600",
+        "--shutdown-timeout",
+        "60",
+        "--port",
+        "18700",
+        "--output",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r02-pr1-c32-16-8.json",
+        "--server-arg=--mm-device-do-normalize",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-00.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-01.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-02.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-03.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-04.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-05.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-06.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-07.mp4",
+        "--concurrency",
+        "32",
+        "--concurrency",
+        "16",
+        "--concurrency",
+        "8"
+      ],
+      "concurrencies": [
+        32,
+        16,
+        8
+      ],
+      "finished_utc": "2026-08-30T01:19:57.882857+00:00",
+      "log": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r02-pr1-c32-16-8.log",
+      "log_sha256": "27ac59ee58e4a2dbf1aea960099adf0977c7cf7001ea123dc8f142a4eb0ec838",
+      "metrics": {
+        "blocks": {
+          "16": {
+            "e2e_latency_p50_ms": 8845.404504999999,
+            "e2e_latency_p95_ms": 9543.72574725,
+            "generated_token_throughput_per_second": 57.48048598454558,
+            "request_throughput_per_second": 1.7962651870170494
+          },
+          "32": {
+            "e2e_latency_p50_ms": 17708.359624999997,
+            "e2e_latency_p95_ms": 18294.128178,
+            "generated_token_throughput_per_second": 57.505480036455346,
+            "request_throughput_per_second": 1.7970462511392296
+          },
+          "8": {
+            "e2e_latency_p50_ms": 3850.1285225,
+            "e2e_latency_p95_ms": 6804.36005165,
+            "generated_token_throughput_per_second": 56.82655267675596,
+            "request_throughput_per_second": 1.7758297711486237
+          }
+        },
+        "gpu_monitor_sample_count": 2168,
+        "gpu_resize_outcomes": null,
+        "peak_gpu_memory_used_mib": 45630
+      },
+      "monitor": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r02-pr1-c32-16-8-gpu-monitor.json",
+      "monitor_sha256": "d176c89b32d67cf5276438c4fdaee2a027b2870a9029428d1bcafed4066c9545",
+      "rep": 2,
+      "result": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r02-pr1-c32-16-8.json",
+      "result_sha256": "2c448008afb372f1d3cf9dbe9aabfe8b1fba69b92c86ac1be822d84973f1b895",
+      "returncode": 0,
+      "server_log": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r02-pr1-c32-16-8.server.log",
+      "server_log_sha256": "9bf4caf8f98ca241d5c18c7ed341bbc73924984d270920bb4c2cc01323cdeae4",
+      "source_after": {
+        "commit": "fc52204ce7e0203456ceca030b90283dde28232a",
+        "root": "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "status": "",
+        "tree": "ae2af5c1d60f346efbb8a2375f46663b95835802"
+      },
+      "source_before": {
+        "commit": "fc52204ce7e0203456ceca030b90283dde28232a",
+        "root": "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "status": "",
+        "tree": "ae2af5c1d60f346efbb8a2375f46663b95835802"
+      },
+      "started_utc": "2026-08-30T01:12:43.915196+00:00",
+      "status": "passed",
+      "variant": "pr1"
+    },
+    {
+      "command": [
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "/home/ubuntu/work/pynv_video_base_head_publication_freeze_v11/run_with_gpu_monitor_refined.py",
+        "--output",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r03-pr1-c16-32-8-gpu-monitor.json",
+        "--timeout-seconds",
+        "3600",
+        "--timeout-grace-seconds",
+        "120",
+        "--",
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "/home/ubuntu/work/pynv_video_base_head_publication_freeze_v11/benchmark_pynvvideocodec_e2e_persistent.py",
+        "--source-root",
+        "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "--python",
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "--pythonpath-extra",
+        "/home/ubuntu/work/vllm-pynv-e2e-transformers-5.14.1-20260827",
+        "--variant",
+        "pr1-r03",
+        "--allowed-local-media-path",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus",
+        "--backend",
+        "pynvvideocodec",
+        "--backend-kwargs",
+        "{\"hw_decoders\":2,\"output_layout\":\"tchw\"}",
+        "--model",
+        "Qwen/Qwen3-VL-2B-Instruct",
+        "--revision",
+        "89644892e4d85e24eaac8bacfd4f463576704203",
+        "--frames",
+        "32",
+        "--video-pixel-budget",
+        "1024x576",
+        "--warmup-requests",
+        "1",
+        "--warmup-requests-by-concurrency",
+        "{\"8\":24,\"16\":48,\"32\":96}",
+        "--requests",
+        "1",
+        "--requests-by-concurrency",
+        "{\"8\":64,\"16\":128,\"32\":256}",
+        "--output-len",
+        "32",
+        "--max-model-len",
+        "32768",
+        "--max-num-batched-tokens",
+        "9216",
+        "--max-num-seqs",
+        "32",
+        "--mm-ipc-gpu-memory-gb",
+        "2",
+        "--kv-cache-memory-bytes",
+        "42949672960",
+        "--settle-seconds",
+        "1.0",
+        "--request-timeout",
+        "1200",
+        "--startup-timeout",
+        "600",
+        "--shutdown-timeout",
+        "60",
+        "--port",
+        "18700",
+        "--output",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r03-pr1-c16-32-8.json",
+        "--server-arg=--mm-device-do-normalize",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-00.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-01.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-02.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-03.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-04.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-05.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-06.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-07.mp4",
+        "--concurrency",
+        "16",
+        "--concurrency",
+        "32",
+        "--concurrency",
+        "8"
+      ],
+      "concurrencies": [
+        16,
+        32,
+        8
+      ],
+      "finished_utc": "2026-08-30T01:27:12.723283+00:00",
+      "log": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r03-pr1-c16-32-8.log",
+      "log_sha256": "6422524497dec1000d238213a86f1045e2d5f9cdf9e885244e8a7efddb573480",
+      "metrics": {
+        "blocks": {
+          "16": {
+            "e2e_latency_p50_ms": 8883.001733000001,
+            "e2e_latency_p95_ms": 9470.72016345,
+            "generated_token_throughput_per_second": 56.884256620578554,
+            "request_throughput_per_second": 1.7776330193930798
+          },
+          "32": {
+            "e2e_latency_p50_ms": 17805.7312385,
+            "e2e_latency_p95_ms": 18378.89551,
+            "generated_token_throughput_per_second": 57.23859653552571,
+            "request_throughput_per_second": 1.7887061417351784
+          },
+          "8": {
+            "e2e_latency_p50_ms": 3900.047684,
+            "e2e_latency_p95_ms": 6720.6966798,
+            "generated_token_throughput_per_second": 56.91979175060403,
+            "request_throughput_per_second": 1.7787434922063758
+          }
+        },
+        "gpu_monitor_sample_count": 2166,
+        "gpu_resize_outcomes": null,
+        "peak_gpu_memory_used_mib": 45630
+      },
+      "monitor": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r03-pr1-c16-32-8-gpu-monitor.json",
+      "monitor_sha256": "fab63a0ec85acdb77c4d226e3fafb604112076dc79ffcb7592074449a139e9cc",
+      "rep": 3,
+      "result": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r03-pr1-c16-32-8.json",
+      "result_sha256": "2cc07cc6906bc1b6b0f1f21483f9c6eccb27c49d1dfb6e2bba6f3796a74737ed",
+      "returncode": 0,
+      "server_log": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r03-pr1-c16-32-8.server.log",
+      "server_log_sha256": "d942d733d5b0b252d728839e2edf7f15af841e6fbb648902dc60c0105c4a8840",
+      "source_after": {
+        "commit": "fc52204ce7e0203456ceca030b90283dde28232a",
+        "root": "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "status": "",
+        "tree": "ae2af5c1d60f346efbb8a2375f46663b95835802"
+      },
+      "source_before": {
+        "commit": "fc52204ce7e0203456ceca030b90283dde28232a",
+        "root": "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "status": "",
+        "tree": "ae2af5c1d60f346efbb8a2375f46663b95835802"
+      },
+      "started_utc": "2026-08-30T01:19:59.165665+00:00",
+      "status": "passed",
+      "variant": "pr1"
+    },
+    {
+      "command": [
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "/home/ubuntu/work/pynv_video_base_head_publication_freeze_v11/run_with_gpu_monitor_refined.py",
+        "--output",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r03-gpu-resize-c16-32-8-gpu-monitor.json",
+        "--timeout-seconds",
+        "3600",
+        "--timeout-grace-seconds",
+        "120",
+        "--",
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "/home/ubuntu/work/pynv_video_base_head_publication_freeze_v11/benchmark_pynvvideocodec_e2e_persistent.py",
+        "--source-root",
+        "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "--python",
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "--pythonpath-extra",
+        "/home/ubuntu/work/vllm-pynv-e2e-transformers-5.14.1-20260827",
+        "--variant",
+        "gpu-resize-r03",
+        "--allowed-local-media-path",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus",
+        "--backend",
+        "pynvvideocodec",
+        "--backend-kwargs",
+        "{\"gpu_resize\":true,\"hw_decoders\":2,\"output_layout\":\"tchw\"}",
+        "--model",
+        "Qwen/Qwen3-VL-2B-Instruct",
+        "--revision",
+        "89644892e4d85e24eaac8bacfd4f463576704203",
+        "--frames",
+        "32",
+        "--video-pixel-budget",
+        "1024x576",
+        "--warmup-requests",
+        "1",
+        "--warmup-requests-by-concurrency",
+        "{\"8\":24,\"16\":48,\"32\":96}",
+        "--requests",
+        "1",
+        "--requests-by-concurrency",
+        "{\"8\":64,\"16\":128,\"32\":256}",
+        "--output-len",
+        "32",
+        "--max-model-len",
+        "32768",
+        "--max-num-batched-tokens",
+        "9216",
+        "--max-num-seqs",
+        "32",
+        "--mm-ipc-gpu-memory-gb",
+        "2",
+        "--kv-cache-memory-bytes",
+        "42949672960",
+        "--settle-seconds",
+        "1.0",
+        "--request-timeout",
+        "1200",
+        "--startup-timeout",
+        "600",
+        "--shutdown-timeout",
+        "60",
+        "--port",
+        "18700",
+        "--output",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r03-gpu-resize-c16-32-8.json",
+        "--server-arg=--mm-device-do-normalize",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-00.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-01.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-02.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-03.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-04.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-05.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-06.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-07.mp4",
+        "--concurrency",
+        "16",
+        "--concurrency",
+        "32",
+        "--concurrency",
+        "8"
+      ],
+      "concurrencies": [
+        16,
+        32,
+        8
+      ],
+      "finished_utc": "2026-08-30T01:33:58.514079+00:00",
+      "log": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r03-gpu-resize-c16-32-8.log",
+      "log_sha256": "9180bb4fe9f463d9260f1f025cf7a1c4069c0b44c13b345f82bf42a130dcc212",
+      "metrics": {
+        "blocks": {
+          "16": {
+            "e2e_latency_p50_ms": 8310.53757,
+            "e2e_latency_p95_ms": 8780.596767599998,
+            "generated_token_throughput_per_second": 61.54545761941767,
+            "request_throughput_per_second": 1.9232955506068021
+          },
+          "32": {
+            "e2e_latency_p50_ms": 16640.324482,
+            "e2e_latency_p95_ms": 17365.514599,
+            "generated_token_throughput_per_second": 61.28408820406069,
+            "request_throughput_per_second": 1.9151277563768965
+          },
+          "8": {
+            "e2e_latency_p50_ms": 3148.0795005,
+            "e2e_latency_p95_ms": 6119.257361849996,
+            "generated_token_throughput_per_second": 61.01610970757733,
+            "request_throughput_per_second": 1.9067534283617915
+          }
+        },
+        "gpu_monitor_sample_count": 2021,
+        "gpu_resize_outcomes": {
+          "gpu_resized": 19712,
+          "resize_cvcuda": 19712
+        },
+        "peak_gpu_memory_used_mib": 46086
+      },
+      "monitor": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r03-gpu-resize-c16-32-8-gpu-monitor.json",
+      "monitor_sha256": "3033b0ee8b427902dadacc18fdbc1529a15d54c10e0a360e4409989881274bd6",
+      "rep": 3,
+      "result": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r03-gpu-resize-c16-32-8.json",
+      "result_sha256": "553323d95f07550c252b7f4d1b7d748ab043102a63b044d424010f5059d11522",
+      "returncode": 0,
+      "server_log": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r03-gpu-resize-c16-32-8.server.log",
+      "server_log_sha256": "fd3584623367422d2e55fd4baa985bb57641de6e3eb5c9e90eaeacdd1e37d2ce",
+      "source_after": {
+        "commit": "3a64f5325f8e27581461c983902e23c52d906989",
+        "root": "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "status": "",
+        "tree": "a4ff4b35a27b1a59fb42628acf8db403cd1ec44f"
+      },
+      "source_before": {
+        "commit": "3a64f5325f8e27581461c983902e23c52d906989",
+        "root": "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "status": "",
+        "tree": "a4ff4b35a27b1a59fb42628acf8db403cd1ec44f"
+      },
+      "started_utc": "2026-08-30T01:27:14.017044+00:00",
+      "status": "passed",
+      "variant": "gpu-resize"
+    },
+    {
+      "command": [
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "/home/ubuntu/work/pynv_video_base_head_publication_freeze_v11/run_with_gpu_monitor_refined.py",
+        "--output",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r04-gpu-resize-c8-32-16-gpu-monitor.json",
+        "--timeout-seconds",
+        "3600",
+        "--timeout-grace-seconds",
+        "120",
+        "--",
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "/home/ubuntu/work/pynv_video_base_head_publication_freeze_v11/benchmark_pynvvideocodec_e2e_persistent.py",
+        "--source-root",
+        "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "--python",
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "--pythonpath-extra",
+        "/home/ubuntu/work/vllm-pynv-e2e-transformers-5.14.1-20260827",
+        "--variant",
+        "gpu-resize-r04",
+        "--allowed-local-media-path",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus",
+        "--backend",
+        "pynvvideocodec",
+        "--backend-kwargs",
+        "{\"gpu_resize\":true,\"hw_decoders\":2,\"output_layout\":\"tchw\"}",
+        "--model",
+        "Qwen/Qwen3-VL-2B-Instruct",
+        "--revision",
+        "89644892e4d85e24eaac8bacfd4f463576704203",
+        "--frames",
+        "32",
+        "--video-pixel-budget",
+        "1024x576",
+        "--warmup-requests",
+        "1",
+        "--warmup-requests-by-concurrency",
+        "{\"8\":24,\"16\":48,\"32\":96}",
+        "--requests",
+        "1",
+        "--requests-by-concurrency",
+        "{\"8\":64,\"16\":128,\"32\":256}",
+        "--output-len",
+        "32",
+        "--max-model-len",
+        "32768",
+        "--max-num-batched-tokens",
+        "9216",
+        "--max-num-seqs",
+        "32",
+        "--mm-ipc-gpu-memory-gb",
+        "2",
+        "--kv-cache-memory-bytes",
+        "42949672960",
+        "--settle-seconds",
+        "1.0",
+        "--request-timeout",
+        "1200",
+        "--startup-timeout",
+        "600",
+        "--shutdown-timeout",
+        "60",
+        "--port",
+        "18700",
+        "--output",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r04-gpu-resize-c8-32-16.json",
+        "--server-arg=--mm-device-do-normalize",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-00.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-01.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-02.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-03.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-04.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-05.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-06.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-07.mp4",
+        "--concurrency",
+        "8",
+        "--concurrency",
+        "32",
+        "--concurrency",
+        "16"
+      ],
+      "concurrencies": [
+        8,
+        32,
+        16
+      ],
+      "finished_utc": "2026-08-30T01:40:40.684591+00:00",
+      "log": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r04-gpu-resize-c8-32-16.log",
+      "log_sha256": "292605195a60dc1e35cdca7de190c0fcae5f4f05a2a5f184d2cddb176174c9d1",
+      "metrics": {
+        "blocks": {
+          "16": {
+            "e2e_latency_p50_ms": 8295.861008,
+            "e2e_latency_p95_ms": 8696.37007775,
+            "generated_token_throughput_per_second": 61.49670763830919,
+            "request_throughput_per_second": 1.9217721136971622
+          },
+          "32": {
+            "e2e_latency_p50_ms": 16494.589368,
+            "e2e_latency_p95_ms": 17356.229694999998,
+            "generated_token_throughput_per_second": 61.66645939287707,
+            "request_throughput_per_second": 1.9270768560274085
+          },
+          "8": {
+            "e2e_latency_p50_ms": 3139.7139644999997,
+            "e2e_latency_p95_ms": 5553.940631399998,
+            "generated_token_throughput_per_second": 61.25713681237611,
+            "request_throughput_per_second": 1.9142855253867535
+          }
+        },
+        "gpu_monitor_sample_count": 2003,
+        "gpu_resize_outcomes": {
+          "gpu_resized": 19712,
+          "resize_cvcuda": 19712
+        },
+        "peak_gpu_memory_used_mib": 46086
+      },
+      "monitor": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r04-gpu-resize-c8-32-16-gpu-monitor.json",
+      "monitor_sha256": "b7507b5ac3cfa0cd115135fd6a8a2d22a80045a25f3713b998f0ef854856a232",
+      "rep": 4,
+      "result": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r04-gpu-resize-c8-32-16.json",
+      "result_sha256": "f41fbd1003619c84f9437609e3b7e51c422b01e74d0964857f50584bf85d74d4",
+      "returncode": 0,
+      "server_log": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r04-gpu-resize-c8-32-16.server.log",
+      "server_log_sha256": "cc90af8f02be3154ccb3fecec63429f77c36a6efddde71c39a7b8bad6b2726c0",
+      "source_after": {
+        "commit": "3a64f5325f8e27581461c983902e23c52d906989",
+        "root": "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "status": "",
+        "tree": "a4ff4b35a27b1a59fb42628acf8db403cd1ec44f"
+      },
+      "source_before": {
+        "commit": "3a64f5325f8e27581461c983902e23c52d906989",
+        "root": "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "status": "",
+        "tree": "a4ff4b35a27b1a59fb42628acf8db403cd1ec44f"
+      },
+      "started_utc": "2026-08-30T01:33:59.785340+00:00",
+      "status": "passed",
+      "variant": "gpu-resize"
+    },
+    {
+      "command": [
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "/home/ubuntu/work/pynv_video_base_head_publication_freeze_v11/run_with_gpu_monitor_refined.py",
+        "--output",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r04-pr1-c8-32-16-gpu-monitor.json",
+        "--timeout-seconds",
+        "3600",
+        "--timeout-grace-seconds",
+        "120",
+        "--",
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "/home/ubuntu/work/pynv_video_base_head_publication_freeze_v11/benchmark_pynvvideocodec_e2e_persistent.py",
+        "--source-root",
+        "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "--python",
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "--pythonpath-extra",
+        "/home/ubuntu/work/vllm-pynv-e2e-transformers-5.14.1-20260827",
+        "--variant",
+        "pr1-r04",
+        "--allowed-local-media-path",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus",
+        "--backend",
+        "pynvvideocodec",
+        "--backend-kwargs",
+        "{\"hw_decoders\":2,\"output_layout\":\"tchw\"}",
+        "--model",
+        "Qwen/Qwen3-VL-2B-Instruct",
+        "--revision",
+        "89644892e4d85e24eaac8bacfd4f463576704203",
+        "--frames",
+        "32",
+        "--video-pixel-budget",
+        "1024x576",
+        "--warmup-requests",
+        "1",
+        "--warmup-requests-by-concurrency",
+        "{\"8\":24,\"16\":48,\"32\":96}",
+        "--requests",
+        "1",
+        "--requests-by-concurrency",
+        "{\"8\":64,\"16\":128,\"32\":256}",
+        "--output-len",
+        "32",
+        "--max-model-len",
+        "32768",
+        "--max-num-batched-tokens",
+        "9216",
+        "--max-num-seqs",
+        "32",
+        "--mm-ipc-gpu-memory-gb",
+        "2",
+        "--kv-cache-memory-bytes",
+        "42949672960",
+        "--settle-seconds",
+        "1.0",
+        "--request-timeout",
+        "1200",
+        "--startup-timeout",
+        "600",
+        "--shutdown-timeout",
+        "60",
+        "--port",
+        "18700",
+        "--output",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r04-pr1-c8-32-16.json",
+        "--server-arg=--mm-device-do-normalize",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-00.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-01.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-02.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-03.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-04.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-05.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-06.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-07.mp4",
+        "--concurrency",
+        "8",
+        "--concurrency",
+        "32",
+        "--concurrency",
+        "16"
+      ],
+      "concurrencies": [
+        8,
+        32,
+        16
+      ],
+      "finished_utc": "2026-08-30T01:47:52.086596+00:00",
+      "log": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r04-pr1-c8-32-16.log",
+      "log_sha256": "b3f98484596063398840913e97a92a3cf495d28239bc06848dc450e5dd1aab1a",
+      "metrics": {
+        "blocks": {
+          "16": {
+            "e2e_latency_p50_ms": 8906.575431500001,
+            "e2e_latency_p95_ms": 9485.149320800001,
+            "generated_token_throughput_per_second": 57.260374689995466,
+            "request_throughput_per_second": 1.7893867090623583
+          },
+          "32": {
+            "e2e_latency_p50_ms": 17797.403057,
+            "e2e_latency_p95_ms": 18454.3284835,
+            "generated_token_throughput_per_second": 57.23485476361702,
+            "request_throughput_per_second": 1.788589211363032
+          },
+          "8": {
+            "e2e_latency_p50_ms": 3916.604176,
+            "e2e_latency_p95_ms": 6897.174887699999,
+            "generated_token_throughput_per_second": 56.499759549810285,
+            "request_throughput_per_second": 1.7656174859315714
+          }
+        },
+        "gpu_monitor_sample_count": 2149,
+        "gpu_resize_outcomes": null,
+        "peak_gpu_memory_used_mib": 45630
+      },
+      "monitor": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r04-pr1-c8-32-16-gpu-monitor.json",
+      "monitor_sha256": "432fbeaf394a5139b89323f74609795349aa8aa989af4aba610357bd6a160f68",
+      "rep": 4,
+      "result": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r04-pr1-c8-32-16.json",
+      "result_sha256": "78c66eb204095bf29d5cb93bdc14030fb3d94df869500e09c22ea5c413fd4ee5",
+      "returncode": 0,
+      "server_log": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r04-pr1-c8-32-16.server.log",
+      "server_log_sha256": "9ef20146fac3af500dda599a48ac338266fea5b72d99189132b1a3dfefcbfbd3",
+      "source_after": {
+        "commit": "fc52204ce7e0203456ceca030b90283dde28232a",
+        "root": "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "status": "",
+        "tree": "ae2af5c1d60f346efbb8a2375f46663b95835802"
+      },
+      "source_before": {
+        "commit": "fc52204ce7e0203456ceca030b90283dde28232a",
+        "root": "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "status": "",
+        "tree": "ae2af5c1d60f346efbb8a2375f46663b95835802"
+      },
+      "started_utc": "2026-08-30T01:40:41.958065+00:00",
+      "status": "passed",
+      "variant": "pr1"
+    },
+    {
+      "command": [
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "/home/ubuntu/work/pynv_video_base_head_publication_freeze_v11/run_with_gpu_monitor_refined.py",
+        "--output",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r05-pr1-c32-8-16-gpu-monitor.json",
+        "--timeout-seconds",
+        "3600",
+        "--timeout-grace-seconds",
+        "120",
+        "--",
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "/home/ubuntu/work/pynv_video_base_head_publication_freeze_v11/benchmark_pynvvideocodec_e2e_persistent.py",
+        "--source-root",
+        "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "--python",
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "--pythonpath-extra",
+        "/home/ubuntu/work/vllm-pynv-e2e-transformers-5.14.1-20260827",
+        "--variant",
+        "pr1-r05",
+        "--allowed-local-media-path",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus",
+        "--backend",
+        "pynvvideocodec",
+        "--backend-kwargs",
+        "{\"hw_decoders\":2,\"output_layout\":\"tchw\"}",
+        "--model",
+        "Qwen/Qwen3-VL-2B-Instruct",
+        "--revision",
+        "89644892e4d85e24eaac8bacfd4f463576704203",
+        "--frames",
+        "32",
+        "--video-pixel-budget",
+        "1024x576",
+        "--warmup-requests",
+        "1",
+        "--warmup-requests-by-concurrency",
+        "{\"8\":24,\"16\":48,\"32\":96}",
+        "--requests",
+        "1",
+        "--requests-by-concurrency",
+        "{\"8\":64,\"16\":128,\"32\":256}",
+        "--output-len",
+        "32",
+        "--max-model-len",
+        "32768",
+        "--max-num-batched-tokens",
+        "9216",
+        "--max-num-seqs",
+        "32",
+        "--mm-ipc-gpu-memory-gb",
+        "2",
+        "--kv-cache-memory-bytes",
+        "42949672960",
+        "--settle-seconds",
+        "1.0",
+        "--request-timeout",
+        "1200",
+        "--startup-timeout",
+        "600",
+        "--shutdown-timeout",
+        "60",
+        "--port",
+        "18700",
+        "--output",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r05-pr1-c32-8-16.json",
+        "--server-arg=--mm-device-do-normalize",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-00.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-01.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-02.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-03.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-04.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-05.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-06.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-07.mp4",
+        "--concurrency",
+        "32",
+        "--concurrency",
+        "8",
+        "--concurrency",
+        "16"
+      ],
+      "concurrencies": [
+        32,
+        8,
+        16
+      ],
+      "finished_utc": "2026-08-30T01:55:09.750160+00:00",
+      "log": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r05-pr1-c32-8-16.log",
+      "log_sha256": "59c9486e390d83f6f030fd3eb85f787dd1a4867d7b639489d13500a1f5f8b0d0",
+      "metrics": {
+        "blocks": {
+          "16": {
+            "e2e_latency_p50_ms": 8875.3707035,
+            "e2e_latency_p95_ms": 9559.116585,
+            "generated_token_throughput_per_second": 56.69960851176956,
+            "request_throughput_per_second": 1.7718627659927988
+          },
+          "32": {
+            "e2e_latency_p50_ms": 17811.713089999997,
+            "e2e_latency_p95_ms": 18486.960868,
+            "generated_token_throughput_per_second": 57.09676424854852,
+            "request_throughput_per_second": 1.7842738827671412
+          },
+          "8": {
+            "e2e_latency_p50_ms": 3811.394517,
+            "e2e_latency_p95_ms": 7263.110947249999,
+            "generated_token_throughput_per_second": 56.41490185152951,
+            "request_throughput_per_second": 1.762965682860297
+          }
+        },
+        "gpu_monitor_sample_count": 2178,
+        "gpu_resize_outcomes": null,
+        "peak_gpu_memory_used_mib": 45630
+      },
+      "monitor": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r05-pr1-c32-8-16-gpu-monitor.json",
+      "monitor_sha256": "e98f49ebfb1e49aca757cfb648b6e728cf09d14150bef837cf4088681105ec38",
+      "rep": 5,
+      "result": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r05-pr1-c32-8-16.json",
+      "result_sha256": "a3a6e97eb4eeb600ba303dd29ad4207752f37bf59eecdf90633602c45f7545a9",
+      "returncode": 0,
+      "server_log": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r05-pr1-c32-8-16.server.log",
+      "server_log_sha256": "aa4960f573a2286d6b109d16f2c70c097ef57ea5bd379a9dd10712a6a48c928a",
+      "source_after": {
+        "commit": "fc52204ce7e0203456ceca030b90283dde28232a",
+        "root": "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "status": "",
+        "tree": "ae2af5c1d60f346efbb8a2375f46663b95835802"
+      },
+      "source_before": {
+        "commit": "fc52204ce7e0203456ceca030b90283dde28232a",
+        "root": "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "status": "",
+        "tree": "ae2af5c1d60f346efbb8a2375f46663b95835802"
+      },
+      "started_utc": "2026-08-30T01:47:53.808387+00:00",
+      "status": "passed",
+      "variant": "pr1"
+    },
+    {
+      "command": [
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "/home/ubuntu/work/pynv_video_base_head_publication_freeze_v11/run_with_gpu_monitor_refined.py",
+        "--output",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r05-gpu-resize-c32-8-16-gpu-monitor.json",
+        "--timeout-seconds",
+        "3600",
+        "--timeout-grace-seconds",
+        "120",
+        "--",
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "/home/ubuntu/work/pynv_video_base_head_publication_freeze_v11/benchmark_pynvvideocodec_e2e_persistent.py",
+        "--source-root",
+        "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "--python",
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "--pythonpath-extra",
+        "/home/ubuntu/work/vllm-pynv-e2e-transformers-5.14.1-20260827",
+        "--variant",
+        "gpu-resize-r05",
+        "--allowed-local-media-path",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus",
+        "--backend",
+        "pynvvideocodec",
+        "--backend-kwargs",
+        "{\"gpu_resize\":true,\"hw_decoders\":2,\"output_layout\":\"tchw\"}",
+        "--model",
+        "Qwen/Qwen3-VL-2B-Instruct",
+        "--revision",
+        "89644892e4d85e24eaac8bacfd4f463576704203",
+        "--frames",
+        "32",
+        "--video-pixel-budget",
+        "1024x576",
+        "--warmup-requests",
+        "1",
+        "--warmup-requests-by-concurrency",
+        "{\"8\":24,\"16\":48,\"32\":96}",
+        "--requests",
+        "1",
+        "--requests-by-concurrency",
+        "{\"8\":64,\"16\":128,\"32\":256}",
+        "--output-len",
+        "32",
+        "--max-model-len",
+        "32768",
+        "--max-num-batched-tokens",
+        "9216",
+        "--max-num-seqs",
+        "32",
+        "--mm-ipc-gpu-memory-gb",
+        "2",
+        "--kv-cache-memory-bytes",
+        "42949672960",
+        "--settle-seconds",
+        "1.0",
+        "--request-timeout",
+        "1200",
+        "--startup-timeout",
+        "600",
+        "--shutdown-timeout",
+        "60",
+        "--port",
+        "18700",
+        "--output",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r05-gpu-resize-c32-8-16.json",
+        "--server-arg=--mm-device-do-normalize",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-00.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-01.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-02.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-03.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-04.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-05.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-06.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-07.mp4",
+        "--concurrency",
+        "32",
+        "--concurrency",
+        "8",
+        "--concurrency",
+        "16"
+      ],
+      "concurrencies": [
+        32,
+        8,
+        16
+      ],
+      "finished_utc": "2026-08-30T02:01:57.390146+00:00",
+      "log": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r05-gpu-resize-c32-8-16.log",
+      "log_sha256": "43194932664de0b4815fe92914afac7c6e7b1728d0797e35a444557c9ea9a490",
+      "metrics": {
+        "blocks": {
+          "16": {
+            "e2e_latency_p50_ms": 8304.370818,
+            "e2e_latency_p95_ms": 8663.6249658,
+            "generated_token_throughput_per_second": 61.55480979679338,
+            "request_throughput_per_second": 1.923587806149793
+          },
+          "32": {
+            "e2e_latency_p50_ms": 16627.953978999998,
+            "e2e_latency_p95_ms": 17286.8432545,
+            "generated_token_throughput_per_second": 61.43493685672715,
+            "request_throughput_per_second": 1.9198417767727234
+          },
+          "8": {
+            "e2e_latency_p50_ms": 3483.3323975000003,
+            "e2e_latency_p95_ms": 5857.608849149998,
+            "generated_token_throughput_per_second": 60.9124043299576,
+            "request_throughput_per_second": 1.903512635311175
+          }
+        },
+        "gpu_monitor_sample_count": 2030,
+        "gpu_resize_outcomes": {
+          "gpu_resized": 19712,
+          "resize_cvcuda": 19712
+        },
+        "peak_gpu_memory_used_mib": 46086
+      },
+      "monitor": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r05-gpu-resize-c32-8-16-gpu-monitor.json",
+      "monitor_sha256": "d4610902af59a9dc3762d6fcec8f217ae84b497ffcd2930969098242b5e3c9d7",
+      "rep": 5,
+      "result": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r05-gpu-resize-c32-8-16.json",
+      "result_sha256": "0704e6f4617c58ccbe509775e2f103820b70a0c143a1c84e075cfc4f36a988ed",
+      "returncode": 0,
+      "server_log": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r05-gpu-resize-c32-8-16.server.log",
+      "server_log_sha256": "b8c291391b11d423bc9ab7e119de924db1f030a37bb01557b2d713511f615f91",
+      "source_after": {
+        "commit": "3a64f5325f8e27581461c983902e23c52d906989",
+        "root": "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "status": "",
+        "tree": "a4ff4b35a27b1a59fb42628acf8db403cd1ec44f"
+      },
+      "source_before": {
+        "commit": "3a64f5325f8e27581461c983902e23c52d906989",
+        "root": "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "status": "",
+        "tree": "a4ff4b35a27b1a59fb42628acf8db403cd1ec44f"
+      },
+      "started_utc": "2026-08-30T01:55:11.047141+00:00",
+      "status": "passed",
+      "variant": "gpu-resize"
+    },
+    {
+      "command": [
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "/home/ubuntu/work/pynv_video_base_head_publication_freeze_v11/run_with_gpu_monitor_refined.py",
+        "--output",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r06-gpu-resize-c16-8-32-gpu-monitor.json",
+        "--timeout-seconds",
+        "3600",
+        "--timeout-grace-seconds",
+        "120",
+        "--",
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "/home/ubuntu/work/pynv_video_base_head_publication_freeze_v11/benchmark_pynvvideocodec_e2e_persistent.py",
+        "--source-root",
+        "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "--python",
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "--pythonpath-extra",
+        "/home/ubuntu/work/vllm-pynv-e2e-transformers-5.14.1-20260827",
+        "--variant",
+        "gpu-resize-r06",
+        "--allowed-local-media-path",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus",
+        "--backend",
+        "pynvvideocodec",
+        "--backend-kwargs",
+        "{\"gpu_resize\":true,\"hw_decoders\":2,\"output_layout\":\"tchw\"}",
+        "--model",
+        "Qwen/Qwen3-VL-2B-Instruct",
+        "--revision",
+        "89644892e4d85e24eaac8bacfd4f463576704203",
+        "--frames",
+        "32",
+        "--video-pixel-budget",
+        "1024x576",
+        "--warmup-requests",
+        "1",
+        "--warmup-requests-by-concurrency",
+        "{\"8\":24,\"16\":48,\"32\":96}",
+        "--requests",
+        "1",
+        "--requests-by-concurrency",
+        "{\"8\":64,\"16\":128,\"32\":256}",
+        "--output-len",
+        "32",
+        "--max-model-len",
+        "32768",
+        "--max-num-batched-tokens",
+        "9216",
+        "--max-num-seqs",
+        "32",
+        "--mm-ipc-gpu-memory-gb",
+        "2",
+        "--kv-cache-memory-bytes",
+        "42949672960",
+        "--settle-seconds",
+        "1.0",
+        "--request-timeout",
+        "1200",
+        "--startup-timeout",
+        "600",
+        "--shutdown-timeout",
+        "60",
+        "--port",
+        "18700",
+        "--output",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r06-gpu-resize-c16-8-32.json",
+        "--server-arg=--mm-device-do-normalize",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-00.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-01.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-02.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-03.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-04.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-05.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-06.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-07.mp4",
+        "--concurrency",
+        "16",
+        "--concurrency",
+        "8",
+        "--concurrency",
+        "32"
+      ],
+      "concurrencies": [
+        16,
+        8,
+        32
+      ],
+      "finished_utc": "2026-08-30T02:08:38.710897+00:00",
+      "log": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r06-gpu-resize-c16-8-32.log",
+      "log_sha256": "82d27daad50d9ac9dc528b748c2f9903e59380d14c0d3598fbe620c12110163c",
+      "metrics": {
+        "blocks": {
+          "16": {
+            "e2e_latency_p50_ms": 8312.99577,
+            "e2e_latency_p95_ms": 9126.960444699998,
+            "generated_token_throughput_per_second": 61.308114037500964,
+            "request_throughput_per_second": 1.9158785636719051
+          },
+          "32": {
+            "e2e_latency_p50_ms": 16634.1148515,
+            "e2e_latency_p95_ms": 17082.78017075,
+            "generated_token_throughput_per_second": 61.61203511374318,
+            "request_throughput_per_second": 1.9253760973044745
+          },
+          "8": {
+            "e2e_latency_p50_ms": 3142.1934935,
+            "e2e_latency_p95_ms": 4946.2469862499975,
+            "generated_token_throughput_per_second": 61.200482105901294,
+            "request_throughput_per_second": 1.9125150658094154
+          }
+        },
+        "gpu_monitor_sample_count": 1999,
+        "gpu_resize_outcomes": {
+          "gpu_resized": 19712,
+          "resize_cvcuda": 19712
+        },
+        "peak_gpu_memory_used_mib": 46086
+      },
+      "monitor": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r06-gpu-resize-c16-8-32-gpu-monitor.json",
+      "monitor_sha256": "cd25fc9f419e53bdc73cd81b214260c8b176b61b2fa7b70ea10fbaf9825ee46b",
+      "rep": 6,
+      "result": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r06-gpu-resize-c16-8-32.json",
+      "result_sha256": "e4bfb1408ccd5810fbe16e327fa79b35b77c21600e68d838c44caeddc21386f4",
+      "returncode": 0,
+      "server_log": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r06-gpu-resize-c16-8-32.server.log",
+      "server_log_sha256": "16f457b7773bbff170d03bfade47897425b36fb97a5ef21d8d5e8b973e83a701",
+      "source_after": {
+        "commit": "3a64f5325f8e27581461c983902e23c52d906989",
+        "root": "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "status": "",
+        "tree": "a4ff4b35a27b1a59fb42628acf8db403cd1ec44f"
+      },
+      "source_before": {
+        "commit": "3a64f5325f8e27581461c983902e23c52d906989",
+        "root": "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "status": "",
+        "tree": "a4ff4b35a27b1a59fb42628acf8db403cd1ec44f"
+      },
+      "started_utc": "2026-08-30T02:01:58.661669+00:00",
+      "status": "passed",
+      "variant": "gpu-resize"
+    },
+    {
+      "command": [
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "/home/ubuntu/work/pynv_video_base_head_publication_freeze_v11/run_with_gpu_monitor_refined.py",
+        "--output",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r06-pr1-c16-8-32-gpu-monitor.json",
+        "--timeout-seconds",
+        "3600",
+        "--timeout-grace-seconds",
+        "120",
+        "--",
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "/home/ubuntu/work/pynv_video_base_head_publication_freeze_v11/benchmark_pynvvideocodec_e2e_persistent.py",
+        "--source-root",
+        "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "--python",
+        "/home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python",
+        "--pythonpath-extra",
+        "/home/ubuntu/work/vllm-pynv-e2e-transformers-5.14.1-20260827",
+        "--variant",
+        "pr1-r06",
+        "--allowed-local-media-path",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus",
+        "--backend",
+        "pynvvideocodec",
+        "--backend-kwargs",
+        "{\"hw_decoders\":2,\"output_layout\":\"tchw\"}",
+        "--model",
+        "Qwen/Qwen3-VL-2B-Instruct",
+        "--revision",
+        "89644892e4d85e24eaac8bacfd4f463576704203",
+        "--frames",
+        "32",
+        "--video-pixel-budget",
+        "1024x576",
+        "--warmup-requests",
+        "1",
+        "--warmup-requests-by-concurrency",
+        "{\"8\":24,\"16\":48,\"32\":96}",
+        "--requests",
+        "1",
+        "--requests-by-concurrency",
+        "{\"8\":64,\"16\":128,\"32\":256}",
+        "--output-len",
+        "32",
+        "--max-model-len",
+        "32768",
+        "--max-num-batched-tokens",
+        "9216",
+        "--max-num-seqs",
+        "32",
+        "--mm-ipc-gpu-memory-gb",
+        "2",
+        "--kv-cache-memory-bytes",
+        "42949672960",
+        "--settle-seconds",
+        "1.0",
+        "--request-timeout",
+        "1200",
+        "--startup-timeout",
+        "600",
+        "--shutdown-timeout",
+        "60",
+        "--port",
+        "18700",
+        "--output",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r06-pr1-c16-8-32.json",
+        "--server-arg=--mm-device-do-normalize",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-00.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-01.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-02.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-03.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-04.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-05.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-06.mp4",
+        "--video",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-07.mp4",
+        "--concurrency",
+        "16",
+        "--concurrency",
+        "8",
+        "--concurrency",
+        "32"
+      ],
+      "concurrencies": [
+        16,
+        8,
+        32
+      ],
+      "finished_utc": "2026-08-30T02:15:52.175493+00:00",
+      "log": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r06-pr1-c16-8-32.log",
+      "log_sha256": "51436436822c4238810018071909cdd975e4e90928445de978e0baaa4c97fd1d",
+      "metrics": {
+        "blocks": {
+          "16": {
+            "e2e_latency_p50_ms": 8903.27321,
+            "e2e_latency_p95_ms": 9466.23601715,
+            "generated_token_throughput_per_second": 56.75051949480965,
+            "request_throughput_per_second": 1.7734537342128016
+          },
+          "32": {
+            "e2e_latency_p50_ms": 17789.681856,
+            "e2e_latency_p95_ms": 18478.000804749998,
+            "generated_token_throughput_per_second": 57.09316606992565,
+            "request_throughput_per_second": 1.7841614396851766
+          },
+          "8": {
+            "e2e_latency_p50_ms": 3743.662859,
+            "e2e_latency_p95_ms": 8082.147233799999,
+            "generated_token_throughput_per_second": 56.685000886049394,
+            "request_throughput_per_second": 1.7714062776890436
+          }
+        },
+        "gpu_monitor_sample_count": 2159,
+        "gpu_resize_outcomes": null,
+        "peak_gpu_memory_used_mib": 45630
+      },
+      "monitor": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r06-pr1-c16-8-32-gpu-monitor.json",
+      "monitor_sha256": "49c5823078cd6ea337abef4cf6ff07c73b319d821081aa32ebd3ec01785c59d4",
+      "rep": 6,
+      "result": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r06-pr1-c16-8-32.json",
+      "result_sha256": "85809f1208839cba769ed338664e2387cf92076cbb523fcc58cfd130cd8a37ea",
+      "returncode": 0,
+      "server_log": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/rtx-pro-6000-pr1-vs-gpu-resize-c8-c16-c32-3a64-r2/r06-pr1-c16-8-32.server.log",
+      "server_log_sha256": "76ffdca6869dc3b237106dfd08632b6f15cea718e792ee543cd675fced324a0e",
+      "source_after": {
+        "commit": "fc52204ce7e0203456ceca030b90283dde28232a",
+        "root": "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "status": "",
+        "tree": "ae2af5c1d60f346efbb8a2375f46663b95835802"
+      },
+      "source_before": {
+        "commit": "fc52204ce7e0203456ceca030b90283dde28232a",
+        "root": "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+        "status": "",
+        "tree": "ae2af5c1d60f346efbb8a2375f46663b95835802"
+      },
+      "started_utc": "2026-08-30T02:08:39.987616+00:00",
+      "status": "passed",
+      "variant": "pr1"
+    }
+  ],
+  "commits": {
+    "gpu-resize": "3a64f5325f8e27581461c983902e23c52d906989",
+    "pr1": "fc52204ce7e0203456ceca030b90283dde28232a"
+  },
+  "finished_utc": "2026-08-30T02:15:53.679394+00:00",
+  "gpu_identity": "NVIDIA RTX PRO 6000 Blackwell Server Edition, GPU-2df87ff8-ec98-37fb-2c10-b82b4e0b0f0f, 595.91.07, 97887",
+  "gpu_label": "RTX-PRO-6000-Blackwell-Server-Edition",
+  "lock_status": "HELD holder=agent-pynv-video-gpu-resize remaining=14383s purpose=PR1-vs-GPU-resize C8/C16/C32 six-pair matrix on RTX-PRO-6000-Blackwell-Server-Edition",
+  "measured_requests": {
+    "8": 64,
+    "16": 128,
+    "32": 256
+  },
+  "schedule": [
+    [
+      1,
+      [
+        8,
+        16,
+        32
+      ],
+      [
+        "pr1",
+        "gpu-resize"
+      ]
+    ],
+    [
+      2,
+      [
+        32,
+        16,
+        8
+      ],
+      [
+        "gpu-resize",
+        "pr1"
+      ]
+    ],
+    [
+      3,
+      [
+        16,
+        32,
+        8
+      ],
+      [
+        "pr1",
+        "gpu-resize"
+      ]
+    ],
+    [
+      4,
+      [
+        8,
+        32,
+        16
+      ],
+      [
+        "gpu-resize",
+        "pr1"
+      ]
+    ],
+    [
+      5,
+      [
+        32,
+        8,
+        16
+      ],
+      [
+        "pr1",
+        "gpu-resize"
+      ]
+    ],
+    [
+      6,
+      [
+        16,
+        8,
+        32
+      ],
+      [
+        "gpu-resize",
+        "pr1"
+      ]
+    ]
+  ],
+  "schema": "pynv-gpu-resize-pr1-matrix-v1",
+  "source_start": {
+    "commit": "3a64f5325f8e27581461c983902e23c52d906989",
+    "root": "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+    "status": "",
+    "tree": "a4ff4b35a27b1a59fb42628acf8db403cd1ec44f"
+  },
+  "source_terminal": {
+    "commit": "3a64f5325f8e27581461c983902e23c52d906989",
+    "root": "/home/ubuntu/work/vllm-pynv-gpu-resize-20260829",
+    "status": "",
+    "tree": "a4ff4b35a27b1a59fb42628acf8db403cd1ec44f"
+  },
+  "started_utc": "2026-08-30T00:52:05.557487+00:00",
+  "status": "passed",
+  "summary": {
+    "baseline": "literal PR #1 head",
+    "candidate": "stacked GPU-resize head",
+    "comparisons": {
+      "16": {
+        "gpu_resize_request_throughput_per_second": {
+          "max": 1.9238504492920976,
+          "median": 1.922533832151982,
+          "min": 1.9158785636719051
+        },
+        "paired_geomean_speedup": 1.0777616840441686,
+        "paired_percent_change": {
+          "max": 8.563024353185767,
+          "median": 7.905792211557372,
+          "min": 6.699891031787097
+        },
+        "pairs": [
+          {
+            "gpu_resize_over_pr1": 1.0778065433954407,
+            "gpu_resize_request_throughput_per_second": 1.9238504492920976,
+            "percent_change": 7.780654339544069,
+            "pr1_request_throughput_per_second": 1.7849682404333378,
+            "rep": 1
+          },
+          {
+            "gpu_resize_over_pr1": 1.066998910317871,
+            "gpu_resize_request_throughput_per_second": 1.9166129971891184,
+            "percent_change": 6.699891031787097,
+            "pr1_request_throughput_per_second": 1.7962651870170494,
+            "rep": 2
+          },
+          {
+            "gpu_resize_over_pr1": 1.0819418460529353,
+            "gpu_resize_request_throughput_per_second": 1.9232955506068021,
+            "percent_change": 8.19418460529353,
+            "pr1_request_throughput_per_second": 1.7776330193930798,
+            "rep": 3
+          },
+          {
+            "gpu_resize_over_pr1": 1.0739836749453526,
+            "gpu_resize_request_throughput_per_second": 1.9217721136971622,
+            "percent_change": 7.398367494535263,
+            "pr1_request_throughput_per_second": 1.7893867090623583,
+            "rep": 4
+          },
+          {
+            "gpu_resize_over_pr1": 1.0856302435318577,
+            "gpu_resize_request_throughput_per_second": 1.923587806149793,
+            "percent_change": 8.563024353185767,
+            "pr1_request_throughput_per_second": 1.7718627659927988,
+            "rep": 5
+          },
+          {
+            "gpu_resize_over_pr1": 1.0803093008357068,
+            "gpu_resize_request_throughput_per_second": 1.9158785636719051,
+            "percent_change": 8.030930083570675,
+            "pr1_request_throughput_per_second": 1.7734537342128016,
+            "rep": 6
+          }
+        ],
+        "pr1_request_throughput_per_second": {
+          "max": 1.7962651870170494,
+          "median": 1.7813006299132088,
+          "min": 1.7718627659927988
+        }
+      },
+      "32": {
+        "gpu_resize_request_throughput_per_second": {
+          "max": 1.9270768560274085,
+          "median": 1.9210338927850117,
+          "min": 1.9151277563768965
+        },
+        "paired_geomean_speedup": 1.0745169605979767,
+        "paired_percent_change": {
+          "max": 7.9149035775717635,
+          "median": 7.670386598698531,
+          "min": 6.6487560943577995
+        },
+        "pairs": [
+          {
+            "gpu_resize_over_pr1": 1.0774356162319725,
+            "gpu_resize_request_throughput_per_second": 1.9222260087972998,
+            "percent_change": 7.743561623197248,
+            "pr1_request_throughput_per_second": 1.7840750573289417,
+            "rep": 1
+          },
+          {
+            "gpu_resize_over_pr1": 1.066487560943578,
+            "gpu_resize_request_throughput_per_second": 1.9165274732802775,
+            "percent_change": 6.6487560943577995,
+            "pr1_request_throughput_per_second": 1.7970462511392296,
+            "rep": 2
+          },
+          {
+            "gpu_resize_over_pr1": 1.0706776880181559,
+            "gpu_resize_request_throughput_per_second": 1.9151277563768965,
+            "percent_change": 7.067768801815588,
+            "pr1_request_throughput_per_second": 1.7887061417351784,
+            "rep": 3
+          },
+          {
+            "gpu_resize_over_pr1": 1.0774284244725143,
+            "gpu_resize_request_throughput_per_second": 1.9270768560274085,
+            "percent_change": 7.74284244725143,
+            "pr1_request_throughput_per_second": 1.788589211363032,
+            "rep": 4
+          },
+          {
+            "gpu_resize_over_pr1": 1.0759793075014563,
+            "gpu_resize_request_throughput_per_second": 1.9198417767727234,
+            "percent_change": 7.597930750145632,
+            "pr1_request_throughput_per_second": 1.7842738827671412,
+            "rep": 5
+          },
+          {
+            "gpu_resize_over_pr1": 1.0791490357757176,
+            "gpu_resize_request_throughput_per_second": 1.9253760973044745,
+            "percent_change": 7.9149035775717635,
+            "pr1_request_throughput_per_second": 1.7841614396851766,
+            "rep": 6
+          }
+        ],
+        "pr1_request_throughput_per_second": {
+          "max": 1.7970462511392296,
+          "median": 1.7864315470650864,
+          "min": 1.7840750573289417
+        }
+      },
+      "8": {
+        "gpu_resize_request_throughput_per_second": {
+          "max": 1.9142855253867535,
+          "median": 1.9068642024416023,
+          "min": 1.903512635311175
+        },
+        "paired_geomean_speedup": 1.0775946799411846,
+        "paired_percent_change": {
+          "max": 8.420172582100482,
+          "median": 7.835382270579261,
+          "min": 7.196649585299708
+        },
+        "pairs": [
+          {
+            "gpu_resize_over_pr1": 1.0770484560445583,
+            "gpu_resize_request_throughput_per_second": 1.9069749765214128,
+            "percent_change": 7.704845604455834,
+            "pr1_request_throughput_per_second": 1.7705563438851628,
+            "rep": 1
+          },
+          {
+            "gpu_resize_over_pr1": 1.0730191980976456,
+            "gpu_resize_request_throughput_per_second": 1.9054994369958216,
+            "percent_change": 7.301919809764557,
+            "pr1_request_throughput_per_second": 1.7758297711486237,
+            "rep": 2
+          },
+          {
+            "gpu_resize_over_pr1": 1.071966495852997,
+            "gpu_resize_request_throughput_per_second": 1.9067534283617915,
+            "percent_change": 7.196649585299708,
+            "pr1_request_throughput_per_second": 1.7787434922063758,
+            "rep": 3
+          },
+          {
+            "gpu_resize_over_pr1": 1.0842017258210048,
+            "gpu_resize_request_throughput_per_second": 1.9142855253867535,
+            "percent_change": 8.420172582100482,
+            "pr1_request_throughput_per_second": 1.7656174859315714,
+            "rep": 4
+          },
+          {
+            "gpu_resize_over_pr1": 1.079721887849144,
+            "gpu_resize_request_throughput_per_second": 1.903512635311175,
+            "percent_change": 7.972188784914391,
+            "pr1_request_throughput_per_second": 1.762965682860297,
+            "rep": 5
+          },
+          {
+            "gpu_resize_over_pr1": 1.0796591893670269,
+            "gpu_resize_request_throughput_per_second": 1.9125150658094154,
+            "percent_change": 7.965918936702687,
+            "pr1_request_throughput_per_second": 1.7714062776890436,
+            "rep": 6
+          }
+        ],
+        "pr1_request_throughput_per_second": {
+          "max": 1.7787434922063758,
+          "median": 1.770981310787103,
+          "min": 1.762965682860297
+        }
+      }
+    },
+    "gpu_identity": "NVIDIA RTX PRO 6000 Blackwell Server Edition, GPU-2df87ff8-ec98-37fb-2c10-b82b4e0b0f0f, 595.91.07, 97887",
+    "gpu_label": "RTX-PRO-6000-Blackwell-Server-Edition",
+    "repetitions": 6,
+    "schema": "pynv-gpu-resize-pr1-paired-summary-v1",
+    "status": "passed",
+    "token_parity_status": "completion_or_text_mismatch"
+  },
+  "support": {
+    "harness": {
+      "path": "/home/ubuntu/work/pynv_video_base_head_publication_freeze_v11/benchmark_pynvvideocodec_e2e_persistent.py",
+      "sha256": "08bac47c2c8f2143f0717800fc40d5aad66de7cb896f124d0eb0a5c8148518de"
+    },
+    "monitor": {
+      "path": "/home/ubuntu/work/pynv_video_base_head_publication_freeze_v11/run_with_gpu_monitor_refined.py",
+      "sha256": "db2ac87f4a1c21974ca89c15bcd28807433621dd1fc8e79a03ca6b30c3209ad2"
+    },
+    "runner": {
+      "path": "/home/ubuntu/work/run_pynv_gpu_resize_high_concurrency_matrix.py",
+      "sha256": "b2fc03fd3451b8ef33a6b11fde8d8745cf262db2524c951c74c90f44542c5f17"
+    },
+    "traffic_video": {
+      "bytes": 13267543,
+      "hardlinks": [
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-00.mp4",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-01.mp4",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-02.mp4",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-03.mp4",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-04.mp4",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-05.mp4",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-06.mp4",
+        "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus/traffic1080-07.mp4"
+      ],
+      "path": "/home/ubuntu/work/pynv-video-gpu-resize-results-20260829/quality/traffic-1080p.mp4",
+      "sha256": "b5816375c491528f23799b1d1d67100355d1d43730db4898d480e4edb5065a5d"
+    }
+  },
+  "token_audits": [
+    {
+      "compared_response_pairs": 616,
+      "mismatch_counts": {
+        "common_configuration": 0,
+        "completion_token_ids": 261,
+        "prompt_token_ids": 0,
+        "request_identity": 0,
+        "text": 261
+      },
+      "mismatches": [
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 2
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 2
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 4
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 4
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 7
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 7
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 18
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 18
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 20
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 20
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 21
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 21
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 1
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 1
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 3
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 3
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 5
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 5
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 6
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 6
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 13
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 13
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 16
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 16
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 17
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 17
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 19
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 19
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 20
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 20
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 23
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 23
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 24
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 24
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 25
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 25
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 26
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 26
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 28
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 28
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 33
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 33
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 43
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 43
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 45
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 45
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 48
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 48
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 52
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 52
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 53
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 53
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 56
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 56
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 57
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 57
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 58
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 58
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 60
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 60
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 61
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 61
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 63
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 63
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 0
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 0
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 2
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 2
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 3
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 3
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 4
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 4
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 5
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 5
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 6
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 6
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 8
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 8
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 9
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 9
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 11
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 11
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 13
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 13
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 17
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 17
+        }
+      ],
+      "mismatches_truncated": true,
+      "rep": 1,
+      "status": "completion_or_text_mismatch"
+    },
+    {
+      "compared_response_pairs": 616,
+      "mismatch_counts": {
+        "common_configuration": 0,
+        "completion_token_ids": 292,
+        "prompt_token_ids": 0,
+        "request_identity": 0,
+        "text": 292
+      },
+      "mismatches": [
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 2
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 2
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 4
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 4
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 6
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 6
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 7
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 7
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 10
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 10
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 12
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 12
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 14
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 14
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 17
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 17
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 18
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 18
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 19
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 19
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 22
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 22
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 1
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 1
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 7
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 7
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 8
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 8
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 12
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 12
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 14
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 14
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 20
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 20
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 22
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 22
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 23
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 23
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 26
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 26
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 29
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 29
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 30
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 30
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 34
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 34
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 38
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 38
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 47
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 47
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 50
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 50
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 51
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 51
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 54
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 54
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 56
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 56
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 57
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 57
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 58
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 58
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 59
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 59
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 61
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 61
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 63
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 63
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 1
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 1
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 2
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 2
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 3
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 3
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 7
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 7
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 11
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 11
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 14
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 14
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 15
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 15
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 16
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 16
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 20
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 20
+        }
+      ],
+      "mismatches_truncated": true,
+      "rep": 2,
+      "status": "completion_or_text_mismatch"
+    },
+    {
+      "compared_response_pairs": 616,
+      "mismatch_counts": {
+        "common_configuration": 0,
+        "completion_token_ids": 272,
+        "prompt_token_ids": 0,
+        "request_identity": 0,
+        "text": 272
+      },
+      "mismatches": [
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 3
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 3
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 8
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 8
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 12
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 12
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 14
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 14
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 16
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 16
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 17
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 17
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 18
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 18
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 21
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 21
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 3
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 3
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 6
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 6
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 13
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 13
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 14
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 14
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 18
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 18
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 20
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 20
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 25
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 25
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 28
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 28
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 33
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 33
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 39
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 39
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 40
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 40
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 41
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 41
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 44
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 44
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 46
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 46
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 48
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 48
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 52
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 52
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 56
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 56
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 57
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 57
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 60
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 60
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 61
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 61
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 0
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 0
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 2
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 2
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 4
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 4
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 5
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 5
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 6
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 6
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 7
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 7
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 10
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 10
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 13
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 13
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 14
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 14
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 15
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 15
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 17
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 17
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 18
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 18
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 20
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 20
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 23
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 23
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 25
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 25
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 26
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 26
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 28
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 28
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 35
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 35
+        }
+      ],
+      "mismatches_truncated": true,
+      "rep": 3,
+      "status": "completion_or_text_mismatch"
+    },
+    {
+      "compared_response_pairs": 616,
+      "mismatch_counts": {
+        "common_configuration": 0,
+        "completion_token_ids": 311,
+        "prompt_token_ids": 0,
+        "request_identity": 0,
+        "text": 311
+      },
+      "mismatches": [
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 3
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 3
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 6
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 6
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 10
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 10
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 13
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 13
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 17
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 17
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 20
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 20
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 21
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 21
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 2
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 2
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 4
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 4
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 5
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 5
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 6
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 6
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 8
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 8
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 10
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 10
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 12
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 12
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 16
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 16
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 20
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 20
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 24
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 24
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 28
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 28
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 32
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 32
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 36
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 36
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 40
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 40
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 41
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 41
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 43
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 43
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 45
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 45
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 47
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 47
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 49
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 49
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 51
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 51
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 53
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 53
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 56
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 56
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 60
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 60
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 61
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 61
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 62
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 62
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 63
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 63
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 0
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 0
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 1
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 1
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 3
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 3
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 4
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 4
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 7
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 7
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 8
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 8
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 10
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 10
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 19
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 19
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 21
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 21
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 23
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 23
+        }
+      ],
+      "mismatches_truncated": true,
+      "rep": 4,
+      "status": "completion_or_text_mismatch"
+    },
+    {
+      "compared_response_pairs": 616,
+      "mismatch_counts": {
+        "common_configuration": 0,
+        "completion_token_ids": 277,
+        "prompt_token_ids": 0,
+        "request_identity": 0,
+        "text": 277
+      },
+      "mismatches": [
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 3
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 3
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 4
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 4
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 6
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 6
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 10
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 10
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 13
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 13
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 14
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 14
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 16
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 16
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 19
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 19
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 21
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 21
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 1
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 1
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 3
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 3
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 6
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 6
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 7
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 7
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 12
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 12
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 13
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 13
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 19
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 19
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 20
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 20
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 21
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 21
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 23
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 23
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 24
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 24
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 27
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 27
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 29
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 29
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 36
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 36
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 37
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 37
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 38
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 38
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 44
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 44
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 45
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 45
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 46
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 46
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 49
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 49
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 51
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 51
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 56
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 56
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 57
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 57
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 62
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 62
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 0
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 0
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 1
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 1
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 3
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 3
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 4
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 4
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 6
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 6
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 11
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 11
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 15
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 15
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 16
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 16
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 17
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 17
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 21
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 21
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 26
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 26
+        }
+      ],
+      "mismatches_truncated": true,
+      "rep": 5,
+      "status": "completion_or_text_mismatch"
+    },
+    {
+      "compared_response_pairs": 616,
+      "mismatch_counts": {
+        "common_configuration": 0,
+        "completion_token_ids": 293,
+        "prompt_token_ids": 0,
+        "request_identity": 0,
+        "text": 293
+      },
+      "mismatches": [
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 2
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 2
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 4
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 4
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 5
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 5
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 8
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 8
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 13
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 13
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 17
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 17
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 21
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 21
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 23
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 23
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 1
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 1
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 2
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 2
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 3
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 3
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 4
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 4
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 8
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 8
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 13
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 13
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 14
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 14
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 18
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 18
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 22
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 22
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 23
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 23
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 29
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 29
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 31
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 31
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 33
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 33
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 35
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 35
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 36
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 36
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 37
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 37
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 41
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 41
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 43
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 43
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 45
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 45
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 46
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 46
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 49
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 49
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 51
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 51
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 53
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 53
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 56
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 56
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 57
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 57
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 61
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 61
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 0
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 0
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 2
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 2
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 4
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 4
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 8
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 8
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 9
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 9
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 10
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 10
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 11
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 11
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 12
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 12
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 13
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 13
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 20
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 20
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 21
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 21
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 23
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 23
+        }
+      ],
+      "mismatches_truncated": true,
+      "rep": 6,
+      "status": "completion_or_text_mismatch"
+    }
+  ],
+  "trees": {
+    "gpu-resize": "a4ff4b35a27b1a59fb42628acf8db403cd1ec44f",
+    "pr1": "ae2af5c1d60f346efbb8a2375f46663b95835802"
+  },
+  "warmup_requests": {
+    "8": 24,
+    "16": 48,
+    "32": 96
+  }
+}

@@ -1,0 +1,29 @@
+RESUME-VALIDATED r01-pr1
+RESUME-VALIDATED r01-gpu-resize
+RESUME-VALIDATED r02-gpu-resize
+RESUME-VALIDATED r02-pr1
+RESUME-VALIDATED r03-pr1
+RESUME-VALIDATED r03-gpu-resize
+RESUME-VALIDATED r04-gpu-resize
+SKIP r01-pr1 already validated
+SKIP r01-gpu-resize already validated
+SKIP r02-gpu-resize already validated
+SKIP r02-pr1 already validated
+SKIP r03-pr1 already validated
+SKIP r03-gpu-resize already validated
+SKIP r04-gpu-resize already validated
+RUN r04-pr1-c8-32-16 commit=fc52204ce7e0203456ceca030b90283dde28232a
+PASS r04-pr1-c8-32-16
+RUN r05-pr1-c32-8-16 commit=fc52204ce7e0203456ceca030b90283dde28232a
+PASS r05-pr1-c32-8-16
+RUN r05-gpu-resize-c32-8-16 commit=3a64f5325f8e27581461c983902e23c52d906989
+PASS r05-gpu-resize-c32-8-16
+RUN r06-gpu-resize-c16-8-32 commit=3a64f5325f8e27581461c983902e23c52d906989
+PASS r06-gpu-resize-c16-8-32
+RUN r06-pr1-c16-8-32 commit=fc52204ce7e0203456ceca030b90283dde28232a
+PASS r06-pr1-c16-8-32
+| Concurrency | PR #1 req/s, median [min, max] | GPU resize req/s, median [min, max] | Paired change, median [min, max] |
+|---:|---:|---:|---:|
+| 8 | 0.8807 [0.8756, 0.8816] | 0.8899 [0.8790, 0.8944] | +1.00% [+0.38%, +1.64%] |
+| 16 | 0.8820 [0.8786, 0.8867] | 0.8785 [0.8728, 0.8854] | -0.43% [-0.67%, -0.15%] |
+| 32 | 0.8845 [0.8833, 0.8861] | 0.8756 [0.8696, 0.8781] | -0.98% [-1.71%, -0.83%] |

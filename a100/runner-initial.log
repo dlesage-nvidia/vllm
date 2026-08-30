@@ -1,0 +1,26 @@
+RUN r01-pr1-c8-16-32 commit=fc52204ce7e0203456ceca030b90283dde28232a
+PASS r01-pr1-c8-16-32
+RUN r01-gpu-resize-c8-16-32 commit=3a64f5325f8e27581461c983902e23c52d906989
+PASS r01-gpu-resize-c8-16-32
+RUN r02-gpu-resize-c32-16-8 commit=3a64f5325f8e27581461c983902e23c52d906989
+PASS r02-gpu-resize-c32-16-8
+RUN r02-pr1-c32-16-8 commit=fc52204ce7e0203456ceca030b90283dde28232a
+PASS r02-pr1-c32-16-8
+RUN r03-pr1-c16-32-8 commit=fc52204ce7e0203456ceca030b90283dde28232a
+PASS r03-pr1-c16-32-8
+RUN r03-gpu-resize-c16-32-8 commit=3a64f5325f8e27581461c983902e23c52d906989
+PASS r03-gpu-resize-c16-32-8
+RUN r04-gpu-resize-c8-32-16 commit=3a64f5325f8e27581461c983902e23c52d906989
+PASS r04-gpu-resize-c8-32-16
+RUN r04-pr1-c8-32-16 commit=fc52204ce7e0203456ceca030b90283dde28232a
+Traceback (most recent call last):
+  File "/home/ubuntu/work/run_pynv_gpu_resize_high_concurrency_matrix.py", line 935, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/home/ubuntu/work/run_pynv_gpu_resize_high_concurrency_matrix.py", line 846, in main
+    raise RuntimeError(f"cell failed {stem}:\n{tail}")
+RuntimeError: cell failed r04-pr1-c8-32-16:
+Launching: /home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/bin/python -m vllm.entrypoints.cli.main serve Qwen/Qwen3-VL-2B-Instruct --revision 89644892e4d85e24eaac8bacfd4f463576704203 --served-model-name qwen3-vl-video-throughput --host 127.0.0.1 --port 18700 --dtype bfloat16 --seed 0 --tensor-parallel-size 1 --max-model-len 32768 --max-num-batched-tokens 9216 --max-num-seqs 32 --api-server-count 1 --limit-mm-per-prompt '{"image":0,"video":1}' --allowed-local-media-path /home/ubuntu/work/pynv-video-gpu-resize-results-20260829/pr1-traffic-corpus --media-io-kwargs '{"video":{"backend":"pynvvideocodec","hw_decoders":2,"max_frames":32,"min_frames":32,"output_layout":"tchw","video_backend":"qwen3_vl"}}' --mm-processor-kwargs '{"max_pixels":18874368}' --mm-processor-cache-gb 0 --no-enable-prefix-caching --mm-ipc-gpu-memory-gb 2.0 --kv-cache-memory-bytes 42949672960 --mm-device-do-normalize
+Wrote failed result to /home/ubuntu/work/pynv-video-gpu-resize-results-20260829/a100-pr1-vs-gpu-resize-c8-c16-c32-3a64-r4/r04-pr1-c8-32-16.json
+OSError: [Errno 28] No space left on device
+

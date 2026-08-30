@@ -1,0 +1,36 @@
+Candidate commit: 3a64f5325f8e27581461c983902e23c52d906989
+Validated: 2026-08-29 America/Los_Angeles
+
+Regression suite
+----------------
+PYTHONPATH=/home/dlesage/work/vllm-pynvvideocodec-gpu-resize-20260829 \
+  /home/dlesage/work/vllm-pynvvideocodec-tchw-20260827/.venv/bin/python \
+  -m pytest -q \
+  tests/multimodal/media/test_video.py \
+  tests/multimodal/test_video.py \
+  tests/multimodal/test_hasher.py \
+  tests/renderers/test_process_multi_modal_uuids.py \
+  tests/models/multimodal/processing/test_qwen3_vl.py \
+  tests/models/multimodal/processing/test_cosmos3_edge.py \
+  tests/models/test_registry.py::test_inherited_qwen3_models_device_normalization_opt_out
+
+Result: 227 passed, 4 skipped, 23 warnings in 239.65s; exit 0 on the final
+publication rerun. Skip reasons:
+- 2 CV-CUDA cases: cvcuda is not installed in this local CPU environment; both
+  cases run in the four-test real-CUDA preflight on each GPU machine.
+- 1 case requires H200 NVDEC resolution limits.
+- 1 case is an existing video-processor-alignment skip.
+
+Pre-commit
+----------
+/home/dlesage/work/vllm-pynvvideocodec-tchw-20260827/.venv/bin/pre-commit \
+  run --files <the 13 files changed from PR #1>
+
+Result: all applicable hooks passed; exit 0. This includes Ruff check/format,
+markdownlint, mypy 3.10, SPDX, forbidden imports, the torch.cuda API guard,
+configuration validation, and suggestion checks.
+
+Note: a prior attempt with the host-global pre-commit executable did not run
+hooks because that installation's identify package did not recognize the
+repository's textproto tag. The successful result above uses the project
+virtual environment.

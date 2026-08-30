@@ -1,0 +1,20 @@
+INFO 08-30 00:52:03 [pynvvideocodec.py:150] PyNvVideoCodec: gpu_resize is using CV-CUDA HQResize.
+.INFO 08-30 00:52:03 [pynvvideocodec.py:150] PyNvVideoCodec: gpu_resize is using CV-CUDA HQResize.
+...
+=============================== warnings summary ===============================
+work/vllm-nvimagecodec-bench/vllm/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: 14 warnings
+  /home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+    warnings.warn(
+
+<frozen importlib._bootstrap_external>:1301
+  <frozen importlib._bootstrap_external>:1301: FutureWarning: The cuda.cudart module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.runtime module instead.
+
+<frozen importlib._bootstrap_external>:1301
+  <frozen importlib._bootstrap_external>:1301: FutureWarning: The cuda.nvrtc module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.nvrtc module instead.
+
+tests/multimodal/test_video.py::test_pynvvideocodec_gpu_resize_uses_cvcuda_and_matches_pil[thwc]
+  /home/ubuntu/work/vllm-nvimagecodec-bench/vllm/.venv/lib/python3.12/site-packages/PyNvVideoCodec/__init__.py:37: DeprecationWarning: ast.Str is deprecated and will be removed in Python 3.14; use ast.Constant instead
+    from ast import Str
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+4 passed, 17 warnings in 4.07s

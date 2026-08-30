@@ -1,0 +1,27 @@
+{
+  "schema": "pynv-gpu-resize-repeatability-audit-v1",
+  "comparison_scope": "all 15 within-variant pairings among six publication repetitions",
+  "responses_per_pair": 616,
+  "request_identity_mismatches": 0,
+  "prompt_token_id_mismatches": 0,
+  "configuration_note": "Balanced repetitions intentionally use different concurrency-block orders; the strict audit reports three ordering-list differences per cross-repetition comparison.",
+  "pr1_control": {
+    "completion_mismatch_counts": [313, 262, 290, 260, 314, 287, 335, 285, 303, 294, 276, 300, 286, 298, 306],
+    "min": 260,
+    "median": 294,
+    "max": 335
+  },
+  "gpu_resize": {
+    "completion_mismatch_counts": [206, 195, 270, 174, 186, 219, 272, 174, 218, 253, 191, 165, 260, 254, 176],
+    "min": 165,
+    "median": 206,
+    "max": 272
+  },
+  "paired_pr1_vs_gpu_resize": {
+    "completion_mismatch_counts": [261, 292, 272, 311, 277, 293],
+    "min": 261,
+    "median": 284.5,
+    "max": 311
+  },
+  "interpretation": "The concurrent throughput traffic is not an exact output-parity test. Paired treatment divergence overlaps repeated-control divergence; deterministic C1 model evaluations provide output-parity evidence."
+}

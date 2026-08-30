@@ -1,0 +1,4295 @@
+{
+  "repetitions": [
+    {
+      "compared_response_pairs": 616,
+      "mismatch_counts": {
+        "common_configuration": 0,
+        "completion_token_ids": 261,
+        "prompt_token_ids": 0,
+        "request_identity": 0,
+        "text": 261
+      },
+      "mismatches": [
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 2
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 2
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 4
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 4
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 7
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 7
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 18
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 18
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 20
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 20
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 21
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 21
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 1
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 1
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 3
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 3
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 5
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 5
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 6
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 6
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 13
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 13
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 16
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 16
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 17
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 17
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 19
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 19
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 20
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 20
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 23
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 23
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 24
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 24
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 25
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 25
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 26
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 26
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 28
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 28
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 33
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 33
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 43
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 43
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 45
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 45
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 48
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 48
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 52
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 52
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 53
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 53
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 56
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 56
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 57
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 57
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 58
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 58
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 60
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 60
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 61
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 61
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 63
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 1,
+          "request_index": 63
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 0
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 0
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 2
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 2
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 3
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 3
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 4
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 4
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 5
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 5
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 6
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 6
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 8
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 8
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 9
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 9
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 11
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 11
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 13
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 13
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 17
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 1,
+          "request_index": 17
+        }
+      ],
+      "mismatches_truncated": true,
+      "rep": 1,
+      "status": "completion_or_text_mismatch"
+    },
+    {
+      "compared_response_pairs": 616,
+      "mismatch_counts": {
+        "common_configuration": 0,
+        "completion_token_ids": 292,
+        "prompt_token_ids": 0,
+        "request_identity": 0,
+        "text": 292
+      },
+      "mismatches": [
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 2
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 2
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 4
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 4
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 6
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 6
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 7
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 7
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 10
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 10
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 12
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 12
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 14
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 14
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 17
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 17
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 18
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 18
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 19
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 19
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 22
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 22
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 1
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 1
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 7
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 7
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 8
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 8
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 12
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 12
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 14
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 14
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 20
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 20
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 22
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 22
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 23
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 23
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 26
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 26
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 29
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 29
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 30
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 30
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 34
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 34
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 38
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 38
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 47
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 47
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 50
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 50
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 51
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 51
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 54
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 54
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 56
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 56
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 57
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 57
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 58
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 58
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 59
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 59
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 61
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 61
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 63
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 2,
+          "request_index": 63
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 1
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 1
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 2
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 2
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 3
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 3
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 7
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 7
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 11
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 11
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 14
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 14
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 15
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 15
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 16
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 16
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 20
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 2,
+          "request_index": 20
+        }
+      ],
+      "mismatches_truncated": true,
+      "rep": 2,
+      "status": "completion_or_text_mismatch"
+    },
+    {
+      "compared_response_pairs": 616,
+      "mismatch_counts": {
+        "common_configuration": 0,
+        "completion_token_ids": 272,
+        "prompt_token_ids": 0,
+        "request_identity": 0,
+        "text": 272
+      },
+      "mismatches": [
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 3
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 3
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 8
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 8
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 12
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 12
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 14
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 14
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 16
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 16
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 17
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 17
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 18
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 18
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 21
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 21
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 3
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 3
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 6
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 6
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 13
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 13
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 14
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 14
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 18
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 18
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 20
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 20
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 25
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 25
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 28
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 28
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 33
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 33
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 39
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 39
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 40
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 40
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 41
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 41
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 44
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 44
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 46
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 46
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 48
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 48
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 52
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 52
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 56
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 56
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 57
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 57
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 60
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 60
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 61
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 3,
+          "request_index": 61
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 0
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 0
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 2
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 2
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 4
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 4
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 5
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 5
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 6
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 6
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 7
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 7
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 10
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 10
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 13
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 13
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 14
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 14
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 15
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 15
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 17
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 17
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 18
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 18
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 20
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 20
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 23
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 23
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 25
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 25
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 26
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 26
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 28
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 28
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 35
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 3,
+          "request_index": 35
+        }
+      ],
+      "mismatches_truncated": true,
+      "rep": 3,
+      "status": "completion_or_text_mismatch"
+    },
+    {
+      "compared_response_pairs": 616,
+      "mismatch_counts": {
+        "common_configuration": 0,
+        "completion_token_ids": 311,
+        "prompt_token_ids": 0,
+        "request_identity": 0,
+        "text": 311
+      },
+      "mismatches": [
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 3
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 3
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 6
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 6
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 10
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 10
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 13
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 13
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 17
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 17
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 20
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 20
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 21
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 21
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 2
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 2
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 4
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 4
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 5
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 5
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 6
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 6
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 8
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 8
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 10
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 10
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 12
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 12
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 16
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 16
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 20
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 20
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 24
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 24
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 28
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 28
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 32
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 32
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 36
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 36
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 40
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 40
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 41
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 41
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 43
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 43
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 45
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 45
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 47
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 47
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 49
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 49
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 51
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 51
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 53
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 53
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 56
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 56
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 60
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 60
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 61
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 61
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 62
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 62
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 63
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 4,
+          "request_index": 63
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 0
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 0
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 1
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 1
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 3
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 3
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 4
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 4
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 7
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 7
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 8
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 8
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 10
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 10
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 19
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 19
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 21
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 21
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 23
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 4,
+          "request_index": 23
+        }
+      ],
+      "mismatches_truncated": true,
+      "rep": 4,
+      "status": "completion_or_text_mismatch"
+    },
+    {
+      "compared_response_pairs": 616,
+      "mismatch_counts": {
+        "common_configuration": 0,
+        "completion_token_ids": 277,
+        "prompt_token_ids": 0,
+        "request_identity": 0,
+        "text": 277
+      },
+      "mismatches": [
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 3
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 3
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 4
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 4
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 6
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 6
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 10
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 10
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 13
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 13
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 14
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 14
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 16
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 16
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 19
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 19
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 21
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 21
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 0
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 1
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 1
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 3
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 3
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 6
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 6
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 7
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 7
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 12
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 12
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 13
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 13
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 19
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 19
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 20
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 20
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 21
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 21
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 23
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 23
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 24
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 24
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 27
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 27
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 29
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 29
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 36
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 36
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 37
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 37
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 38
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 38
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 44
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 44
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 45
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 45
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 46
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 46
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 49
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 49
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 51
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 51
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 56
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 56
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 57
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 57
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 62
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 5,
+          "request_index": 62
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 0
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 0
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 1
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 1
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 3
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 3
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 4
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 4
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 6
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 6
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 11
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 11
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 15
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 15
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 16
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 16
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 17
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 17
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 21
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 21
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 26
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 5,
+          "request_index": 26
+        }
+      ],
+      "mismatches_truncated": true,
+      "rep": 5,
+      "status": "completion_or_text_mismatch"
+    },
+    {
+      "compared_response_pairs": 616,
+      "mismatch_counts": {
+        "common_configuration": 0,
+        "completion_token_ids": 293,
+        "prompt_token_ids": 0,
+        "request_identity": 0,
+        "text": 293
+      },
+      "mismatches": [
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 2
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 2
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 4
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 4
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 5
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 5
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 8
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 8
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 13
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 13
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 17
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 17
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 21
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 21
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 23
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 23
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 1
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 1
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 2
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 2
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 3
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 3
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 4
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 4
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 8
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 8
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 9
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 11
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 13
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 13
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 14
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 14
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 15
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 18
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 18
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 22
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 22
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 23
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 23
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 29
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 29
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 31
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 31
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 33
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 33
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 35
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 35
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 36
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 36
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 37
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 37
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 41
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 41
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 43
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 43
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 45
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 45
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 46
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 46
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 49
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 49
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 51
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 51
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 53
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 53
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 56
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 56
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 57
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 57
+        },
+        {
+          "concurrency": 8,
+          "kind": "completion_token_ids",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 61
+        },
+        {
+          "concurrency": 8,
+          "kind": "text",
+          "phase": "measured",
+          "rep": 6,
+          "request_index": 61
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 0
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 0
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 2
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 2
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 4
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 4
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 8
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 8
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 9
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 9
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 10
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 10
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 11
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 11
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 12
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 12
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 13
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 13
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 20
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 20
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 21
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 21
+        },
+        {
+          "concurrency": 16,
+          "kind": "completion_token_ids",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 23
+        },
+        {
+          "concurrency": 16,
+          "kind": "text",
+          "phase": "warmup",
+          "rep": 6,
+          "request_index": 23
+        }
+      ],
+      "mismatches_truncated": true,
+      "rep": 6,
+      "status": "completion_or_text_mismatch"
+    }
+  ],
+  "status": "completion_or_text_mismatch"
+}

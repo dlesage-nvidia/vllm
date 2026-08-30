@@ -1,0 +1,198 @@
+{
+  "baseline": "literal PR #1 head",
+  "candidate": "stacked GPU-resize head",
+  "comparisons": {
+    "16": {
+      "gpu_resize_request_throughput_per_second": {
+        "max": 0.8853717047791104,
+        "median": 0.8784518174716143,
+        "min": 0.8727848067909985
+      },
+      "paired_geomean_speedup": 0.9956844129372122,
+      "paired_percent_change": {
+        "max": -0.15148838939365028,
+        "median": -0.4261050690529511,
+        "min": -0.6665626944264313
+      },
+      "pairs": [
+        {
+          "gpu_resize_over_pr1": 0.9936389946423491,
+          "gpu_resize_request_throughput_per_second": 0.8763632271766246,
+          "percent_change": -0.636100535765094,
+          "pr1_request_throughput_per_second": 0.8819734651135177,
+          "rep": 1
+        },
+        {
+          "gpu_resize_over_pr1": 0.9954071256557251,
+          "gpu_resize_request_throughput_per_second": 0.8772718191326537,
+          "percent_change": -0.4592874344274911,
+          "pr1_request_throughput_per_second": 0.8813196093555693,
+          "rep": 2
+        },
+        {
+          "gpu_resize_over_pr1": 0.9984851161060635,
+          "gpu_resize_request_throughput_per_second": 0.8853717047791104,
+          "percent_change": -0.15148838939365028,
+          "pr1_request_throughput_per_second": 0.8867149750132703,
+          "rep": 3
+        },
+        {
+          "gpu_resize_over_pr1": 0.9960707729632159,
+          "gpu_resize_request_throughput_per_second": 0.8808337341290661,
+          "percent_change": -0.3929227036784111,
+          "pr1_request_throughput_per_second": 0.8843083825345758,
+          "rep": 4
+        },
+        {
+          "gpu_resize_over_pr1": 0.9933343730557357,
+          "gpu_resize_request_throughput_per_second": 0.8727848067909985,
+          "percent_change": -0.6665626944264313,
+          "pr1_request_throughput_per_second": 0.8786415032695408,
+          "rep": 5
+        },
+        {
+          "gpu_resize_over_pr1": 0.9971801441870946,
+          "gpu_resize_request_throughput_per_second": 0.8796318158105749,
+          "percent_change": -0.28198558129054474,
+          "pr1_request_throughput_per_second": 0.882119264947513,
+          "rep": 6
+        }
+      ],
+      "pr1_request_throughput_per_second": {
+        "max": 0.8867149750132703,
+        "median": 0.8820463650305154,
+        "min": 0.8786415032695408
+      }
+    },
+    "32": {
+      "gpu_resize_request_throughput_per_second": {
+        "max": 0.8781341816747218,
+        "median": 0.8755947064639282,
+        "min": 0.8696011496239106
+      },
+      "paired_geomean_speedup": 0.9891084186347322,
+      "paired_percent_change": {
+        "max": -0.8286190467311383,
+        "median": -0.9790567013691576,
+        "min": -1.710421219717928
+      },
+      "pairs": [
+        {
+          "gpu_resize_over_pr1": 0.9917138095326886,
+          "gpu_resize_request_throughput_per_second": 0.8764587947271515,
+          "percent_change": -0.8286190467311383,
+          "pr1_request_throughput_per_second": 0.8837819805495628,
+          "rep": 1
+        },
+        {
+          "gpu_resize_over_pr1": 0.9910096729845767,
+          "gpu_resize_request_throughput_per_second": 0.8781341816747218,
+          "percent_change": -0.8990327015423349,
+          "pr1_request_throughput_per_second": 0.8861005150737701,
+          "rep": 2
+        },
+        {
+          "gpu_resize_over_pr1": 0.9882495212919336,
+          "gpu_resize_request_throughput_per_second": 0.8738723396933106,
+          "percent_change": -1.1750478708066447,
+          "pr1_request_throughput_per_second": 0.8842628515022215,
+          "rep": 3
+        },
+        {
+          "gpu_resize_over_pr1": 0.9894091929880402,
+          "gpu_resize_request_throughput_per_second": 0.8754561868464579,
+          "percent_change": -1.0590807011959802,
+          "pr1_request_throughput_per_second": 0.8848272211849564,
+          "rep": 4
+        },
+        {
+          "gpu_resize_over_pr1": 0.9828957878028207,
+          "gpu_resize_request_throughput_per_second": 0.8696011496239106,
+          "percent_change": -1.710421219717928,
+          "pr1_request_throughput_per_second": 0.8847338246995944,
+          "rep": 5
+        },
+        {
+          "gpu_resize_over_pr1": 0.9914004408908135,
+          "gpu_resize_request_throughput_per_second": 0.8757332260813985,
+          "percent_change": -0.8599559109186528,
+          "pr1_request_throughput_per_second": 0.8833294700721706,
+          "rep": 6
+        }
+      ],
+      "pr1_request_throughput_per_second": {
+        "max": 0.8861005150737701,
+        "median": 0.8844983381009079,
+        "min": 0.8833294700721706
+      }
+    },
+    "8": {
+      "gpu_resize_request_throughput_per_second": {
+        "max": 0.8944103208180336,
+        "median": 0.8899037205516641,
+        "min": 0.8789921624546818
+      },
+      "paired_geomean_speedup": 1.0098796746998329,
+      "paired_percent_change": {
+        "max": 1.6394969303600293,
+        "median": 0.9974638221954324,
+        "min": 0.382102966451936
+      },
+      "pairs": [
+        {
+          "gpu_resize_over_pr1": 1.0144914946850738,
+          "gpu_resize_request_throughput_per_second": 0.8938527167862421,
+          "percent_change": 1.4491494685073825,
+          "pr1_request_throughput_per_second": 0.8810844856454106,
+          "rep": 1
+        },
+        {
+          "gpu_resize_over_pr1": 1.0046532284376855,
+          "gpu_resize_request_throughput_per_second": 0.8843574276361619,
+          "percent_change": 0.46532284376854527,
+          "pr1_request_throughput_per_second": 0.8802613703948445,
+          "rep": 2
+        },
+        {
+          "gpu_resize_over_pr1": 1.0163949693036003,
+          "gpu_resize_request_throughput_per_second": 0.8939011875940346,
+          "percent_change": 1.6394969303600293,
+          "pr1_request_throughput_per_second": 0.8794821054717593,
+          "rep": 3
+        },
+        {
+          "gpu_resize_over_pr1": 1.0145432321286645,
+          "gpu_resize_request_throughput_per_second": 0.8944103208180336,
+          "percent_change": 1.4543232128664485,
+          "pr1_request_throughput_per_second": 0.8815891649500496,
+          "rep": 4
+        },
+        {
+          "gpu_resize_over_pr1": 1.0038210296645194,
+          "gpu_resize_request_throughput_per_second": 0.8789921624546818,
+          "percent_change": 0.382102966451936,
+          "pr1_request_throughput_per_second": 0.8756462919973337,
+          "rep": 5
+        },
+        {
+          "gpu_resize_over_pr1": 1.0054577817588348,
+          "gpu_resize_request_throughput_per_second": 0.8859547243170861,
+          "percent_change": 0.5457781758834823,
+          "pr1_request_throughput_per_second": 0.8811456238046083,
+          "rep": 6
+        }
+      ],
+      "pr1_request_throughput_per_second": {
+        "max": 0.8815891649500496,
+        "median": 0.8806729280201275,
+        "min": 0.8756462919973337
+      }
+    }
+  },
+  "gpu_identity": "NVIDIA A100 80GB PCIe, GPU-59af9951-1672-e3b6-14b9-fcae96381dfc, 565.57.01, 81920",
+  "gpu_label": "A100-80GB-PCIe",
+  "repetitions": 6,
+  "schema": "pynv-gpu-resize-pr1-paired-summary-v1",
+  "status": "passed",
+  "token_parity_status": "completion_or_text_mismatch"
+}

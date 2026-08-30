@@ -1,0 +1,198 @@
+{
+  "baseline": "literal PR #1 head",
+  "candidate": "stacked GPU-resize head",
+  "comparisons": {
+    "16": {
+      "gpu_resize_request_throughput_per_second": {
+        "max": 1.9238504492920976,
+        "median": 1.922533832151982,
+        "min": 1.9158785636719051
+      },
+      "paired_geomean_speedup": 1.0777616840441686,
+      "paired_percent_change": {
+        "max": 8.563024353185767,
+        "median": 7.905792211557372,
+        "min": 6.699891031787097
+      },
+      "pairs": [
+        {
+          "gpu_resize_over_pr1": 1.0778065433954407,
+          "gpu_resize_request_throughput_per_second": 1.9238504492920976,
+          "percent_change": 7.780654339544069,
+          "pr1_request_throughput_per_second": 1.7849682404333378,
+          "rep": 1
+        },
+        {
+          "gpu_resize_over_pr1": 1.066998910317871,
+          "gpu_resize_request_throughput_per_second": 1.9166129971891184,
+          "percent_change": 6.699891031787097,
+          "pr1_request_throughput_per_second": 1.7962651870170494,
+          "rep": 2
+        },
+        {
+          "gpu_resize_over_pr1": 1.0819418460529353,
+          "gpu_resize_request_throughput_per_second": 1.9232955506068021,
+          "percent_change": 8.19418460529353,
+          "pr1_request_throughput_per_second": 1.7776330193930798,
+          "rep": 3
+        },
+        {
+          "gpu_resize_over_pr1": 1.0739836749453526,
+          "gpu_resize_request_throughput_per_second": 1.9217721136971622,
+          "percent_change": 7.398367494535263,
+          "pr1_request_throughput_per_second": 1.7893867090623583,
+          "rep": 4
+        },
+        {
+          "gpu_resize_over_pr1": 1.0856302435318577,
+          "gpu_resize_request_throughput_per_second": 1.923587806149793,
+          "percent_change": 8.563024353185767,
+          "pr1_request_throughput_per_second": 1.7718627659927988,
+          "rep": 5
+        },
+        {
+          "gpu_resize_over_pr1": 1.0803093008357068,
+          "gpu_resize_request_throughput_per_second": 1.9158785636719051,
+          "percent_change": 8.030930083570675,
+          "pr1_request_throughput_per_second": 1.7734537342128016,
+          "rep": 6
+        }
+      ],
+      "pr1_request_throughput_per_second": {
+        "max": 1.7962651870170494,
+        "median": 1.7813006299132088,
+        "min": 1.7718627659927988
+      }
+    },
+    "32": {
+      "gpu_resize_request_throughput_per_second": {
+        "max": 1.9270768560274085,
+        "median": 1.9210338927850117,
+        "min": 1.9151277563768965
+      },
+      "paired_geomean_speedup": 1.0745169605979767,
+      "paired_percent_change": {
+        "max": 7.9149035775717635,
+        "median": 7.670386598698531,
+        "min": 6.6487560943577995
+      },
+      "pairs": [
+        {
+          "gpu_resize_over_pr1": 1.0774356162319725,
+          "gpu_resize_request_throughput_per_second": 1.9222260087972998,
+          "percent_change": 7.743561623197248,
+          "pr1_request_throughput_per_second": 1.7840750573289417,
+          "rep": 1
+        },
+        {
+          "gpu_resize_over_pr1": 1.066487560943578,
+          "gpu_resize_request_throughput_per_second": 1.9165274732802775,
+          "percent_change": 6.6487560943577995,
+          "pr1_request_throughput_per_second": 1.7970462511392296,
+          "rep": 2
+        },
+        {
+          "gpu_resize_over_pr1": 1.0706776880181559,
+          "gpu_resize_request_throughput_per_second": 1.9151277563768965,
+          "percent_change": 7.067768801815588,
+          "pr1_request_throughput_per_second": 1.7887061417351784,
+          "rep": 3
+        },
+        {
+          "gpu_resize_over_pr1": 1.0774284244725143,
+          "gpu_resize_request_throughput_per_second": 1.9270768560274085,
+          "percent_change": 7.74284244725143,
+          "pr1_request_throughput_per_second": 1.788589211363032,
+          "rep": 4
+        },
+        {
+          "gpu_resize_over_pr1": 1.0759793075014563,
+          "gpu_resize_request_throughput_per_second": 1.9198417767727234,
+          "percent_change": 7.597930750145632,
+          "pr1_request_throughput_per_second": 1.7842738827671412,
+          "rep": 5
+        },
+        {
+          "gpu_resize_over_pr1": 1.0791490357757176,
+          "gpu_resize_request_throughput_per_second": 1.9253760973044745,
+          "percent_change": 7.9149035775717635,
+          "pr1_request_throughput_per_second": 1.7841614396851766,
+          "rep": 6
+        }
+      ],
+      "pr1_request_throughput_per_second": {
+        "max": 1.7970462511392296,
+        "median": 1.7864315470650864,
+        "min": 1.7840750573289417
+      }
+    },
+    "8": {
+      "gpu_resize_request_throughput_per_second": {
+        "max": 1.9142855253867535,
+        "median": 1.9068642024416023,
+        "min": 1.903512635311175
+      },
+      "paired_geomean_speedup": 1.0775946799411846,
+      "paired_percent_change": {
+        "max": 8.420172582100482,
+        "median": 7.835382270579261,
+        "min": 7.196649585299708
+      },
+      "pairs": [
+        {
+          "gpu_resize_over_pr1": 1.0770484560445583,
+          "gpu_resize_request_throughput_per_second": 1.9069749765214128,
+          "percent_change": 7.704845604455834,
+          "pr1_request_throughput_per_second": 1.7705563438851628,
+          "rep": 1
+        },
+        {
+          "gpu_resize_over_pr1": 1.0730191980976456,
+          "gpu_resize_request_throughput_per_second": 1.9054994369958216,
+          "percent_change": 7.301919809764557,
+          "pr1_request_throughput_per_second": 1.7758297711486237,
+          "rep": 2
+        },
+        {
+          "gpu_resize_over_pr1": 1.071966495852997,
+          "gpu_resize_request_throughput_per_second": 1.9067534283617915,
+          "percent_change": 7.196649585299708,
+          "pr1_request_throughput_per_second": 1.7787434922063758,
+          "rep": 3
+        },
+        {
+          "gpu_resize_over_pr1": 1.0842017258210048,
+          "gpu_resize_request_throughput_per_second": 1.9142855253867535,
+          "percent_change": 8.420172582100482,
+          "pr1_request_throughput_per_second": 1.7656174859315714,
+          "rep": 4
+        },
+        {
+          "gpu_resize_over_pr1": 1.079721887849144,
+          "gpu_resize_request_throughput_per_second": 1.903512635311175,
+          "percent_change": 7.972188784914391,
+          "pr1_request_throughput_per_second": 1.762965682860297,
+          "rep": 5
+        },
+        {
+          "gpu_resize_over_pr1": 1.0796591893670269,
+          "gpu_resize_request_throughput_per_second": 1.9125150658094154,
+          "percent_change": 7.965918936702687,
+          "pr1_request_throughput_per_second": 1.7714062776890436,
+          "rep": 6
+        }
+      ],
+      "pr1_request_throughput_per_second": {
+        "max": 1.7787434922063758,
+        "median": 1.770981310787103,
+        "min": 1.762965682860297
+      }
+    }
+  },
+  "gpu_identity": "NVIDIA RTX PRO 6000 Blackwell Server Edition, GPU-2df87ff8-ec98-37fb-2c10-b82b4e0b0f0f, 595.91.07, 97887",
+  "gpu_label": "RTX-PRO-6000-Blackwell-Server-Edition",
+  "repetitions": 6,
+  "schema": "pynv-gpu-resize-pr1-paired-summary-v1",
+  "status": "passed",
+  "token_parity_status": "completion_or_text_mismatch"
+}
