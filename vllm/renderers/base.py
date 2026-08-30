@@ -187,6 +187,7 @@ class BaseRenderer(ABC, Generic[_T]):
                         mm_config, config, self.mm_processor
                     ),
                     resize_prefilter=mm_config.get_image_resize_prefilter(),
+                    min_resize_ratio=mm_config.get_image_min_resize_ratio(),
                 )
 
             if mm_processor_cache:

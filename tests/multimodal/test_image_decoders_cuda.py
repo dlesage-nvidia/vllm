@@ -469,7 +469,7 @@ def test_on_device_resize_produces_the_processor_target(configured):
     """
     backend.shutdown()
     target = lambda w, h: (w // 2, h // 2)
-    backend.configure(num_decoders=1, min_gpu_pixels=0, resize_target=target)
+    backend.configure(num_decoders=1, min_gpu_pixels=0, resize_target=target, min_resize_ratio=1.0)
     backend._COUNTERS.clear()  # counters are process-global and accumulate
     try:
         out = backend.decode_batch([_jpeg(1280, 960, seed=3)], "RGB")[0]
@@ -500,11 +500,11 @@ def test_on_device_resize_matches_a_host_resize_closely(configured):
     from PIL import Image as PILImage
 
     data = _jpeg(1280, 960, seed=5)
-    backend.shutdown(); backend.configure(num_decoders=1, min_gpu_pixels=0)
+    backend.shutdown(); backend.configure(num_decoders=1, min_gpu_pixels=0, min_resize_ratio=1.0)
     full = backend.decode_batch([data], "RGB")[0]
     backend.shutdown()
     backend.configure(
-        num_decoders=1, min_gpu_pixels=0, resize_target=lambda w, h: (640, 480)
+        num_decoders=1, min_gpu_pixels=0, resize_target=lambda w, h: (640, 480), min_resize_ratio=1.0
     )
     try:
         small = backend.decode_batch([data], "RGB")[0]
@@ -528,7 +528,7 @@ def test_device_resize_applies_to_a_small_downscale(configured):
     backend.shutdown()
     # 4x reduction -- modest, comparable to 1080p at a pinned budget.
     backend.configure(num_decoders=1, min_gpu_pixels=0,
-                      resize_target=lambda w, h: (w // 2, h // 2))
+                      resize_target=lambda w, h: (w // 2, h // 2), min_resize_ratio=1.0)
     backend._COUNTERS.clear()  # counters are process-global and accumulate
     try:
         out = backend.decode_batch([_jpeg(1280, 960, seed=11)], "RGB")[0]
@@ -543,7 +543,7 @@ def test_device_resize_declines_a_non_downscale(configured):
     """An upscale or equal target must fall through to the full-raster copy."""
     backend.shutdown()
     backend.configure(num_decoders=1, min_gpu_pixels=0,
-                      resize_target=lambda w, h: (w * 2, h * 2))
+                      resize_target=lambda w, h: (w * 2, h * 2), min_resize_ratio=1.0)
     backend._COUNTERS.clear()
     try:
         out = backend.decode_batch([_jpeg(640, 480, seed=12)], "RGB")[0]
@@ -595,11 +595,11 @@ def test_cvcuda_resize_tracks_pil_closely(configured):
     if backend._cvcuda() is None:
         pytest.skip("CV-CUDA not installed")
     data = _jpeg(1280, 960, seed=22)
-    backend.shutdown(); backend.configure(num_decoders=1, min_gpu_pixels=0)
+    backend.shutdown(); backend.configure(num_decoders=1, min_gpu_pixels=0, min_resize_ratio=1.0)
     full = backend.decode_batch([data], "RGB")[0]
     backend.shutdown()
     backend.configure(num_decoders=1, min_gpu_pixels=0,
-                      resize_target=lambda w, h: (640, 480))
+                      resize_target=lambda w, h: (640, 480), min_resize_ratio=1.0)
     try:
         small = backend.decode_batch([data], "RGB")[0]
         assert small is not None and small.shape == (480, 640, 3)
@@ -608,5 +608,44 @@ def test_cvcuda_resize_tracks_pil_closely(configured):
         )
         diff = np.abs(small.astype(np.int32) - ref.astype(np.int32))
         assert diff.mean() < 2.0, f"mean |d| {diff.mean():.2f} vs a host bicubic"
+    finally:
+        backend.shutdown()
+
+
+def test_resize_declines_when_the_reduction_cannot_pay(configured):
+    """The gate exists because DMA and SM time are not interchangeable.
+
+    Measured on a GPU shared with a model: a full-raster device-to-host copy
+    costs the model -0.0% (copy engine, concurrent), while one resize kernel
+    costs 2.2% (SMs, contended). So the copy this removes is free when the GPU
+    is compute-bound, and the kernel it adds is not. End to end that is 0.98x
+    at a 3.52x reduction and 1.11-1.64x at 14.06x.
+    """
+    backend.shutdown()
+    # 4x reduction: a real downscale, but under the default threshold.
+    backend.configure(num_decoders=1, min_gpu_pixels=0,
+                      resize_target=lambda w, h: (w // 2, h // 2))
+    backend._COUNTERS.clear()  # counters are process-global and accumulate
+    try:
+        out = backend.decode_batch([_jpeg(1280, 960, seed=31)], "RGB")[0]
+        assert out is not None
+        assert out.shape == (960, 1280, 3), "declined resize must return the full raster"
+        assert backend.stats().get("resize_below_ratio", 0) == 1
+        assert backend.stats().get("gpu_resized", 0) == 0
+    finally:
+        backend.shutdown()
+
+
+def test_resize_engages_when_the_reduction_pays(configured):
+    """Above the threshold it must fire -- the 4K case the feature exists for."""
+    backend.shutdown()
+    backend.configure(num_decoders=1, min_gpu_pixels=0,
+                      resize_target=lambda w, h: (w // 4, h // 4))  # 16x
+    backend._COUNTERS.clear()
+    try:
+        out = backend.decode_batch([_jpeg(1280, 960, seed=32)], "RGB")[0]
+        assert out is not None and out.shape == (240, 320, 3)
+        assert backend.stats().get("gpu_resized", 0) == 1
+        assert backend.stats().get("resize_below_ratio", 0) == 0
     finally:
         backend.shutdown()
