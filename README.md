@@ -1,5 +1,10 @@
 # Qwen3-VL-2B PyNvVideoCodec throughput
 
+The current C32-only base/head refresh, including controlled CUDA MPS-off and
+MPS-on runs for Qwen3-VL and Qwen2.5-VL, is in
+[`c32-mps-refresh/`](c32-mps-refresh/README.md). The results below are the
+earlier C8/C16/C32 matrix.
+
 The upstream-vs-PR Qwen2.5-VL-3B results are in
 [`qwen2.5-vl/`](qwen2.5-vl/README.md).
 

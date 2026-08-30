@@ -1,5 +1,10 @@
 # Qwen2.5-VL-3B PyNvVideoCodec throughput
 
+The current C32-only comparison of the literal PR base against the PR head,
+with controlled CUDA MPS-off and MPS-on runs, is in
+[`../c32-mps-refresh/`](../c32-mps-refresh/README.md). The results below are the
+earlier cumulative upstream-to-head matrix.
+
 This compares upstream vLLM commit
 `d1e5e66ee30ba4bc020ac8e14b05e7a8c41b9302` (tree
 `9cc26997991af6f8f38150c9631d482d18b1bd2c`) with pull-request head

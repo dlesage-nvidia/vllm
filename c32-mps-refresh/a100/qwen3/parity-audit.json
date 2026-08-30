@@ -1,0 +1,194 @@
+[
+  {
+    "input_mismatches": 0,
+    "label": "r01-pr-vs-base-mps-off",
+    "output_mismatch_examples": [],
+    "output_mismatches": 0,
+    "requests": 352,
+    "status": "passed_exact"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r01-pr-vs-base-mps-on",
+    "output_mismatch_examples": [],
+    "output_mismatches": 0,
+    "requests": 352,
+    "status": "passed_exact"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r01-mps-on-vs-off-base",
+    "output_mismatch_examples": [],
+    "output_mismatches": 0,
+    "requests": 352,
+    "status": "passed_exact"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r01-mps-on-vs-off-pr",
+    "output_mismatch_examples": [],
+    "output_mismatches": 0,
+    "requests": 352,
+    "status": "passed_exact"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r02-pr-vs-base-mps-off",
+    "output_mismatch_examples": [],
+    "output_mismatches": 0,
+    "requests": 352,
+    "status": "passed_exact"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r02-pr-vs-base-mps-on",
+    "output_mismatch_examples": [],
+    "output_mismatches": 0,
+    "requests": 352,
+    "status": "passed_exact"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r02-mps-on-vs-off-base",
+    "output_mismatch_examples": [],
+    "output_mismatches": 0,
+    "requests": 352,
+    "status": "passed_exact"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r02-mps-on-vs-off-pr",
+    "output_mismatch_examples": [],
+    "output_mismatches": 0,
+    "requests": 352,
+    "status": "passed_exact"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r03-pr-vs-base-mps-off",
+    "output_mismatch_examples": [],
+    "output_mismatches": 0,
+    "requests": 352,
+    "status": "passed_exact"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r03-pr-vs-base-mps-on",
+    "output_mismatch_examples": [],
+    "output_mismatches": 0,
+    "requests": 352,
+    "status": "passed_exact"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r03-mps-on-vs-off-base",
+    "output_mismatch_examples": [],
+    "output_mismatches": 0,
+    "requests": 352,
+    "status": "passed_exact"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r03-mps-on-vs-off-pr",
+    "output_mismatch_examples": [],
+    "output_mismatches": 0,
+    "requests": 352,
+    "status": "passed_exact"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r04-pr-vs-base-mps-off",
+    "output_mismatch_examples": [],
+    "output_mismatches": 0,
+    "requests": 352,
+    "status": "passed_exact"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r04-pr-vs-base-mps-on",
+    "output_mismatch_examples": [],
+    "output_mismatches": 0,
+    "requests": 352,
+    "status": "passed_exact"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r04-mps-on-vs-off-base",
+    "output_mismatch_examples": [],
+    "output_mismatches": 0,
+    "requests": 352,
+    "status": "passed_exact"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r04-mps-on-vs-off-pr",
+    "output_mismatch_examples": [],
+    "output_mismatches": 0,
+    "requests": 352,
+    "status": "passed_exact"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r05-pr-vs-base-mps-off",
+    "output_mismatch_examples": [],
+    "output_mismatches": 0,
+    "requests": 352,
+    "status": "passed_exact"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r05-pr-vs-base-mps-on",
+    "output_mismatch_examples": [],
+    "output_mismatches": 0,
+    "requests": 352,
+    "status": "passed_exact"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r05-mps-on-vs-off-base",
+    "output_mismatch_examples": [],
+    "output_mismatches": 0,
+    "requests": 352,
+    "status": "passed_exact"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r05-mps-on-vs-off-pr",
+    "output_mismatch_examples": [],
+    "output_mismatches": 0,
+    "requests": 352,
+    "status": "passed_exact"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r06-pr-vs-base-mps-off",
+    "output_mismatch_examples": [],
+    "output_mismatches": 0,
+    "requests": 352,
+    "status": "passed_exact"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r06-pr-vs-base-mps-on",
+    "output_mismatch_examples": [],
+    "output_mismatches": 0,
+    "requests": 352,
+    "status": "passed_exact"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r06-mps-on-vs-off-base",
+    "output_mismatch_examples": [],
+    "output_mismatches": 0,
+    "requests": 352,
+    "status": "passed_exact"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r06-mps-on-vs-off-pr",
+    "output_mismatch_examples": [],
+    "output_mismatches": 0,
+    "requests": 352,
+    "status": "passed_exact"
+  }
+]

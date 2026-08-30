@@ -1,0 +1,1373 @@
+{
+  "cells": [
+    {
+      "measured_finished_utc": "2026-08-30T18:33:05.380083+00:00",
+      "measured_started_utc": "2026-08-30T18:28:30.918244+00:00",
+      "measured_window_seconds": 274.461826415,
+      "metrics": {
+        "gpu_utilization_percent": {
+          "count": 1370,
+          "max": 100.0,
+          "mean": 37.2963503649635,
+          "median": 6.0,
+          "min": 0.0,
+          "p90": 100.0
+        },
+        "memory_controller_utilization_percent": {
+          "count": 1370,
+          "max": 86.0,
+          "mean": 23.086861313868614,
+          "median": 5.0,
+          "min": 0.0,
+          "p90": 66.0
+        },
+        "memory_used_mib": {
+          "count": 1370,
+          "max": 46102.0,
+          "mean": 46102.0,
+          "median": 46102.0,
+          "min": 46102.0,
+          "p90": 46102.0
+        },
+        "nvdec_utilization_percent": {
+          "count": 1370,
+          "max": 50.0,
+          "mean": 7.788321167883212,
+          "median": 0.0,
+          "min": 0.0,
+          "p90": 25.0
+        }
+      },
+      "monitor_max_sample_gap_seconds_measured": 0.201571498,
+      "monitor_sample_count_measured": 1370,
+      "monitor_sample_count_total": 2124,
+      "monitor_sample_errors_measured": [],
+      "monitor_sample_interval_seconds": 0.2,
+      "mps": "off",
+      "position": 1,
+      "rep": 1,
+      "request_throughput_per_second": 0.9327344474233557,
+      "variant": "base"
+    },
+    {
+      "measured_finished_utc": "2026-08-30T18:37:18.197640+00:00",
+      "measured_started_utc": "2026-08-30T18:34:53.922586+00:00",
+      "measured_window_seconds": 144.275040495,
+      "metrics": {
+        "gpu_utilization_percent": {
+          "count": 721,
+          "max": 100.0,
+          "mean": 78.1497919556172,
+          "median": 100.0,
+          "min": 0.0,
+          "p90": 100.0
+        },
+        "memory_controller_utilization_percent": {
+          "count": 721,
+          "max": 78.0,
+          "mean": 46.414701803051315,
+          "median": 51.0,
+          "min": 0.0,
+          "p90": 73.0
+        },
+        "memory_used_mib": {
+          "count": 721,
+          "max": 45630.0,
+          "mean": 45630.0,
+          "median": 45630.0,
+          "min": 45630.0,
+          "p90": 45630.0
+        },
+        "nvdec_utilization_percent": {
+          "count": 721,
+          "max": 50.0,
+          "mean": 15.452149791955618,
+          "median": 6.0,
+          "min": 0.0,
+          "p90": 47.0
+        }
+      },
+      "monitor_max_sample_gap_seconds_measured": 0.201240725,
+      "monitor_sample_count_measured": 721,
+      "monitor_sample_count_total": 1248,
+      "monitor_sample_errors_measured": [],
+      "monitor_sample_interval_seconds": 0.2,
+      "mps": "off",
+      "position": 2,
+      "rep": 1,
+      "request_throughput_per_second": 1.7743886892817884,
+      "variant": "pr"
+    },
+    {
+      "measured_finished_utc": "2026-08-30T18:44:40.975538+00:00",
+      "measured_started_utc": "2026-08-30T18:39:53.697686+00:00",
+      "measured_window_seconds": 287.277837395,
+      "metrics": {
+        "gpu_utilization_percent": {
+          "count": 1434,
+          "max": 100.0,
+          "mean": 35.78940027894003,
+          "median": 5.0,
+          "min": 0.0,
+          "p90": 100.0
+        },
+        "memory_controller_utilization_percent": {
+          "count": 1434,
+          "max": 85.0,
+          "mean": 22.126220362622036,
+          "median": 5.0,
+          "min": 0.0,
+          "p90": 66.0
+        },
+        "memory_used_mib": {
+          "count": 1434,
+          "max": 46147.0,
+          "mean": 46147.0,
+          "median": 46147.0,
+          "min": 46147.0,
+          "p90": 46147.0
+        },
+        "nvdec_utilization_percent": {
+          "count": 1434,
+          "max": 50.0,
+          "mean": 7.525801952580196,
+          "median": 0.0,
+          "min": 0.0,
+          "p90": 25.0
+        }
+      },
+      "monitor_max_sample_gap_seconds_measured": 0.200648629,
+      "monitor_sample_count_measured": 1434,
+      "monitor_sample_count_total": 2204,
+      "monitor_sample_errors_measured": [],
+      "monitor_sample_interval_seconds": 0.2,
+      "mps": "on",
+      "position": 3,
+      "rep": 1,
+      "request_throughput_per_second": 0.8911233888467569,
+      "variant": "base"
+    },
+    {
+      "measured_finished_utc": "2026-08-30T18:48:21.408278+00:00",
+      "measured_started_utc": "2026-08-30T18:46:20.289421+00:00",
+      "measured_window_seconds": 121.118844011,
+      "metrics": {
+        "gpu_utilization_percent": {
+          "count": 605,
+          "max": 100.0,
+          "mean": 82.88760330578512,
+          "median": 100.0,
+          "min": 0.0,
+          "p90": 100.0
+        },
+        "memory_controller_utilization_percent": {
+          "count": 605,
+          "max": 85.0,
+          "mean": 52.555371900826444,
+          "median": 53.0,
+          "min": 0.0,
+          "p90": 81.0
+        },
+        "memory_used_mib": {
+          "count": 605,
+          "max": 45689.0,
+          "mean": 45689.0,
+          "median": 45689.0,
+          "min": 45689.0,
+          "p90": 45689.0
+        },
+        "nvdec_utilization_percent": {
+          "count": 605,
+          "max": 50.0,
+          "mean": 19.520661157024794,
+          "median": 25.0,
+          "min": 0.0,
+          "p90": 25.0
+        }
+      },
+      "monitor_max_sample_gap_seconds_measured": 0.20781576,
+      "monitor_sample_count_measured": 605,
+      "monitor_sample_count_total": 1089,
+      "monitor_sample_errors_measured": [],
+      "monitor_sample_interval_seconds": 0.2,
+      "mps": "on",
+      "position": 4,
+      "rep": 1,
+      "request_throughput_per_second": 2.1136265136145957,
+      "variant": "pr"
+    },
+    {
+      "measured_finished_utc": "2026-08-30T18:51:49.314253+00:00",
+      "measured_started_utc": "2026-08-30T18:49:54.473758+00:00",
+      "measured_window_seconds": 114.840481915,
+      "metrics": {
+        "gpu_utilization_percent": {
+          "count": 573,
+          "max": 100.0,
+          "mean": 87.52530541012216,
+          "median": 100.0,
+          "min": 0.0,
+          "p90": 100.0
+        },
+        "memory_controller_utilization_percent": {
+          "count": 573,
+          "max": 85.0,
+          "mean": 55.68411867364747,
+          "median": 55.0,
+          "min": 0.0,
+          "p90": 81.0
+        },
+        "memory_used_mib": {
+          "count": 573,
+          "max": 45689.0,
+          "mean": 45689.0,
+          "median": 45689.0,
+          "min": 45689.0,
+          "p90": 45689.0
+        },
+        "nvdec_utilization_percent": {
+          "count": 573,
+          "max": 50.0,
+          "mean": 20.80279232111693,
+          "median": 25.0,
+          "min": 0.0,
+          "p90": 25.0
+        }
+      },
+      "monitor_max_sample_gap_seconds_measured": 0.201066035,
+      "monitor_sample_count_measured": 573,
+      "monitor_sample_count_total": 1029,
+      "monitor_sample_errors_measured": [],
+      "monitor_sample_interval_seconds": 0.2,
+      "mps": "on",
+      "position": 1,
+      "rep": 2,
+      "request_throughput_per_second": 2.2291790815496597,
+      "variant": "pr"
+    },
+    {
+      "measured_finished_utc": "2026-08-30T18:58:49.727375+00:00",
+      "measured_started_utc": "2026-08-30T18:54:22.007254+00:00",
+      "measured_window_seconds": 267.720109909,
+      "metrics": {
+        "gpu_utilization_percent": {
+          "count": 1337,
+          "max": 100.0,
+          "mean": 38.39341810022438,
+          "median": 6.0,
+          "min": 0.0,
+          "p90": 100.0
+        },
+        "memory_controller_utilization_percent": {
+          "count": 1337,
+          "max": 84.0,
+          "mean": 23.653702318623786,
+          "median": 5.0,
+          "min": 0.0,
+          "p90": 65.0
+        },
+        "memory_used_mib": {
+          "count": 1337,
+          "max": 46147.0,
+          "mean": 46147.0,
+          "median": 46147.0,
+          "min": 46147.0,
+          "p90": 46147.0
+        },
+        "nvdec_utilization_percent": {
+          "count": 1337,
+          "max": 50.0,
+          "mean": 8.083769633507853,
+          "median": 0.0,
+          "min": 0.0,
+          "p90": 25.0
+        }
+      },
+      "monitor_max_sample_gap_seconds_measured": 0.201856573,
+      "monitor_sample_count_measured": 1337,
+      "monitor_sample_count_total": 2092,
+      "monitor_sample_errors_measured": [],
+      "monitor_sample_interval_seconds": 0.2,
+      "mps": "on",
+      "position": 2,
+      "rep": 2,
+      "request_throughput_per_second": 0.9562225269032508,
+      "variant": "base"
+    },
+    {
+      "measured_finished_utc": "2026-08-30T19:03:00.554475+00:00",
+      "measured_started_utc": "2026-08-30T19:00:37.137986+00:00",
+      "measured_window_seconds": 143.41647776,
+      "metrics": {
+        "gpu_utilization_percent": {
+          "count": 716,
+          "max": 100.0,
+          "mean": 78.55586592178771,
+          "median": 100.0,
+          "min": 7.0,
+          "p90": 100.0
+        },
+        "memory_controller_utilization_percent": {
+          "count": 716,
+          "max": 84.0,
+          "mean": 46.798882681564244,
+          "median": 51.0,
+          "min": 8.0,
+          "p90": 74.0
+        },
+        "memory_used_mib": {
+          "count": 716,
+          "max": 45630.0,
+          "mean": 45630.0,
+          "median": 45630.0,
+          "min": 45630.0,
+          "p90": 45630.0
+        },
+        "nvdec_utilization_percent": {
+          "count": 716,
+          "max": 50.0,
+          "mean": 15.706703910614525,
+          "median": 6.5,
+          "min": 0.0,
+          "p90": 47.0
+        }
+      },
+      "monitor_max_sample_gap_seconds_measured": 0.200888737,
+      "monitor_sample_count_measured": 716,
+      "monitor_sample_count_total": 1236,
+      "monitor_sample_errors_measured": [],
+      "monitor_sample_interval_seconds": 0.2,
+      "mps": "off",
+      "position": 3,
+      "rep": 2,
+      "request_throughput_per_second": 1.7850110670574595,
+      "variant": "pr"
+    },
+    {
+      "measured_finished_utc": "2026-08-30T19:09:59.829540+00:00",
+      "measured_started_utc": "2026-08-30T19:05:31.798898+00:00",
+      "measured_window_seconds": 268.030630084,
+      "metrics": {
+        "gpu_utilization_percent": {
+          "count": 1338,
+          "max": 100.0,
+          "mean": 38.18609865470852,
+          "median": 6.0,
+          "min": 0.0,
+          "p90": 100.0
+        },
+        "memory_controller_utilization_percent": {
+          "count": 1338,
+          "max": 86.0,
+          "mean": 23.44544095665172,
+          "median": 5.0,
+          "min": 0.0,
+          "p90": 65.0
+        },
+        "memory_used_mib": {
+          "count": 1338,
+          "max": 46102.0,
+          "mean": 46102.0,
+          "median": 46102.0,
+          "min": 46102.0,
+          "p90": 46102.0
+        },
+        "nvdec_utilization_percent": {
+          "count": 1338,
+          "max": 50.0,
+          "mean": 8.077727952167415,
+          "median": 0.0,
+          "min": 0.0,
+          "p90": 25.0
+        }
+      },
+      "monitor_max_sample_gap_seconds_measured": 0.201095183,
+      "monitor_sample_count_measured": 1338,
+      "monitor_sample_count_total": 2085,
+      "monitor_sample_errors_measured": [],
+      "monitor_sample_interval_seconds": 0.2,
+      "mps": "off",
+      "position": 4,
+      "rep": 2,
+      "request_throughput_per_second": 0.9551147192385078,
+      "variant": "base"
+    },
+    {
+      "measured_finished_utc": "2026-08-30T19:14:11.424702+00:00",
+      "measured_started_utc": "2026-08-30T19:11:47.353225+00:00",
+      "measured_window_seconds": 144.071467018,
+      "metrics": {
+        "gpu_utilization_percent": {
+          "count": 719,
+          "max": 100.0,
+          "mean": 78.21418636995827,
+          "median": 100.0,
+          "min": 0.0,
+          "p90": 100.0
+        },
+        "memory_controller_utilization_percent": {
+          "count": 719,
+          "max": 80.0,
+          "mean": 46.5076495132128,
+          "median": 50.0,
+          "min": 0.0,
+          "p90": 74.0
+        },
+        "memory_used_mib": {
+          "count": 719,
+          "max": 45630.0,
+          "mean": 45630.0,
+          "median": 45630.0,
+          "min": 45630.0,
+          "p90": 45630.0
+        },
+        "nvdec_utilization_percent": {
+          "count": 719,
+          "max": 50.0,
+          "mean": 15.527121001390821,
+          "median": 6.0,
+          "min": 0.0,
+          "p90": 47.0
+        }
+      },
+      "monitor_max_sample_gap_seconds_measured": 0.202118965,
+      "monitor_sample_count_measured": 719,
+      "monitor_sample_count_total": 1244,
+      "monitor_sample_errors_measured": [],
+      "monitor_sample_interval_seconds": 0.2,
+      "mps": "off",
+      "position": 1,
+      "rep": 3,
+      "request_throughput_per_second": 1.7768959065851386,
+      "variant": "pr"
+    },
+    {
+      "measured_finished_utc": "2026-08-30T19:21:17.469068+00:00",
+      "measured_started_utc": "2026-08-30T19:16:47.135847+00:00",
+      "measured_window_seconds": 270.333208881,
+      "metrics": {
+        "gpu_utilization_percent": {
+          "count": 1350,
+          "max": 100.0,
+          "mean": 37.8,
+          "median": 6.0,
+          "min": 0.0,
+          "p90": 100.0
+        },
+        "memory_controller_utilization_percent": {
+          "count": 1350,
+          "max": 86.0,
+          "mean": 23.156296296296297,
+          "median": 5.0,
+          "min": 0.0,
+          "p90": 65.0
+        },
+        "memory_used_mib": {
+          "count": 1350,
+          "max": 46102.0,
+          "mean": 46102.0,
+          "median": 46102.0,
+          "min": 46102.0,
+          "p90": 46102.0
+        },
+        "nvdec_utilization_percent": {
+          "count": 1350,
+          "max": 50.0,
+          "mean": 8.002962962962963,
+          "median": 0.0,
+          "min": 0.0,
+          "p90": 25.0
+        }
+      },
+      "monitor_max_sample_gap_seconds_measured": 0.201843751,
+      "monitor_sample_count_measured": 1350,
+      "monitor_sample_count_total": 2116,
+      "monitor_sample_errors_measured": [],
+      "monitor_sample_interval_seconds": 0.2,
+      "mps": "off",
+      "position": 2,
+      "rep": 3,
+      "request_throughput_per_second": 0.94697947418177,
+      "variant": "base"
+    },
+    {
+      "measured_finished_utc": "2026-08-30T19:28:21.388200+00:00",
+      "measured_started_utc": "2026-08-30T19:23:45.708971+00:00",
+      "measured_window_seconds": 275.679215678,
+      "metrics": {
+        "gpu_utilization_percent": {
+          "count": 1377,
+          "max": 100.0,
+          "mean": 37.294843863471314,
+          "median": 6.0,
+          "min": 0.0,
+          "p90": 100.0
+        },
+        "memory_controller_utilization_percent": {
+          "count": 1377,
+          "max": 84.0,
+          "mean": 22.915758896151054,
+          "median": 5.0,
+          "min": 0.0,
+          "p90": 65.0
+        },
+        "memory_used_mib": {
+          "count": 1377,
+          "max": 46147.0,
+          "mean": 46147.0,
+          "median": 46147.0,
+          "min": 46147.0,
+          "p90": 46147.0
+        },
+        "nvdec_utilization_percent": {
+          "count": 1377,
+          "max": 50.0,
+          "mean": 7.899055918663762,
+          "median": 0.0,
+          "min": 0.0,
+          "p90": 25.0
+        }
+      },
+      "monitor_max_sample_gap_seconds_measured": 0.200910731,
+      "monitor_sample_count_measured": 1377,
+      "monitor_sample_count_total": 2109,
+      "monitor_sample_errors_measured": [],
+      "monitor_sample_interval_seconds": 0.2,
+      "mps": "on",
+      "position": 3,
+      "rep": 3,
+      "request_throughput_per_second": 0.9286155264567141,
+      "variant": "base"
+    },
+    {
+      "measured_finished_utc": "2026-08-30T19:32:02.138877+00:00",
+      "measured_started_utc": "2026-08-30T19:29:58.601901+00:00",
+      "measured_window_seconds": 123.536963789,
+      "metrics": {
+        "gpu_utilization_percent": {
+          "count": 617,
+          "max": 100.0,
+          "mean": 81.10858995137764,
+          "median": 100.0,
+          "min": 0.0,
+          "p90": 100.0
+        },
+        "memory_controller_utilization_percent": {
+          "count": 617,
+          "max": 85.0,
+          "mean": 51.557536466774714,
+          "median": 53.0,
+          "min": 0.0,
+          "p90": 78.0
+        },
+        "memory_used_mib": {
+          "count": 617,
+          "max": 45689.0,
+          "mean": 45689.0,
+          "median": 45689.0,
+          "min": 45689.0,
+          "p90": 45689.0
+        },
+        "nvdec_utilization_percent": {
+          "count": 617,
+          "max": 50.0,
+          "mean": 19.08265802269044,
+          "median": 25.0,
+          "min": 0.0,
+          "p90": 25.0
+        }
+      },
+      "monitor_max_sample_gap_seconds_measured": 0.205840405,
+      "monitor_sample_count_measured": 617,
+      "monitor_sample_count_total": 1093,
+      "monitor_sample_errors_measured": [],
+      "monitor_sample_interval_seconds": 0.2,
+      "mps": "on",
+      "position": 4,
+      "rep": 3,
+      "request_throughput_per_second": 2.0722542642155726,
+      "variant": "pr"
+    },
+    {
+      "measured_finished_utc": "2026-08-30T19:35:37.440348+00:00",
+      "measured_started_utc": "2026-08-30T19:33:35.059976+00:00",
+      "measured_window_seconds": 122.380358764,
+      "metrics": {
+        "gpu_utilization_percent": {
+          "count": 611,
+          "max": 100.0,
+          "mean": 81.76923076923077,
+          "median": 100.0,
+          "min": 0.0,
+          "p90": 100.0
+        },
+        "memory_controller_utilization_percent": {
+          "count": 611,
+          "max": 85.0,
+          "mean": 51.85761047463175,
+          "median": 52.0,
+          "min": 0.0,
+          "p90": 79.0
+        },
+        "memory_used_mib": {
+          "count": 611,
+          "max": 45689.0,
+          "mean": 45689.0,
+          "median": 45689.0,
+          "min": 45689.0,
+          "p90": 45689.0
+        },
+        "nvdec_utilization_percent": {
+          "count": 611,
+          "max": 50.0,
+          "mean": 19.42389525368249,
+          "median": 25.0,
+          "min": 0.0,
+          "p90": 25.0
+        }
+      },
+      "monitor_max_sample_gap_seconds_measured": 0.200921915,
+      "monitor_sample_count_measured": 611,
+      "monitor_sample_count_total": 1062,
+      "monitor_sample_errors_measured": [],
+      "monitor_sample_interval_seconds": 0.2,
+      "mps": "on",
+      "position": 1,
+      "rep": 4,
+      "request_throughput_per_second": 2.091838940378284,
+      "variant": "pr"
+    },
+    {
+      "measured_finished_utc": "2026-08-30T19:42:46.697611+00:00",
+      "measured_started_utc": "2026-08-30T19:38:12.029267+00:00",
+      "measured_window_seconds": 274.668328932,
+      "metrics": {
+        "gpu_utilization_percent": {
+          "count": 1372,
+          "max": 100.0,
+          "mean": 37.34475218658892,
+          "median": 6.0,
+          "min": 0.0,
+          "p90": 100.0
+        },
+        "memory_controller_utilization_percent": {
+          "count": 1372,
+          "max": 85.0,
+          "mean": 22.96064139941691,
+          "median": 5.0,
+          "min": 0.0,
+          "p90": 66.0
+        },
+        "memory_used_mib": {
+          "count": 1372,
+          "max": 46147.0,
+          "mean": 46147.0,
+          "median": 46147.0,
+          "min": 46147.0,
+          "p90": 46147.0
+        },
+        "nvdec_utilization_percent": {
+          "count": 1372,
+          "max": 50.0,
+          "mean": 7.922740524781341,
+          "median": 0.0,
+          "min": 0.0,
+          "p90": 25.0
+        }
+      },
+      "monitor_max_sample_gap_seconds_measured": 0.201846686,
+      "monitor_sample_count_measured": 1372,
+      "monitor_sample_count_total": 2128,
+      "monitor_sample_errors_measured": [],
+      "monitor_sample_interval_seconds": 0.2,
+      "mps": "on",
+      "position": 2,
+      "rep": 4,
+      "request_throughput_per_second": 0.9320331943453817,
+      "variant": "base"
+    },
+    {
+      "measured_finished_utc": "2026-08-30T19:49:50.676221+00:00",
+      "measured_started_utc": "2026-08-30T19:45:13.911061+00:00",
+      "measured_window_seconds": 276.765148559,
+      "metrics": {
+        "gpu_utilization_percent": {
+          "count": 1382,
+          "max": 100.0,
+          "mean": 36.91534008683068,
+          "median": 6.0,
+          "min": 0.0,
+          "p90": 100.0
+        },
+        "memory_controller_utilization_percent": {
+          "count": 1382,
+          "max": 87.0,
+          "mean": 22.83140376266281,
+          "median": 5.0,
+          "min": 0.0,
+          "p90": 65.0
+        },
+        "memory_used_mib": {
+          "count": 1382,
+          "max": 46102.0,
+          "mean": 46102.0,
+          "median": 46102.0,
+          "min": 46102.0,
+          "p90": 46102.0
+        },
+        "nvdec_utilization_percent": {
+          "count": 1382,
+          "max": 50.0,
+          "mean": 7.8219971056439945,
+          "median": 0.0,
+          "min": 0.0,
+          "p90": 25.0
+        }
+      },
+      "monitor_max_sample_gap_seconds_measured": 0.200707152,
+      "monitor_sample_count_measured": 1382,
+      "monitor_sample_count_total": 2108,
+      "monitor_sample_errors_measured": [],
+      "monitor_sample_interval_seconds": 0.2,
+      "mps": "off",
+      "position": 3,
+      "rep": 4,
+      "request_throughput_per_second": 0.9249719530543661,
+      "variant": "base"
+    },
+    {
+      "measured_finished_utc": "2026-08-30T19:54:01.416887+00:00",
+      "measured_started_utc": "2026-08-30T19:51:37.661890+00:00",
+      "measured_window_seconds": 143.754981634,
+      "metrics": {
+        "gpu_utilization_percent": {
+          "count": 718,
+          "max": 100.0,
+          "mean": 78.3008356545961,
+          "median": 100.0,
+          "min": 0.0,
+          "p90": 100.0
+        },
+        "memory_controller_utilization_percent": {
+          "count": 718,
+          "max": 83.0,
+          "mean": 47.21727019498607,
+          "median": 51.5,
+          "min": 0.0,
+          "p90": 73.0
+        },
+        "memory_used_mib": {
+          "count": 718,
+          "max": 45630.0,
+          "mean": 45630.0,
+          "median": 45630.0,
+          "min": 45630.0,
+          "p90": 45630.0
+        },
+        "nvdec_utilization_percent": {
+          "count": 718,
+          "max": 50.0,
+          "mean": 15.596100278551532,
+          "median": 6.0,
+          "min": 0.0,
+          "p90": 47.0
+        }
+      },
+      "monitor_max_sample_gap_seconds_measured": 0.201124204,
+      "monitor_sample_count_measured": 718,
+      "monitor_sample_count_total": 1243,
+      "monitor_sample_errors_measured": [],
+      "monitor_sample_interval_seconds": 0.2,
+      "mps": "off",
+      "position": 4,
+      "rep": 4,
+      "request_throughput_per_second": 1.7808078515969323,
+      "variant": "pr"
+    },
+    {
+      "measured_finished_utc": "2026-08-30T20:01:07.758524+00:00",
+      "measured_started_utc": "2026-08-30T19:56:37.283643+00:00",
+      "measured_window_seconds": 270.4748682,
+      "metrics": {
+        "gpu_utilization_percent": {
+          "count": 1350,
+          "max": 100.0,
+          "mean": 37.95111111111111,
+          "median": 7.0,
+          "min": 0.0,
+          "p90": 100.0
+        },
+        "memory_controller_utilization_percent": {
+          "count": 1350,
+          "max": 87.0,
+          "mean": 23.815555555555555,
+          "median": 5.0,
+          "min": 0.0,
+          "p90": 67.0
+        },
+        "memory_used_mib": {
+          "count": 1350,
+          "max": 46102.0,
+          "mean": 46102.0,
+          "median": 46102.0,
+          "min": 46102.0,
+          "p90": 46102.0
+        },
+        "nvdec_utilization_percent": {
+          "count": 1350,
+          "max": 50.0,
+          "mean": 8.071851851851852,
+          "median": 0.0,
+          "min": 0.0,
+          "p90": 25.0
+        }
+      },
+      "monitor_max_sample_gap_seconds_measured": 0.201468765,
+      "monitor_sample_count_measured": 1350,
+      "monitor_sample_count_total": 2117,
+      "monitor_sample_errors_measured": [],
+      "monitor_sample_interval_seconds": 0.2,
+      "mps": "off",
+      "position": 1,
+      "rep": 5,
+      "request_throughput_per_second": 0.9464835003106584,
+      "variant": "base"
+    },
+    {
+      "measured_finished_utc": "2026-08-30T20:05:17.816512+00:00",
+      "measured_started_utc": "2026-08-30T20:02:54.373704+00:00",
+      "measured_window_seconds": 143.442796843,
+      "metrics": {
+        "gpu_utilization_percent": {
+          "count": 717,
+          "max": 100.0,
+          "mean": 78.66387726638773,
+          "median": 100.0,
+          "min": 0.0,
+          "p90": 100.0
+        },
+        "memory_controller_utilization_percent": {
+          "count": 717,
+          "max": 79.0,
+          "mean": 47.59414225941423,
+          "median": 52.0,
+          "min": 0.0,
+          "p90": 75.0
+        },
+        "memory_used_mib": {
+          "count": 717,
+          "max": 45630.0,
+          "mean": 45630.0,
+          "median": 45630.0,
+          "min": 45630.0,
+          "p90": 45630.0
+        },
+        "nvdec_utilization_percent": {
+          "count": 717,
+          "max": 50.0,
+          "mean": 15.691771269177126,
+          "median": 7.0,
+          "min": 0.0,
+          "p90": 47.0
+        }
+      },
+      "monitor_max_sample_gap_seconds_measured": 0.201371433,
+      "monitor_sample_count_measured": 717,
+      "monitor_sample_count_total": 1238,
+      "monitor_sample_errors_measured": [],
+      "monitor_sample_interval_seconds": 0.2,
+      "mps": "off",
+      "position": 2,
+      "rep": 5,
+      "request_throughput_per_second": 1.7846835507550465,
+      "variant": "pr"
+    },
+    {
+      "measured_finished_utc": "2026-08-30T20:08:47.263501+00:00",
+      "measured_started_utc": "2026-08-30T20:06:48.113887+00:00",
+      "measured_window_seconds": 119.149602457,
+      "metrics": {
+        "gpu_utilization_percent": {
+          "count": 595,
+          "max": 100.0,
+          "mean": 84.10252100840336,
+          "median": 100.0,
+          "min": 0.0,
+          "p90": 100.0
+        },
+        "memory_controller_utilization_percent": {
+          "count": 595,
+          "max": 86.0,
+          "mean": 54.16470588235294,
+          "median": 54.0,
+          "min": 0.0,
+          "p90": 82.0
+        },
+        "memory_used_mib": {
+          "count": 595,
+          "max": 45689.0,
+          "mean": 45689.0,
+          "median": 45689.0,
+          "min": 45689.0,
+          "p90": 45689.0
+        },
+        "nvdec_utilization_percent": {
+          "count": 595,
+          "max": 50.0,
+          "mean": 19.93109243697479,
+          "median": 25.0,
+          "min": 0.0,
+          "p90": 25.0
+        }
+      },
+      "monitor_max_sample_gap_seconds_measured": 0.201310711,
+      "monitor_sample_count_measured": 595,
+      "monitor_sample_count_total": 1040,
+      "monitor_sample_errors_measured": [],
+      "monitor_sample_interval_seconds": 0.2,
+      "mps": "on",
+      "position": 3,
+      "rep": 5,
+      "request_throughput_per_second": 2.1485594137201427,
+      "variant": "pr"
+    },
+    {
+      "measured_finished_utc": "2026-08-30T20:16:07.225236+00:00",
+      "measured_started_utc": "2026-08-30T20:11:23.449609+00:00",
+      "measured_window_seconds": 283.775618029,
+      "metrics": {
+        "gpu_utilization_percent": {
+          "count": 1418,
+          "max": 100.0,
+          "mean": 36.34837799717913,
+          "median": 5.0,
+          "min": 0.0,
+          "p90": 100.0
+        },
+        "memory_controller_utilization_percent": {
+          "count": 1418,
+          "max": 84.0,
+          "mean": 22.366008462623412,
+          "median": 5.0,
+          "min": 0.0,
+          "p90": 65.29999999999995
+        },
+        "memory_used_mib": {
+          "count": 1418,
+          "max": 46147.0,
+          "mean": 46147.0,
+          "median": 46147.0,
+          "min": 46147.0,
+          "p90": 46147.0
+        },
+        "nvdec_utilization_percent": {
+          "count": 1418,
+          "max": 50.0,
+          "mean": 7.7136812411847675,
+          "median": 0.0,
+          "min": 0.0,
+          "p90": 25.0
+        }
+      },
+      "monitor_max_sample_gap_seconds_measured": 0.201782393,
+      "monitor_sample_count_measured": 1418,
+      "monitor_sample_count_total": 2190,
+      "monitor_sample_errors_measured": [],
+      "monitor_sample_interval_seconds": 0.2,
+      "mps": "on",
+      "position": 4,
+      "rep": 5,
+      "request_throughput_per_second": 0.9021211962397647,
+      "variant": "base"
+    },
+    {
+      "measured_finished_utc": "2026-08-30T20:23:11.975794+00:00",
+      "measured_started_utc": "2026-08-30T20:18:39.668514+00:00",
+      "measured_window_seconds": 272.307267535,
+      "metrics": {
+        "gpu_utilization_percent": {
+          "count": 1360,
+          "max": 100.0,
+          "mean": 37.54338235294118,
+          "median": 6.0,
+          "min": 0.0,
+          "p90": 100.0
+        },
+        "memory_controller_utilization_percent": {
+          "count": 1360,
+          "max": 85.0,
+          "mean": 23.14044117647059,
+          "median": 5.0,
+          "min": 0.0,
+          "p90": 66.0
+        },
+        "memory_used_mib": {
+          "count": 1360,
+          "max": 46147.0,
+          "mean": 46147.0,
+          "median": 46147.0,
+          "min": 46147.0,
+          "p90": 46147.0
+        },
+        "nvdec_utilization_percent": {
+          "count": 1360,
+          "max": 50.0,
+          "mean": 7.958823529411765,
+          "median": 0.0,
+          "min": 0.0,
+          "p90": 25.0
+        }
+      },
+      "monitor_max_sample_gap_seconds_measured": 0.201838894,
+      "monitor_sample_count_measured": 1360,
+      "monitor_sample_count_total": 2114,
+      "monitor_sample_errors_measured": [],
+      "monitor_sample_interval_seconds": 0.2,
+      "mps": "on",
+      "position": 1,
+      "rep": 6,
+      "request_throughput_per_second": 0.9401144608345644,
+      "variant": "base"
+    },
+    {
+      "measured_finished_utc": "2026-08-30T20:26:49.760011+00:00",
+      "measured_started_utc": "2026-08-30T20:24:49.486720+00:00",
+      "measured_window_seconds": 120.273280245,
+      "metrics": {
+        "gpu_utilization_percent": {
+          "count": 601,
+          "max": 100.0,
+          "mean": 83.42262895174709,
+          "median": 100.0,
+          "min": 0.0,
+          "p90": 100.0
+        },
+        "memory_controller_utilization_percent": {
+          "count": 601,
+          "max": 86.0,
+          "mean": 53.66722129783694,
+          "median": 55.0,
+          "min": 0.0,
+          "p90": 81.0
+        },
+        "memory_used_mib": {
+          "count": 601,
+          "max": 45689.0,
+          "mean": 45689.0,
+          "median": 45689.0,
+          "min": 45689.0,
+          "p90": 45689.0
+        },
+        "nvdec_utilization_percent": {
+          "count": 601,
+          "max": 50.0,
+          "mean": 19.718801996672212,
+          "median": 25.0,
+          "min": 0.0,
+          "p90": 25.0
+        }
+      },
+      "monitor_max_sample_gap_seconds_measured": 0.200818968,
+      "monitor_sample_count_measured": 601,
+      "monitor_sample_count_total": 1074,
+      "monitor_sample_errors_measured": [],
+      "monitor_sample_interval_seconds": 0.2,
+      "mps": "on",
+      "position": 2,
+      "rep": 6,
+      "request_throughput_per_second": 2.1284860567411226,
+      "variant": "pr"
+    },
+    {
+      "measured_finished_utc": "2026-08-30T20:30:56.943977+00:00",
+      "measured_started_utc": "2026-08-30T20:28:32.367749+00:00",
+      "measured_window_seconds": 144.576214623,
+      "metrics": {
+        "gpu_utilization_percent": {
+          "count": 722,
+          "max": 100.0,
+          "mean": 78.2797783933518,
+          "median": 100.0,
+          "min": 0.0,
+          "p90": 100.0
+        },
+        "memory_controller_utilization_percent": {
+          "count": 722,
+          "max": 80.0,
+          "mean": 47.119113573407205,
+          "median": 51.5,
+          "min": 0.0,
+          "p90": 74.0
+        },
+        "memory_used_mib": {
+          "count": 722,
+          "max": 45630.0,
+          "mean": 45630.0,
+          "median": 45630.0,
+          "min": 45630.0,
+          "p90": 45630.0
+        },
+        "nvdec_utilization_percent": {
+          "count": 722,
+          "max": 50.0,
+          "mean": 15.486149584487535,
+          "median": 6.0,
+          "min": 0.0,
+          "p90": 47.0
+        }
+      },
+      "monitor_max_sample_gap_seconds_measured": 0.201082329,
+      "monitor_sample_count_measured": 722,
+      "monitor_sample_count_total": 1220,
+      "monitor_sample_errors_measured": [],
+      "monitor_sample_interval_seconds": 0.2,
+      "mps": "off",
+      "position": 3,
+      "rep": 6,
+      "request_throughput_per_second": 1.770692369194691,
+      "variant": "pr"
+    },
+    {
+      "measured_finished_utc": "2026-08-30T20:37:51.820704+00:00",
+      "measured_started_utc": "2026-08-30T20:33:26.878660+00:00",
+      "measured_window_seconds": 264.942032532,
+      "metrics": {
+        "gpu_utilization_percent": {
+          "count": 1323,
+          "max": 100.0,
+          "mean": 38.61224489795919,
+          "median": 7.0,
+          "min": 0.0,
+          "p90": 100.0
+        },
+        "memory_controller_utilization_percent": {
+          "count": 1323,
+          "max": 87.0,
+          "mean": 23.77777777777778,
+          "median": 5.0,
+          "min": 0.0,
+          "p90": 66.0
+        },
+        "memory_used_mib": {
+          "count": 1323,
+          "max": 46102.0,
+          "mean": 46102.0,
+          "median": 46102.0,
+          "min": 46102.0,
+          "p90": 46102.0
+        },
+        "nvdec_utilization_percent": {
+          "count": 1323,
+          "max": 50.0,
+          "mean": 8.076341647770219,
+          "median": 0.0,
+          "min": 0.0,
+          "p90": 25.0
+        }
+      },
+      "monitor_max_sample_gap_seconds_measured": 0.202693916,
+      "monitor_sample_count_measured": 1323,
+      "monitor_sample_count_total": 2067,
+      "monitor_sample_errors_measured": [],
+      "monitor_sample_interval_seconds": 0.2,
+      "mps": "off",
+      "position": 4,
+      "rep": 6,
+      "request_throughput_per_second": 0.9662490981648223,
+      "variant": "base"
+    }
+  ],
+  "configuration": {
+    "cpu_utilization_captured": false,
+    "gpu_and_nvdec_sample_interval_seconds": 0.2,
+    "window": "measured requests only"
+  },
+  "gpu_label": "RTX",
+  "gpu_uuid": "GPU-2df87ff8-ec98-37fb-2c10-b82b4e0b0f0f",
+  "groups": {
+    "base_mps_off": {
+      "cell_count": 6,
+      "per_cell_means": {
+        "gpu_utilization_percent": {
+          "count": 6,
+          "max": 38.61224489795919,
+          "mean": 37.79352418592884,
+          "median": 37.87555555555555,
+          "min": 36.91534008683068,
+          "p90": 38.39917177633386
+        },
+        "memory_controller_utilization_percent": {
+          "count": 6,
+          "max": 23.815555555555555,
+          "mean": 23.352222610468797,
+          "median": 23.300868626474006,
+          "min": 22.83140376266281,
+          "p90": 23.796666666666667
+        },
+        "memory_used_mib": {
+          "count": 6,
+          "max": 46102.0,
+          "mean": 46102.0,
+          "median": 46102.0,
+          "min": 46102.0,
+          "p90": 46102.0
+        },
+        "nvdec_utilization_percent": {
+          "count": 6,
+          "max": 8.077727952167415,
+          "mean": 7.973200448046609,
+          "median": 8.037407407407407,
+          "min": 7.788321167883212,
+          "p90": 8.077034799968818
+        }
+      },
+      "request_throughput_per_second": {
+        "count": 6,
+        "max": 0.9662490981648223,
+        "mean": 0.9454221987289134,
+        "median": 0.9467314872462143,
+        "min": 0.9249719530543661,
+        "p90": 0.960681908701665
+      }
+    },
+    "base_mps_on": {
+      "cell_count": 6,
+      "per_cell_means": {
+        "gpu_utilization_percent": {
+          "count": 6,
+          "max": 38.39341810022438,
+          "mean": 37.119029129890826,
+          "median": 37.31979802503012,
+          "min": 35.78940027894003,
+          "p90": 37.96840022658278
+        },
+        "memory_controller_utilization_percent": {
+          "count": 6,
+          "max": 23.653702318623786,
+          "mean": 22.860462102651297,
+          "median": 22.93820014778398,
+          "min": 22.126220362622036,
+          "p90": 23.397071747547187
+        },
+        "memory_used_mib": {
+          "count": 6,
+          "max": 46147.0,
+          "mean": 46147.0,
+          "median": 46147.0,
+          "min": 46147.0,
+          "p90": 46147.0
+        },
+        "nvdec_utilization_percent": {
+          "count": 6,
+          "max": 8.083769633507853,
+          "mean": 7.850645466688281,
+          "median": 7.910898221722551,
+          "min": 7.525801952580196,
+          "p90": 8.021296581459808
+        }
+      },
+      "request_throughput_per_second": {
+        "count": 6,
+        "max": 0.9562225269032508,
+        "mean": 0.925038382271072,
+        "median": 0.9303243604010478,
+        "min": 0.8911233888467569,
+        "p90": 0.9481684938689077
+      }
+    },
+    "pr_mps_off": {
+      "cell_count": 6,
+      "per_cell_means": {
+        "gpu_utilization_percent": {
+          "count": 6,
+          "max": 78.66387726638773,
+          "mean": 78.36072259361647,
+          "median": 78.29030702397395,
+          "min": 78.1497919556172,
+          "p90": 78.60987159408772
+        },
+        "memory_controller_utilization_percent": {
+          "count": 6,
+          "max": 47.59414225941423,
+          "mean": 46.94196000427264,
+          "median": 46.95899812748573,
+          "min": 46.414701803051315,
+          "p90": 47.40570622720015
+        },
+        "memory_used_mib": {
+          "count": 6,
+          "max": 45630.0,
+          "mean": 45630.0,
+          "median": 45630.0,
+          "min": 45630.0,
+          "p90": 45630.0
+        },
+        "nvdec_utilization_percent": {
+          "count": 6,
+          "max": 15.706703910614525,
+          "mean": 15.576665972696192,
+          "median": 15.561610639971176,
+          "min": 15.452149791955618,
+          "p90": 15.699237589895827
+        }
+      },
+      "request_throughput_per_second": {
+        "count": 6,
+        "max": 1.7850110670574595,
+        "mean": 1.7787465724118425,
+        "median": 1.7788518790910355,
+        "min": 1.770692369194691,
+        "p90": 1.784847308906253
+      }
+    },
+    "pr_mps_on": {
+      "cell_count": 6,
+      "per_cell_means": {
+        "gpu_utilization_percent": {
+          "count": 6,
+          "max": 87.52530541012216,
+          "mean": 83.46931323277768,
+          "median": 83.15511612876611,
+          "min": 81.10858995137764,
+          "p90": 85.81391320926275
+        },
+        "memory_controller_utilization_percent": {
+          "count": 6,
+          "max": 55.68411867364747,
+          "mean": 53.24776078267838,
+          "median": 53.111296599331695,
+          "min": 51.557536466774714,
+          "p90": 54.924412278000204
+        },
+        "memory_used_mib": {
+          "count": 6,
+          "max": 45689.0,
+          "mean": 45689.0,
+          "median": 45689.0,
+          "min": 45689.0,
+          "p90": 45689.0
+        },
+        "nvdec_utilization_percent": {
+          "count": 6,
+          "max": 20.80279232111693,
+          "mean": 19.74665019802694,
+          "median": 19.6197315768485,
+          "min": 19.08265802269044,
+          "p90": 20.36694237904586
+        }
+      },
+      "request_throughput_per_second": {
+        "count": 6,
+        "max": 2.2291790815496597,
+        "mean": 2.130657378369896,
+        "median": 2.1210562851778594,
+        "min": 2.0722542642155726,
+        "p90": 2.1888692476349014
+      }
+    }
+  },
+  "model_key": "qwen3",
+  "schema": "vllm-pr1-c32-measured-window-gpu-telemetry-summary-v1",
+  "source_manifest": "manifest.json",
+  "source_manifest_sha256": "955f8047b16d9ae1b95fee479f22f209c8234cecf69e7890c19d5eebc5528148"
+}

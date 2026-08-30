@@ -1,0 +1,60 @@
+PASS r01 base mps=off 0.846065 req/s
+PASS r01 pr mps=off 0.879721 req/s
+PASS r01 base mps=on 0.858769 req/s
+PASS r01 pr mps=on 1.193482 req/s
+PASS r02 pr mps=on 1.193026 req/s
+PASS r02 base mps=on 0.851406 req/s
+PASS r02 pr mps=off 0.886521 req/s
+PASS r02 base mps=off 0.835338 req/s
+PASS r03 pr mps=off 0.885011 req/s
+PASS r03 base mps=off 0.848306 req/s
+PASS r03 base mps=on 0.854223 req/s
+PASS r03 pr mps=on 1.192996 req/s
+PASS r04 pr mps=on 1.193015 req/s
+PASS r04 base mps=on 0.851345 req/s
+PASS r04 base mps=off 0.846858 req/s
+PASS r04 pr mps=off 0.885577 req/s
+PASS r05 base mps=off 0.839451 req/s
+PASS r05 pr mps=off 0.880831 req/s
+PASS r05 pr mps=on 1.193675 req/s
+PASS r05 base mps=on 0.853610 req/s
+PASS r06 base mps=on 0.848820 req/s
+PASS r06 pr mps=on 1.193982 req/s
+PASS r06 pr mps=off 0.887298 req/s
+PASS r06 base mps=off 0.844758 req/s
+| Comparison | Left req/s median | Right req/s median | Paired change median [min, max] |
+|---|---:|---:|---:|
+| pr_vs_base_mps_off | 0.8454 | 0.8853 | +4.75% [+3.98%, +6.13%] |
+| pr_vs_base_mps_on | 0.8525 | 1.1933 | +39.98% [+38.98%, +40.66%] |
+| mps_on_vs_off_base | 0.8454 | 0.8525 | +1.10% [+0.48%, +1.92%] |
+| mps_on_vs_off_pr | 0.8853 | 1.1933 | +34.76% [+34.56%, +35.67%] |
+PASS r01 base mps=off 0.634730 req/s
+PASS r01 pr mps=off 0.628017 req/s
+PASS r01 base mps=on 0.924939 req/s
+PASS r01 pr mps=on 0.925367 req/s
+PASS r02 pr mps=on 0.925003 req/s
+PASS r02 base mps=on 0.925115 req/s
+PASS r02 pr mps=off 0.631758 req/s
+PASS r02 base mps=off 0.634400 req/s
+PASS r03 pr mps=off 0.632887 req/s
+PASS r03 base mps=off 0.631124 req/s
+PASS r03 base mps=on 0.924489 req/s
+PASS r03 pr mps=on 0.924988 req/s
+PASS r04 pr mps=on 0.924839 req/s
+PASS r04 base mps=on 0.925082 req/s
+PASS r04 base mps=off 0.633566 req/s
+PASS r04 pr mps=off 0.633768 req/s
+PASS r05 base mps=off 0.632350 req/s
+PASS r05 pr mps=off 0.633229 req/s
+PASS r05 pr mps=on 0.925384 req/s
+PASS r05 base mps=on 0.925223 req/s
+PASS r06 base mps=on 0.924403 req/s
+PASS r06 pr mps=on 0.925029 req/s
+PASS r06 pr mps=off 0.633126 req/s
+PASS r06 base mps=off 0.633185 req/s
+| Comparison | Left req/s median | Right req/s median | Paired change median [min, max] |
+|---|---:|---:|---:|
+| pr_vs_base_mps_off | 0.6334 | 0.6330 | +0.01% [-1.06%, +0.28%] |
+| pr_vs_base_mps_on | 0.9250 | 0.9250 | +0.03% [-0.03%, +0.07%] |
+| mps_on_vs_off_base | 0.6334 | 0.9250 | +46.00% [+45.72%, +46.48%] |
+| mps_on_vs_off_pr | 0.6330 | 0.9250 | +46.15% [+45.93%, +47.35%] |

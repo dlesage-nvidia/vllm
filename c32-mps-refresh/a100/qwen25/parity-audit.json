@@ -1,0 +1,986 @@
+[
+  {
+    "input_mismatches": 0,
+    "label": "r01-pr-vs-base-mps-off",
+    "output_mismatch_examples": [
+      {
+        "phase": "warmup",
+        "request_index": 2
+      },
+      {
+        "phase": "warmup",
+        "request_index": 6
+      },
+      {
+        "phase": "warmup",
+        "request_index": 7
+      },
+      {
+        "phase": "warmup",
+        "request_index": 8
+      },
+      {
+        "phase": "warmup",
+        "request_index": 9
+      },
+      {
+        "phase": "warmup",
+        "request_index": 10
+      },
+      {
+        "phase": "warmup",
+        "request_index": 12
+      },
+      {
+        "phase": "warmup",
+        "request_index": 14
+      }
+    ],
+    "output_mismatches": 167,
+    "requests": 352,
+    "status": "passed_input_only"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r01-pr-vs-base-mps-on",
+    "output_mismatch_examples": [
+      {
+        "phase": "warmup",
+        "request_index": 0
+      },
+      {
+        "phase": "warmup",
+        "request_index": 1
+      },
+      {
+        "phase": "warmup",
+        "request_index": 2
+      },
+      {
+        "phase": "warmup",
+        "request_index": 5
+      },
+      {
+        "phase": "warmup",
+        "request_index": 6
+      },
+      {
+        "phase": "warmup",
+        "request_index": 8
+      },
+      {
+        "phase": "warmup",
+        "request_index": 11
+      },
+      {
+        "phase": "warmup",
+        "request_index": 12
+      }
+    ],
+    "output_mismatches": 94,
+    "requests": 352,
+    "status": "passed_input_only"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r01-mps-on-vs-off-base",
+    "output_mismatch_examples": [
+      {
+        "phase": "warmup",
+        "request_index": 0
+      },
+      {
+        "phase": "warmup",
+        "request_index": 2
+      },
+      {
+        "phase": "warmup",
+        "request_index": 3
+      },
+      {
+        "phase": "warmup",
+        "request_index": 4
+      },
+      {
+        "phase": "warmup",
+        "request_index": 5
+      },
+      {
+        "phase": "warmup",
+        "request_index": 9
+      },
+      {
+        "phase": "warmup",
+        "request_index": 10
+      },
+      {
+        "phase": "warmup",
+        "request_index": 13
+      }
+    ],
+    "output_mismatches": 192,
+    "requests": 352,
+    "status": "passed_input_only"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r01-mps-on-vs-off-pr",
+    "output_mismatch_examples": [
+      {
+        "phase": "warmup",
+        "request_index": 1
+      },
+      {
+        "phase": "warmup",
+        "request_index": 2
+      },
+      {
+        "phase": "warmup",
+        "request_index": 3
+      },
+      {
+        "phase": "warmup",
+        "request_index": 4
+      },
+      {
+        "phase": "warmup",
+        "request_index": 5
+      },
+      {
+        "phase": "warmup",
+        "request_index": 6
+      },
+      {
+        "phase": "warmup",
+        "request_index": 7
+      },
+      {
+        "phase": "warmup",
+        "request_index": 8
+      }
+    ],
+    "output_mismatches": 201,
+    "requests": 352,
+    "status": "passed_input_only"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r02-pr-vs-base-mps-off",
+    "output_mismatch_examples": [
+      {
+        "phase": "warmup",
+        "request_index": 0
+      },
+      {
+        "phase": "warmup",
+        "request_index": 4
+      },
+      {
+        "phase": "warmup",
+        "request_index": 6
+      },
+      {
+        "phase": "warmup",
+        "request_index": 7
+      },
+      {
+        "phase": "warmup",
+        "request_index": 9
+      },
+      {
+        "phase": "warmup",
+        "request_index": 11
+      },
+      {
+        "phase": "warmup",
+        "request_index": 12
+      },
+      {
+        "phase": "warmup",
+        "request_index": 15
+      }
+    ],
+    "output_mismatches": 175,
+    "requests": 352,
+    "status": "passed_input_only"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r02-pr-vs-base-mps-on",
+    "output_mismatch_examples": [
+      {
+        "phase": "warmup",
+        "request_index": 0
+      },
+      {
+        "phase": "warmup",
+        "request_index": 1
+      },
+      {
+        "phase": "warmup",
+        "request_index": 3
+      },
+      {
+        "phase": "warmup",
+        "request_index": 4
+      },
+      {
+        "phase": "warmup",
+        "request_index": 9
+      },
+      {
+        "phase": "warmup",
+        "request_index": 11
+      },
+      {
+        "phase": "warmup",
+        "request_index": 13
+      },
+      {
+        "phase": "warmup",
+        "request_index": 15
+      }
+    ],
+    "output_mismatches": 85,
+    "requests": 352,
+    "status": "passed_input_only"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r02-mps-on-vs-off-base",
+    "output_mismatch_examples": [
+      {
+        "phase": "warmup",
+        "request_index": 0
+      },
+      {
+        "phase": "warmup",
+        "request_index": 1
+      },
+      {
+        "phase": "warmup",
+        "request_index": 3
+      },
+      {
+        "phase": "warmup",
+        "request_index": 5
+      },
+      {
+        "phase": "warmup",
+        "request_index": 7
+      },
+      {
+        "phase": "warmup",
+        "request_index": 8
+      },
+      {
+        "phase": "warmup",
+        "request_index": 9
+      },
+      {
+        "phase": "warmup",
+        "request_index": 11
+      }
+    ],
+    "output_mismatches": 195,
+    "requests": 352,
+    "status": "passed_input_only"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r02-mps-on-vs-off-pr",
+    "output_mismatch_examples": [
+      {
+        "phase": "warmup",
+        "request_index": 0
+      },
+      {
+        "phase": "warmup",
+        "request_index": 1
+      },
+      {
+        "phase": "warmup",
+        "request_index": 3
+      },
+      {
+        "phase": "warmup",
+        "request_index": 5
+      },
+      {
+        "phase": "warmup",
+        "request_index": 6
+      },
+      {
+        "phase": "warmup",
+        "request_index": 8
+      },
+      {
+        "phase": "warmup",
+        "request_index": 12
+      },
+      {
+        "phase": "warmup",
+        "request_index": 13
+      }
+    ],
+    "output_mismatches": 193,
+    "requests": 352,
+    "status": "passed_input_only"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r03-pr-vs-base-mps-off",
+    "output_mismatch_examples": [
+      {
+        "phase": "warmup",
+        "request_index": 2
+      },
+      {
+        "phase": "warmup",
+        "request_index": 3
+      },
+      {
+        "phase": "warmup",
+        "request_index": 6
+      },
+      {
+        "phase": "warmup",
+        "request_index": 9
+      },
+      {
+        "phase": "warmup",
+        "request_index": 10
+      },
+      {
+        "phase": "warmup",
+        "request_index": 11
+      },
+      {
+        "phase": "warmup",
+        "request_index": 12
+      },
+      {
+        "phase": "warmup",
+        "request_index": 13
+      }
+    ],
+    "output_mismatches": 180,
+    "requests": 352,
+    "status": "passed_input_only"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r03-pr-vs-base-mps-on",
+    "output_mismatch_examples": [
+      {
+        "phase": "warmup",
+        "request_index": 3
+      },
+      {
+        "phase": "warmup",
+        "request_index": 6
+      },
+      {
+        "phase": "warmup",
+        "request_index": 7
+      },
+      {
+        "phase": "warmup",
+        "request_index": 8
+      },
+      {
+        "phase": "warmup",
+        "request_index": 9
+      },
+      {
+        "phase": "warmup",
+        "request_index": 13
+      },
+      {
+        "phase": "warmup",
+        "request_index": 14
+      },
+      {
+        "phase": "warmup",
+        "request_index": 17
+      }
+    ],
+    "output_mismatches": 91,
+    "requests": 352,
+    "status": "passed_input_only"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r03-mps-on-vs-off-base",
+    "output_mismatch_examples": [
+      {
+        "phase": "warmup",
+        "request_index": 0
+      },
+      {
+        "phase": "warmup",
+        "request_index": 2
+      },
+      {
+        "phase": "warmup",
+        "request_index": 3
+      },
+      {
+        "phase": "warmup",
+        "request_index": 5
+      },
+      {
+        "phase": "warmup",
+        "request_index": 6
+      },
+      {
+        "phase": "warmup",
+        "request_index": 8
+      },
+      {
+        "phase": "warmup",
+        "request_index": 9
+      },
+      {
+        "phase": "warmup",
+        "request_index": 11
+      }
+    ],
+    "output_mismatches": 202,
+    "requests": 352,
+    "status": "passed_input_only"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r03-mps-on-vs-off-pr",
+    "output_mismatch_examples": [
+      {
+        "phase": "warmup",
+        "request_index": 0
+      },
+      {
+        "phase": "warmup",
+        "request_index": 2
+      },
+      {
+        "phase": "warmup",
+        "request_index": 5
+      },
+      {
+        "phase": "warmup",
+        "request_index": 6
+      },
+      {
+        "phase": "warmup",
+        "request_index": 7
+      },
+      {
+        "phase": "warmup",
+        "request_index": 9
+      },
+      {
+        "phase": "warmup",
+        "request_index": 10
+      },
+      {
+        "phase": "warmup",
+        "request_index": 15
+      }
+    ],
+    "output_mismatches": 198,
+    "requests": 352,
+    "status": "passed_input_only"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r04-pr-vs-base-mps-off",
+    "output_mismatch_examples": [
+      {
+        "phase": "warmup",
+        "request_index": 0
+      },
+      {
+        "phase": "warmup",
+        "request_index": 4
+      },
+      {
+        "phase": "warmup",
+        "request_index": 5
+      },
+      {
+        "phase": "warmup",
+        "request_index": 8
+      },
+      {
+        "phase": "warmup",
+        "request_index": 10
+      },
+      {
+        "phase": "warmup",
+        "request_index": 12
+      },
+      {
+        "phase": "warmup",
+        "request_index": 14
+      },
+      {
+        "phase": "warmup",
+        "request_index": 15
+      }
+    ],
+    "output_mismatches": 166,
+    "requests": 352,
+    "status": "passed_input_only"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r04-pr-vs-base-mps-on",
+    "output_mismatch_examples": [
+      {
+        "phase": "warmup",
+        "request_index": 1
+      },
+      {
+        "phase": "warmup",
+        "request_index": 2
+      },
+      {
+        "phase": "warmup",
+        "request_index": 6
+      },
+      {
+        "phase": "warmup",
+        "request_index": 7
+      },
+      {
+        "phase": "warmup",
+        "request_index": 8
+      },
+      {
+        "phase": "warmup",
+        "request_index": 9
+      },
+      {
+        "phase": "warmup",
+        "request_index": 13
+      },
+      {
+        "phase": "warmup",
+        "request_index": 14
+      }
+    ],
+    "output_mismatches": 80,
+    "requests": 352,
+    "status": "passed_input_only"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r04-mps-on-vs-off-base",
+    "output_mismatch_examples": [
+      {
+        "phase": "warmup",
+        "request_index": 1
+      },
+      {
+        "phase": "warmup",
+        "request_index": 2
+      },
+      {
+        "phase": "warmup",
+        "request_index": 4
+      },
+      {
+        "phase": "warmup",
+        "request_index": 5
+      },
+      {
+        "phase": "warmup",
+        "request_index": 6
+      },
+      {
+        "phase": "warmup",
+        "request_index": 7
+      },
+      {
+        "phase": "warmup",
+        "request_index": 8
+      },
+      {
+        "phase": "warmup",
+        "request_index": 9
+      }
+    ],
+    "output_mismatches": 207,
+    "requests": 352,
+    "status": "passed_input_only"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r04-mps-on-vs-off-pr",
+    "output_mismatch_examples": [
+      {
+        "phase": "warmup",
+        "request_index": 0
+      },
+      {
+        "phase": "warmup",
+        "request_index": 2
+      },
+      {
+        "phase": "warmup",
+        "request_index": 7
+      },
+      {
+        "phase": "warmup",
+        "request_index": 8
+      },
+      {
+        "phase": "warmup",
+        "request_index": 9
+      },
+      {
+        "phase": "warmup",
+        "request_index": 12
+      },
+      {
+        "phase": "warmup",
+        "request_index": 13
+      },
+      {
+        "phase": "warmup",
+        "request_index": 14
+      }
+    ],
+    "output_mismatches": 190,
+    "requests": 352,
+    "status": "passed_input_only"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r05-pr-vs-base-mps-off",
+    "output_mismatch_examples": [
+      {
+        "phase": "warmup",
+        "request_index": 0
+      },
+      {
+        "phase": "warmup",
+        "request_index": 1
+      },
+      {
+        "phase": "warmup",
+        "request_index": 3
+      },
+      {
+        "phase": "warmup",
+        "request_index": 4
+      },
+      {
+        "phase": "warmup",
+        "request_index": 7
+      },
+      {
+        "phase": "warmup",
+        "request_index": 9
+      },
+      {
+        "phase": "warmup",
+        "request_index": 11
+      },
+      {
+        "phase": "warmup",
+        "request_index": 14
+      }
+    ],
+    "output_mismatches": 181,
+    "requests": 352,
+    "status": "passed_input_only"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r05-pr-vs-base-mps-on",
+    "output_mismatch_examples": [
+      {
+        "phase": "warmup",
+        "request_index": 2
+      },
+      {
+        "phase": "warmup",
+        "request_index": 3
+      },
+      {
+        "phase": "warmup",
+        "request_index": 4
+      },
+      {
+        "phase": "warmup",
+        "request_index": 6
+      },
+      {
+        "phase": "warmup",
+        "request_index": 8
+      },
+      {
+        "phase": "warmup",
+        "request_index": 10
+      },
+      {
+        "phase": "warmup",
+        "request_index": 13
+      },
+      {
+        "phase": "warmup",
+        "request_index": 14
+      }
+    ],
+    "output_mismatches": 82,
+    "requests": 352,
+    "status": "passed_input_only"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r05-mps-on-vs-off-base",
+    "output_mismatch_examples": [
+      {
+        "phase": "warmup",
+        "request_index": 0
+      },
+      {
+        "phase": "warmup",
+        "request_index": 1
+      },
+      {
+        "phase": "warmup",
+        "request_index": 2
+      },
+      {
+        "phase": "warmup",
+        "request_index": 3
+      },
+      {
+        "phase": "warmup",
+        "request_index": 4
+      },
+      {
+        "phase": "warmup",
+        "request_index": 7
+      },
+      {
+        "phase": "warmup",
+        "request_index": 8
+      },
+      {
+        "phase": "warmup",
+        "request_index": 9
+      }
+    ],
+    "output_mismatches": 193,
+    "requests": 352,
+    "status": "passed_input_only"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r05-mps-on-vs-off-pr",
+    "output_mismatch_examples": [
+      {
+        "phase": "warmup",
+        "request_index": 1
+      },
+      {
+        "phase": "warmup",
+        "request_index": 2
+      },
+      {
+        "phase": "warmup",
+        "request_index": 6
+      },
+      {
+        "phase": "warmup",
+        "request_index": 8
+      },
+      {
+        "phase": "warmup",
+        "request_index": 10
+      },
+      {
+        "phase": "warmup",
+        "request_index": 14
+      },
+      {
+        "phase": "warmup",
+        "request_index": 15
+      },
+      {
+        "phase": "warmup",
+        "request_index": 16
+      }
+    ],
+    "output_mismatches": 191,
+    "requests": 352,
+    "status": "passed_input_only"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r06-pr-vs-base-mps-off",
+    "output_mismatch_examples": [
+      {
+        "phase": "warmup",
+        "request_index": 1
+      },
+      {
+        "phase": "warmup",
+        "request_index": 3
+      },
+      {
+        "phase": "warmup",
+        "request_index": 6
+      },
+      {
+        "phase": "warmup",
+        "request_index": 7
+      },
+      {
+        "phase": "warmup",
+        "request_index": 8
+      },
+      {
+        "phase": "warmup",
+        "request_index": 12
+      },
+      {
+        "phase": "warmup",
+        "request_index": 13
+      },
+      {
+        "phase": "warmup",
+        "request_index": 17
+      }
+    ],
+    "output_mismatches": 173,
+    "requests": 352,
+    "status": "passed_input_only"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r06-pr-vs-base-mps-on",
+    "output_mismatch_examples": [
+      {
+        "phase": "warmup",
+        "request_index": 0
+      },
+      {
+        "phase": "warmup",
+        "request_index": 1
+      },
+      {
+        "phase": "warmup",
+        "request_index": 2
+      },
+      {
+        "phase": "warmup",
+        "request_index": 3
+      },
+      {
+        "phase": "warmup",
+        "request_index": 4
+      },
+      {
+        "phase": "warmup",
+        "request_index": 6
+      },
+      {
+        "phase": "warmup",
+        "request_index": 7
+      },
+      {
+        "phase": "warmup",
+        "request_index": 9
+      }
+    ],
+    "output_mismatches": 75,
+    "requests": 352,
+    "status": "passed_input_only"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r06-mps-on-vs-off-base",
+    "output_mismatch_examples": [
+      {
+        "phase": "warmup",
+        "request_index": 0
+      },
+      {
+        "phase": "warmup",
+        "request_index": 1
+      },
+      {
+        "phase": "warmup",
+        "request_index": 2
+      },
+      {
+        "phase": "warmup",
+        "request_index": 3
+      },
+      {
+        "phase": "warmup",
+        "request_index": 4
+      },
+      {
+        "phase": "warmup",
+        "request_index": 6
+      },
+      {
+        "phase": "warmup",
+        "request_index": 7
+      },
+      {
+        "phase": "warmup",
+        "request_index": 9
+      }
+    ],
+    "output_mismatches": 194,
+    "requests": 352,
+    "status": "passed_input_only"
+  },
+  {
+    "input_mismatches": 0,
+    "label": "r06-mps-on-vs-off-pr",
+    "output_mismatch_examples": [
+      {
+        "phase": "warmup",
+        "request_index": 1
+      },
+      {
+        "phase": "warmup",
+        "request_index": 2
+      },
+      {
+        "phase": "warmup",
+        "request_index": 3
+      },
+      {
+        "phase": "warmup",
+        "request_index": 4
+      },
+      {
+        "phase": "warmup",
+        "request_index": 8
+      },
+      {
+        "phase": "warmup",
+        "request_index": 9
+      },
+      {
+        "phase": "warmup",
+        "request_index": 11
+      },
+      {
+        "phase": "warmup",
+        "request_index": 12
+      }
+    ],
+    "output_mismatches": 206,
+    "requests": 352,
+    "status": "passed_input_only"
+  }
+]
