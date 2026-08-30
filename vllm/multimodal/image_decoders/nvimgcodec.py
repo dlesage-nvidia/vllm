@@ -143,9 +143,7 @@ COALESCE_WIDTH = DEFAULT_COALESCE_WIDTH
 # never shorter than the old constant, never long enough to starve the shared
 # media executor thread this parks.
 COALESCE_WAIT_SECONDS = 0.002
-MAX_COALESCE_WAIT_SECONDS = float(
-    os.environ.get("VLLM_NVIMGCODEC_MAX_COALESCE_WAIT", "0.030")
-)
+MAX_COALESCE_WAIT_SECONDS = 0.030
 # Seeded so that the derived window (2x this) starts at exactly the floor, and
 # the very first callers behave as they did before the window became adaptive.
 _DECODE_EWMA_SECONDS = COALESCE_WAIT_SECONDS / 2.0
@@ -223,32 +221,6 @@ def _cvcuda():
         _CVCUDA_RESOLVED = True
     return _CVCUDA
 
-
-# Least pixel reduction that justifies resizing on the accelerator.
-#
-# The resize trades DMA work for SM work, and those are not interchangeable on
-# a GPU shared with the model. Measured directly, one process running a GEMM
-# loop while another does work at the serving rate:
-#
-#   full-raster device-to-host copy   -0.0%   (copy engine, runs concurrently)
-#   one resize kernel                 -2.2%   (SMs, contends with the model)
-#
-# So what the resize REMOVES is free when the GPU is compute-bound, and what it
-# ADDS is not. Whether that trade pays depends on whether the copy was actually
-# the constraint, which tracks how much raster the resize removes:
-#
-#   3.52x reduction (1080p source):  0.98x -- GPU at 98%, copy was never the
-#                                    constraint, so the SM time is pure loss
-#   14.06x reduction (4K source):    1.11x-1.64x -- the frontend could not feed
-#                                    the GPU, so removing the copy wins
-#
-# Nine other explanations were tested and eliminated (kernel cost, allocation,
-# host copy, strided copy, buffer reuse, frontend capacity, model work,
-# cross-context toll, engine occupancy, decoder concurrency); this trade is
-# what remains. The threshold sits between the two measured points and nearer
-# the loss, since the interval between them is interpolated.
-DEFAULT_MIN_RESIZE_RATIO = 6.0
-MIN_RESIZE_RATIO = DEFAULT_MIN_RESIZE_RATIO
 
 DEFAULT_RESIZE_PREFILTER = 1
 RESIZE_PREFILTER = DEFAULT_RESIZE_PREFILTER
@@ -351,14 +323,13 @@ def configure(
     min_gpu_pixels: int = DEFAULT_MIN_GPU_PIXELS,
     resize_target=None,
     resize_prefilter: int = DEFAULT_RESIZE_PREFILTER,
-    min_resize_ratio: float = DEFAULT_MIN_RESIZE_RATIO,
 ) -> None:
     """Enable the backend for this process. Idempotent within a generation."""
     global _NUM_DECODERS, _CLOSED, _PID, _CREATED, _FREE, _DISABLED
     global _MAX_PARKED, _PARKED, _GENERATION, _ACTIVE, _OUTPUT_LAYOUT, _PARKED_BYTES
     global COALESCE_WIDTH, _DECODE_EWMA_SECONDS, MIN_GPU_PIXELS
     global COALESCE_WIDTH, _DECODE_EWMA_SECONDS, MIN_GPU_PIXELS, _RESIZE_TARGET
-    global RESIZE_PREFILTER, MIN_RESIZE_RATIO
+    global RESIZE_PREFILTER
     if not isinstance(num_decoders, int) or isinstance(num_decoders, bool):
         raise ValueError("num_decoders must be an integer")
     if not 1 <= num_decoders <= 16:
@@ -391,7 +362,6 @@ def configure(
         MIN_GPU_PIXELS = int(min_gpu_pixels)
         _RESIZE_TARGET = resize_target
         RESIZE_PREFILTER = max(1, int(resize_prefilter))
-        MIN_RESIZE_RATIO = float(min_resize_ratio)
         _DISABLED = False
         _CLOSED = False
 
@@ -1091,11 +1061,6 @@ def _resized_host_array(image: Any, stream: Any, cvstream: Any = None) -> "np.nd
         # the copy would grow, and the processor would resize again anyway.
         _count("resize_not_downscale")
         return None
-    if width * height < MIN_RESIZE_RATIO * tw * th:
-        # Too little raster removed from the bus to pay for the SM time this
-        # takes from the model. See MIN_RESIZE_RATIO.
-        _count("resize_below_ratio")
-        return None
     t = torch.from_dlpack(image)
     if t.ndim != 3:
         return None
@@ -1110,11 +1075,6 @@ def _resized_host_array(image: Any, stream: Any, cvstream: Any = None) -> "np.nd
             antialias=True, interpolation=cv.Interp.CUBIC, stream=cvstream,
         )
         _count("resize_cvcuda")
-        if os.environ.get("VLLM_NVIMGCODEC_RESIZE_DISCARD") == "1":
-            # Diagnostic: pay the resize's cost but discard its benefit by
-            # copying the FULL raster anyway. Separates "the resize costs" from
-            # "the smaller copy helps" inside one build.
-            return np.asarray(image.cpu())
         # No explicit stream sync: this runs inside the slot's torch stream
         # context and that stream IS this cvcuda stream, so .cpu() already
         # orders after the resize. An extra sync here would just add a second

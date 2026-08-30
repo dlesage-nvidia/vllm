@@ -626,18 +626,6 @@ class MultiModalConfig:
             raise ValueError("min_gpu_pixels must be a non-negative integer")
         return value
 
-    def get_image_min_resize_ratio(self) -> float:
-        """Least pixel reduction that justifies resizing on the accelerator."""
-        from vllm.multimodal.image_decoders import DEFAULT_MIN_RESIZE_RATIO
-
-        value = self.media_io_kwargs.get("image", {}).get(
-            "min_resize_ratio", DEFAULT_MIN_RESIZE_RATIO)
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            raise ValueError("min_resize_ratio must be a number")
-        if not value >= 1.0:
-            raise ValueError("min_resize_ratio must be at least 1.0")
-        return float(value)
-
     def get_image_resize_prefilter(self) -> int:
         """Integer box-reduce applied before the accelerator resample.
 

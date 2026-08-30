@@ -39,7 +39,6 @@ _STARTUP_ONLY_KWARGS = (
     "min_gpu_pixels",
     "gpu_resize",
     "resize_prefilter",
-    "min_resize_ratio",
 )
 
 
