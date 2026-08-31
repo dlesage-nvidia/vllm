@@ -42,6 +42,7 @@ from vllm.multimodal.video_decoders.pynvvideocodec import (
     _RESIZE_COUNTERS,
     _RESIZE_COUNTERS_LOCK,
     PYNVVIDEOCODEC_DECODER_CACHE_SIZE,
+    PYNVVIDEOCODEC_RESIZE_BATCH_SIZE,
     PyNvVideoCodecDecoderSlot,
     PyNvVideoCodecVideoBackendMixin,
     _pynv_decoder_pool,
@@ -1212,6 +1213,63 @@ def test_pynvvideocodec_tchw_requires_rgbp_support():
 
     with pytest.raises(RuntimeError, match="does not support OutputColorType.RGBP"):
         slot.get_decoder("video.mp4", FakeNvc, device_index=0)
+
+
+def test_pynvvideocodec_decoder_slot_reuses_batched_resize_outputs(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import torch
+
+    allocations = []
+
+    class FakeOutput:
+        def __init__(self, shape):
+            self.shape = shape
+            self.frames = [object() for _ in range(shape[0])]
+
+        def __getitem__(self, index):
+            return self.frames[index]
+
+    class FakeTensorBatch(list):
+        def __init__(self, capacity):
+            super().__init__()
+            self.capacity = capacity
+
+        pushback = list.append
+
+    class FakeCv:
+        TensorBatch = FakeTensorBatch
+
+        @staticmethod
+        def as_tensor(frame, layout):
+            return frame, layout
+
+    def fake_empty(shape, *, dtype, device):
+        allocation = (FakeOutput(shape), dtype, device)
+        allocations.append(allocation)
+        return allocation[0]
+
+    monkeypatch.setattr(torch, "empty", fake_empty)
+    monkeypatch.setattr(
+        "vllm.multimodal.video_decoders.pynvvideocodec._cvcuda",
+        lambda: FakeCv,
+    )
+    slot = PyNvVideoCodecDecoderSlot(object(), "thwc")
+
+    output, batches = slot.resize_buffers(17, (1008, 560), "cuda:0")
+    cached_output, cached_batches = slot.resize_buffers(17, (1008, 560), "cuda:0")
+
+    assert output is cached_output
+    assert batches is cached_batches
+    assert len(allocations) == 1
+    assert output.shape == (17, 560, 1008, 3)
+    assert [(begin, end) for begin, end, _, _ in batches] == [
+        (0, PYNVVIDEOCODEC_RESIZE_BATCH_SIZE),
+        (PYNVVIDEOCODEC_RESIZE_BATCH_SIZE, 2 * PYNVVIDEOCODEC_RESIZE_BATCH_SIZE),
+        (2 * PYNVVIDEOCODEC_RESIZE_BATCH_SIZE, 17),
+    ]
+    assert [inputs.capacity for _, _, inputs, _ in batches] == [8, 8, 1]
+    assert [len(outputs) for _, _, _, outputs in batches] == [8, 8, 1]
 
 
 # ============================================================================

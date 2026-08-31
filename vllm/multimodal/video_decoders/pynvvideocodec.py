@@ -6,7 +6,7 @@ import tempfile
 import threading
 from collections import Counter
 from contextlib import contextmanager, suppress
-from typing import ClassVar, NamedTuple, cast
+from typing import Any, ClassVar, NamedTuple, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -61,6 +61,7 @@ class PyNvVideoCodecSourceMetadata(NamedTuple):
 # Per-decoder upper bound reserved for persistent PyNvVideoCodec surfaces.
 PYNVVIDEOCODEC_DECODER_GPU_MEMORY_BYTES = 128 * MiB_bytes
 PYNVVIDEOCODEC_DECODER_CACHE_SIZE = 2
+PYNVVIDEOCODEC_RESIZE_BATCH_SIZE = 8
 # Per-API-server CUDA context and driver allocation, measured with
 # PyNvVideoCodec 2.0.4 on H100.
 PYNVVIDEOCODEC_CUDA_CONTEXT_BYTES = int(1.8 * 1024 * MiB_bytes)
@@ -173,6 +174,7 @@ def _pynvvc_frames_to_pinned_host(
     *,
     resize_target: VideoResizeTarget | None = None,
     cvstream=None,
+    resize_slot=None,
 ) -> npt.NDArray:
     """Copy individual PyNvVideoCodec frames directly to one host batch."""
     import torch
@@ -243,6 +245,7 @@ def _pynvvc_frames_to_pinned_host(
                         output_layout,
                         (target_width, target_height),
                         cvstream=cvstream,
+                        resize_slot=resize_slot,
                     )
                     expected_shape = (
                         (3, target_height, target_width)
@@ -276,8 +279,11 @@ def _pynvvc_frames_to_pinned_host(
             device="cpu",
             pin_memory=True,
         )
-        for index, frame in enumerate(torch_frames):
-            host_frames[index].copy_(frame, non_blocking=True)
+        if isinstance(torch_frames, torch.Tensor):
+            host_frames.copy_(torch_frames, non_blocking=True)
+        else:
+            for index, frame in enumerate(torch_frames):
+                host_frames[index].copy_(frame, non_blocking=True)
 
         stream.synchronize()
         synchronized = True
@@ -297,6 +303,7 @@ def _resize_pynvvc_frames(
     target: tuple[int, int],
     *,
     cvstream=None,
+    resize_slot=None,
 ):
     """Resize decoded frames without materializing a full device batch."""
     import torch
@@ -305,20 +312,43 @@ def _resize_pynvvc_frames(
     cv = _cvcuda()
     if cv is not None and cvstream is not None:
         layout = "CHW" if output_layout == "tchw" else "HWC"
-        resized = [
-            torch.as_tensor(
-                cv.hq_resize(
-                    cv.as_tensor(frame, layout),
-                    (target_height, target_width),
-                    antialias=True,
-                    interpolation=cv.Interp.CUBIC,
-                    stream=cvstream,
-                ).cuda(),
-                device=frame.device,
+        if resize_slot is None:
+            output_shape = (
+                (len(frames), 3, target_height, target_width)
+                if output_layout == "tchw"
+                else (len(frames), target_height, target_width, 3)
             )
-            for frame in frames
-        ]
-        _count_resize("resize_cvcuda", len(resized))
+            resized = torch.empty(
+                output_shape,
+                dtype=torch.uint8,
+                device=frames[0].device,
+            )
+            batches = []
+            for begin in range(0, len(frames), PYNVVIDEOCODEC_RESIZE_BATCH_SIZE):
+                end = min(begin + PYNVVIDEOCODEC_RESIZE_BATCH_SIZE, len(frames))
+                inputs = cv.TensorBatch(end - begin)
+                outputs = cv.TensorBatch(end - begin)
+                for output in resized[begin:end]:
+                    outputs.pushback(cv.as_tensor(output, layout))
+                batches.append((begin, end, inputs, outputs))
+        else:
+            resized, batches = resize_slot.resize_buffers(
+                len(frames),
+                target,
+                frames[0].device,
+            )
+        for begin, end, inputs, outputs in batches:
+            inputs.clear()
+            for frame in frames[begin:end]:
+                inputs.pushback(cv.as_tensor(frame, layout))
+            cv.hq_resize_into(
+                outputs,
+                inputs,
+                antialias=True,
+                interpolation=cv.Interp.CUBIC,
+                stream=cvstream,
+            )
+        _count_resize("resize_cvcuda", len(frames))
         return resized
 
     import torch.nn.functional as F
@@ -366,6 +396,9 @@ class PyNvVideoCodecDecoderSlot:
         self.output_layout = validate_pynvvideocodec_output_layout(output_layout)
         self.decoder = None
         self.source_path: str | None = None
+        self.resize_key: tuple[int, int, int, object] | None = None
+        self.resize_output = None
+        self.resize_batches: list[tuple[int, int, Any, Any]] | None = None
 
     def invalidate(self) -> None:
         self.decoder = None
@@ -380,6 +413,43 @@ class PyNvVideoCodecDecoderSlot:
         self.invalidate()
         self.stream = None
         self.cvstream = None
+        self.resize_key = None
+        self.resize_output = None
+        self.resize_batches = None
+
+    def resize_buffers(self, frame_count: int, target: tuple[int, int], device):
+        import torch
+
+        target_width, target_height = target
+        key = (frame_count, target_width, target_height, device)
+        if self.resize_key != key:
+            cv = _cvcuda()
+            if cv is None:
+                raise RuntimeError("CV-CUDA resize buffers requested without CV-CUDA")
+            layout = "CHW" if self.output_layout == "tchw" else "HWC"
+            output_shape = (
+                (frame_count, 3, target_height, target_width)
+                if self.output_layout == "tchw"
+                else (frame_count, target_height, target_width, 3)
+            )
+            output = torch.empty(
+                output_shape,
+                dtype=torch.uint8,
+                device=device,
+            )
+            batches = []
+            for begin in range(0, frame_count, PYNVVIDEOCODEC_RESIZE_BATCH_SIZE):
+                end = min(begin + PYNVVIDEOCODEC_RESIZE_BATCH_SIZE, frame_count)
+                inputs = cv.TensorBatch(end - begin)
+                outputs = cv.TensorBatch(end - begin)
+                for frame in output[begin:end]:
+                    outputs.pushback(cv.as_tensor(frame, layout))
+                batches.append((begin, end, inputs, outputs))
+            self.resize_key = key
+            self.resize_output = output
+            self.resize_batches = batches
+        assert self.resize_batches is not None
+        return self.resize_output, self.resize_batches
 
     def _construct(self, file_path: str, nvc, device_index: int) -> None:
         self.invalidate()
@@ -692,6 +762,7 @@ class PyNvVideoCodecVideoBackendMixin:
                         stream,
                         resize_target=_pynv_decoder_pool.resize_target,
                         cvstream=decoder_slot.cvstream,
+                        resize_slot=decoder_slot,
                     )
                 finally:
                     if decode_submitted:
