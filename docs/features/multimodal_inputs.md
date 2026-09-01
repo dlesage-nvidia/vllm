@@ -1048,9 +1048,10 @@ vllm serve Qwen/Qwen3-VL-30B-A3B-Instruct \
   vLLM derives an intermediate size from the active video processor and only
   downsizes when that processor will still choose the same final geometry.
   CV-CUDA HQResize is used when available, with an observable torch fallback.
-  The option currently supports Qwen3-VL and Cosmos3-Edge and cannot be changed
-  per request. Request-level processor overrides that affect video sizing or
-  sampling are rejected because the resize target is fixed at server startup.
+  The option currently supports Qwen2-VL/Qwen2.5-VL, Qwen3-VL, and Cosmos3-Edge
+  and cannot be changed per request. Request-level processor overrides that
+  affect video sizing or sampling are rejected because the resize target is
+  fixed at server startup.
 
 ```bash
 # Example: explicitly use the recommended 2 hardware decoders

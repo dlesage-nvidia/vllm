@@ -842,6 +842,56 @@ def test_video_gpu_resize_target_preserves_processor_geometry():
     assert fewer_frames[0] * fewer_frames[1] > more_frames[0] * more_frames[1]
 
 
+def test_video_gpu_resize_target_preserves_qwen2_processor_geometry():
+    from transformers.models.qwen2_vl import video_processing_qwen2_vl
+
+    processor = video_processing_qwen2_vl.Qwen2VLVideoProcessor()
+    max_pixels = 1024 * 576
+    target = processor_video_resize_target(
+        processor,
+        {"max_pixels": max_pixels},
+    )
+
+    assert target is not None
+    target_size = target(1920, 1080, 32)
+    assert target_size is not None
+    target_width, target_height = target_size
+
+    resize_kwargs = {
+        "factor": 28,
+        "min_pixels": 128 * 28 * 28,
+        "max_pixels": max_pixels,
+    }
+    direct = video_processing_qwen2_vl.smart_resize(
+        height=1080,
+        width=1920,
+        **resize_kwargs,
+    )
+    repeated = video_processing_qwen2_vl.smart_resize(
+        height=target_height,
+        width=target_width,
+        **resize_kwargs,
+    )
+    assert repeated == direct
+    assert target_size == target(1920, 1080, 16)
+
+    with _fresh_decoder_pool() as pool:
+        configure_pynvvideocodec_video_io(
+            {
+                "backend": "pynvvideocodec",
+                "gpu_resize": True,
+            },
+            "Qwen2VLVideoProcessor",
+            processor=processor,
+            processor_kwargs={"max_pixels": max_pixels},
+        )
+
+        assert pool.gpu_resize is True
+        assert pool.output_layout == "thwc"
+        assert pool.resize_target is not None
+        assert pool.resize_target(1920, 1080, 32) == target_size
+
+
 def test_pynvvideocodec_gpu_resize_fails_closed_without_audited_target():
     with _fresh_decoder_pool():
         with pytest.raises(ValueError, match="not supported by video processor"):
@@ -850,7 +900,7 @@ def test_pynvvideocodec_gpu_resize_fails_closed_without_audited_target():
                     "backend": "pynvvideocodec",
                     "gpu_resize": True,
                 },
-                "Qwen2VLVideoProcessor",
+                "UnauditedVideoProcessor",
             )
 
         with pytest.raises(ValueError, match="no safe resize target"):

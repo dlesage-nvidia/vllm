@@ -225,15 +225,17 @@ def processor_video_resize_target(
         )
         return None
 
+    per_frame_budget = type(video_processor).__name__ == "Qwen2VLVideoProcessor"
     logger.info(
         "PyNvVideoCodec: resize target derived from %s via smart_resize in %s "
-        "(factor=%d, temporal_factor=%d, budget=%d-%d pixels).",
+        "(factor=%d, temporal_factor=%d, budget=%d-%d pixels %s).",
         type(video_processor).__name__,
         origin,
         factor,
         temporal_factor,
         min_pixels,
         max_pixels,
+        "per frame" if per_frame_budget else "across sampled frames",
     )
 
     import math
@@ -241,16 +243,21 @@ def processor_video_resize_target(
     headrooms = (1.0, 1.25, 1.5, 2.0, 3.0)
 
     def target(width: int, height: int, num_frames: int):
-        if width <= 0 or height <= 0 or num_frames < temporal_factor:
+        if width <= 0 or height <= 0 or num_frames <= 0:
+            return None
+        if not per_frame_budget and num_frames < temporal_factor:
             return None
 
         resize_kwargs = {
-            "num_frames": num_frames,
             "factor": factor,
-            "temporal_factor": temporal_factor,
             "min_pixels": min_pixels,
             "max_pixels": max_pixels,
         }
+        if not per_frame_budget:
+            resize_kwargs.update(
+                num_frames=num_frames,
+                temporal_factor=temporal_factor,
+            )
         direct_h, direct_w = smart_resize(
             height=height,
             width=width,
@@ -262,8 +269,9 @@ def processor_video_resize_target(
             if headroom == 1.0:
                 candidate_w, candidate_h = direct[1], direct[0]
             else:
+                budget_frames = 1 if per_frame_budget else num_frames
                 scale = math.sqrt(
-                    headroom * max_pixels / float(num_frames * width * height)
+                    headroom * max_pixels / float(budget_frames * width * height)
                 )
                 if scale >= 1.0:
                     return None
