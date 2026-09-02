@@ -183,6 +183,7 @@ class VideoBackend(VideoLoader):
     """
 
     _sampling_suffix: ClassVar[str] = ""
+    _pynvvideocodec_output_layout: ClassVar[Literal["thwc", "tchw"]] = "thwc"
 
     @classmethod
     def compute_frames_index_to_sample(
@@ -295,7 +296,8 @@ class PyNvVideoCodecVideoBackend(VideoBackend):
     the process-local multimodal GPU memory pool before decoding the selected
     frames into VRAM. Decoded frames are copied into pinned host memory before
     the lease is released, so downstream preprocessing continues to receive a
-    CPU ``np.ndarray`` in NHWC RGB format.
+    CPU ``np.ndarray`` in THWC RGB format. Model-specific loaders may request
+    another layout.
     """
 
     @classmethod
@@ -325,6 +327,10 @@ class PyNvVideoCodecVideoBackend(VideoBackend):
     video_processor=("Qwen3VLVideoProcessor", "Cosmos3EdgeVideoProcessor"),
 )
 class Qwen3VLVideoBackend(VideoBackend):
+    # Each video is processed separately, so HF can infer TCHW here while THWC
+    # inputs from other decode paths remain supported in the same request.
+    _pynvvideocodec_output_layout = "tchw"
+
     @classmethod
     def compute_frames_index_to_sample(
         cls,

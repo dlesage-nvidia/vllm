@@ -5,12 +5,14 @@ import itertools
 import subprocess
 import sys
 import threading
+import weakref
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 import numpy as np
 import numpy.typing as npt
 import pytest
+import torch
 from transformers import AutoVideoProcessor
 from transformers.video_utils import VideoMetadata
 
@@ -36,6 +38,7 @@ from vllm.multimodal.video_decoders.pynvvideocodec import (
     PyNvVideoCodecDecoderSlot,
     PyNvVideoCodecVideoBackendMixin,
     _pynv_decoder_pool,
+    _pynvvc_decode_to_pinned_host,
 )
 from vllm.platforms import current_platform
 from vllm.transformers_utils.processor import get_video_processor_cls_name_from_config
@@ -263,7 +266,7 @@ def test_pynvvideocodec_backend_accounts_raw_decoded_frames(
             self.acquired.append(size)
             yield
 
-    def fake_decode(cls, file_path: str, frame_idx: list[int], nvc):
+    def fake_decode(cls, file_path: str, frame_idx: list[int], nvc, output_layout):
         return np.zeros((len(frame_idx), 20, 10, 3), dtype=np.uint8)
 
     pool = RecordingPool()
@@ -324,7 +327,7 @@ def test_pynvvideocodec_codec_uses_dynamic_sampling_strategy(
             self.acquired.append(size)
             yield
 
-    def fake_decode(cls, file_path: str, frame_idx: list[int], nvc):
+    def fake_decode(cls, file_path: str, frame_idx: list[int], nvc, output_layout):
         decoded_indices.append(frame_idx)
         return np.zeros((len(frame_idx), 20, 10, 3), dtype=np.uint8)
 
@@ -477,6 +480,7 @@ def test_pynvvideocodec_failed_rebuild_invalidates_decoder_slot():
     slot = PyNvVideoCodecDecoderSlot(FakeStream())
     slot.decoder = old_decoder
     slot.source_path = "valid.mp4"
+    slot.output_layout = "thwc"
 
     class FakeNvc:
         class OutputColorType:
@@ -653,6 +657,112 @@ def test_pynvvideocodec_rejects_invalid_hw_decoders(hw_decoders: object):
         )
 
 
+@pytest.mark.parametrize(
+    ("output_layout", "source_layout"),
+    [("thwc", "hwc"), ("thwc", "chw"), ("tchw", "chw")],
+)
+def test_pynvvideocodec_copies_frames_directly_to_pinned_host(
+    monkeypatch: pytest.MonkeyPatch,
+    output_layout: str,
+    source_layout: str,
+):
+    hwc = torch.arange(4 * 10 * 3, dtype=torch.uint8).reshape(4, 10, 3)[:, ::2]
+    source = hwc if source_layout == "hwc" else hwc.permute(2, 0, 1)
+    frames = [source, source + 1]
+    expected_frames = frames
+    if output_layout == "thwc" and source_layout == "chw":
+        expected_frames = [frame.permute(1, 2, 0) for frame in frames]
+    expected = np.stack([frame.numpy() for frame in expected_frames])
+
+    allocations = []
+    original_empty = torch.empty
+
+    def record_empty(*args, **kwargs):
+        allocations.append(kwargs.pop("pin_memory"))
+        return original_empty(*args, **kwargs)
+
+    monkeypatch.setattr(torch, "empty", record_empty)
+    monkeypatch.setattr(
+        torch,
+        "stack",
+        lambda *args, **kwargs: pytest.fail("direct copy must not call torch.stack"),
+    )
+
+    class FakeStream:
+        device = torch.device("cpu")
+        synchronize_count = 0
+
+        def synchronize(self):
+            self.synchronize_count += 1
+
+    stream = FakeStream()
+    output = _pynvvc_decode_to_pinned_host(
+        lambda _: frames, [0, 1], output_layout, stream
+    )
+
+    np.testing.assert_array_equal(output, expected)
+    assert output.flags.c_contiguous
+    assert allocations == [True]
+    assert stream.synchronize_count == 1
+
+
+def test_pynvvideocodec_synchronizes_after_partial_copy_failure(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    source_refs: list[weakref.ReferenceType[torch.Tensor]] = []
+    wrapper_refs: list[weakref.ReferenceType[torch.Tensor]] = []
+    host_batch_ref = None
+    copy_count = 0
+    original_from_dlpack = torch.from_dlpack
+    original_empty = torch.empty
+    original_copy = torch.Tensor.copy_
+
+    def get_frames(_):
+        frames = [torch.zeros((4, 5, 3), dtype=torch.uint8) for _ in range(2)]
+        source_refs.extend(weakref.ref(frame) for frame in frames)
+        return frames
+
+    def record_wrapper(frame):
+        wrapper = original_from_dlpack(frame)
+        wrapper_refs.append(weakref.ref(wrapper))
+        return wrapper
+
+    def record_empty(*args, **kwargs):
+        nonlocal host_batch_ref
+        assert kwargs.pop("pin_memory")
+        batch = original_empty(*args, **kwargs)
+        host_batch_ref = weakref.ref(batch)
+        return batch
+
+    def fail_second_copy(self, source, *, non_blocking):
+        nonlocal copy_count
+        assert non_blocking
+        copy_count += 1
+        if copy_count == 2:
+            raise RuntimeError("host copy failed")
+        return original_copy(self, source, non_blocking=non_blocking)
+
+    monkeypatch.setattr(torch, "from_dlpack", record_wrapper)
+    monkeypatch.setattr(torch, "empty", record_empty)
+    monkeypatch.setattr(torch.Tensor, "copy_", fail_second_copy)
+
+    class FakeStream:
+        device = torch.device("cpu")
+        synchronize_count = 0
+
+        def synchronize(self):
+            assert all(ref() is not None for ref in source_refs + wrapper_refs)
+            assert host_batch_ref is not None and host_batch_ref() is not None
+            self.synchronize_count += 1
+
+    stream = FakeStream()
+    with pytest.raises(RuntimeError, match="host copy failed"):
+        _pynvvc_decode_to_pinned_host(get_frames, [0, 1], "thwc", stream)
+
+    assert copy_count == 2
+    assert stream.synchronize_count == 1
+
+
 def test_pynvvideocodec_decoder_slot_retains_simple_decoder():
     events: list[tuple[object, ...]] = []
 
@@ -665,6 +775,7 @@ def test_pynvvideocodec_decoder_slot_retains_simple_decoder():
                 (
                     "create",
                     file_path,
+                    kwargs["output_color_type"],
                     kwargs["gpu_id"],
                     kwargs["cuda_stream"],
                     kwargs["decoder_cache_size"],
@@ -677,6 +788,7 @@ def test_pynvvideocodec_decoder_slot_retains_simple_decoder():
     class FakeNvc:
         class OutputColorType:
             RGB = "rgb"
+            RGBP = "rgbp"
 
         SimpleDecoder = FakeDecoder
 
@@ -685,18 +797,32 @@ def test_pynvvideocodec_decoder_slot_retains_simple_decoder():
     decoder = slot.get_decoder("first.mp4", FakeNvc, device_index=7)
     assert slot.get_decoder("first.mp4", FakeNvc, device_index=7) is decoder
     assert slot.get_decoder("second.mp4", FakeNvc, device_index=7) is decoder
+    rgbp_decoder = slot.get_decoder(
+        "second.mp4", FakeNvc, device_index=7, output_layout="tchw"
+    )
+    assert rgbp_decoder is not decoder
 
     assert events == [
         (
             "create",
             "first.mp4",
+            "rgb",
             7,
             "cuda-stream",
             PYNVVIDEOCODEC_DECODER_CACHE_SIZE,
         ),
         ("reconfigure", "second.mp4"),
+        (
+            "create",
+            "second.mp4",
+            "rgbp",
+            7,
+            "cuda-stream",
+            PYNVVIDEOCODEC_DECODER_CACHE_SIZE,
+        ),
     ]
     assert slot.source_path == "second.mp4"
+    assert slot.output_layout == "tchw"
 
 
 # ============================================================================

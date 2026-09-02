@@ -10,6 +10,7 @@ from typing import Any
 
 import numpy as np
 import pytest
+import torch
 
 from vllm.multimodal import MULTIMODAL_REGISTRY
 
@@ -40,6 +41,39 @@ def _build_video_mm_data(
         "do_sample_frames": True,
     }
     return {"video": [(video, metadata)]}
+
+
+def test_tchw_video_matches_thwc() -> None:
+    ctx = build_model_context(
+        MODEL_ID,
+        limit_mm_per_prompt={"image": 0, "video": 1},
+    )
+    processor = MULTIMODAL_REGISTRY.create_processor(ctx.model_config)
+    prompt = "<|vision_start|><|video_pad|><|vision_end|>"
+
+    thwc, metadata = _build_video_mm_data(4, width=97, height=65, original_fps=2)[
+        "video"
+    ][0]
+    thwc[...] = np.arange(thwc.size, dtype=np.uint8).reshape(thwc.shape)
+    metadata["do_sample_frames"] = False
+
+    def process(video):
+        return processor(
+            prompt,
+            mm_items=processor.info.parse_mm_data({"video": [(video, metadata)]}),
+            hf_processor_mm_kwargs={},
+        )
+
+    baseline = process(thwc)
+    candidate = process(np.ascontiguousarray(thwc.transpose(0, 3, 1, 2)))
+
+    assert candidate["prompt_token_ids"] == baseline["prompt_token_ids"]
+    baseline_mm = baseline["mm_kwargs"].get_data()
+    candidate_mm = candidate["mm_kwargs"].get_data()
+    assert torch.equal(
+        candidate_mm["pixel_values_videos"], baseline_mm["pixel_values_videos"]
+    )
+    assert torch.equal(candidate_mm["video_grid_thw"], baseline_mm["video_grid_thw"])
 
 
 @pytest.mark.parametrize("model_id", [MODEL_ID])
