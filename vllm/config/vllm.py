@@ -1654,7 +1654,6 @@ class VllmConfig:
         self._resolve_allow_missing_mm_embeddings()
         self._resolve_mm_processor_device()
         self._validate_mm_processor_device()
-        self._validate_nvimagecodec_frontend()
 
         if self.use_v2_model_runner:
             self._validate_v2_model_runner()

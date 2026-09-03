@@ -115,6 +115,7 @@ class AsyncLLM(EngineClient):
         """
         # Ensure we can serialize custom transformer configs
         maybe_register_config_serialize_by_value()
+        vllm_config._validate_nvimagecodec_frontend()
 
         self.vllm_config = vllm_config
         self._elastic_ep_lock = asyncio.Lock()
