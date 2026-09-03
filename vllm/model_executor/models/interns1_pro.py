@@ -544,6 +544,7 @@ class InternS1ProMoeMixtureOfExperts(MixtureOfExperts):
 class InternS1ProForConditionalGeneration(
     Qwen3VLForConditionalGeneration, InternS1ProMoeMixtureOfExperts
 ):
+    supports_mm_device_do_normalize = False
     is_3d_moe_weight: ClassVar[bool] = True
     packed_modules_mapping: dict[str, list[str]] = {
         "qkv_proj": [

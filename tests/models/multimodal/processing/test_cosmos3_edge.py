@@ -3,7 +3,9 @@
 
 import os
 
+import numpy as np
 import pytest
+import torch
 
 from vllm.assets.video import VideoAsset
 from vllm.config import ModelConfig
@@ -103,11 +105,27 @@ def test_process_images(
 
 def test_process_video(processor) -> None:
     video_asset = VideoAsset(name="baby_reading", num_frames=8)
-    video = (video_asset.np_ndarrays, video_asset.metadata)
-    processed = processor(
-        VIDEO_PLACEHOLDER,
-        mm_items=processor.info.parse_mm_data({"video": [video]}),
-        hf_processor_mm_kwargs={},
-    )
+    thwc = video_asset.np_ndarrays
 
-    _assert_video_outputs(processor, processed)
+    def process(video):
+        return processor(
+            VIDEO_PLACEHOLDER,
+            mm_items=processor.info.parse_mm_data(
+                {"video": [(video, video_asset.metadata)]}
+            ),
+            hf_processor_mm_kwargs={},
+        )
+
+    baseline = process(thwc)
+    candidate = process(np.ascontiguousarray(thwc.transpose(0, 3, 1, 2)))
+
+    _assert_video_outputs(processor, baseline)
+    _assert_video_outputs(processor, candidate)
+
+    baseline_mm = baseline["mm_kwargs"].get_data()
+    candidate_mm = candidate["mm_kwargs"].get_data()
+    assert candidate["prompt_token_ids"] == baseline["prompt_token_ids"]
+    assert torch.equal(
+        candidate_mm["pixel_values_videos"], baseline_mm["pixel_values_videos"]
+    )
+    assert torch.equal(candidate_mm["video_grid_thw"], baseline_mm["video_grid_thw"])

@@ -25,7 +25,6 @@ from vllm.multimodal.video import (
 )
 from vllm.multimodal.video_decoders.pynvvideocodec import (
     PyNvVideoCodecVideoBackendMixin,
-    _pynvvc_frames_to_nhwc,
 )
 
 from ..utils import cosine_similarity, create_video_from_image, normalize_image
@@ -379,7 +378,7 @@ def test_pynvvideocodec_unrelated_error_propagates(
     monkeypatch.setitem(sys.modules, "PyNvVideoCodec", fake_nvc)
     original_error = RuntimeError("GPU decoder unavailable")
 
-    def raise_unrelated_error(cls, file_path, nvc):
+    def raise_unrelated_error(cls, file_path, nvc, use_rgbp):
         raise original_error
 
     monkeypatch.setattr(
@@ -531,22 +530,3 @@ class TestMergeKwargsGpuBackendPolicy:
 
     def test_unknown_backend_not_treated_as_gpu(self):
         assert not VIDEO_LOADER_REGISTRY.backend_requires_gpu("totally_unknown")
-
-
-@pytest.mark.parametrize("layout", ["nhwc", "nchw"])
-def test_pynvvc_frames_normalized_to_nhwc(layout: str):
-    """PyNvVideoCodec frame batches are normalized to NHWC regardless of the
-    per-frame layout the decoder emits (it has varied across versions), so the
-    HF video processors (which materialize a PIL image per frame) receive the
-    same NHWC shape as every other video backend."""
-    torch = pytest.importorskip("torch")
-
-    n, h, w, c = 4, 5, 6, 3
-    nhwc = torch.arange(n * h * w * c, dtype=torch.uint8).reshape(n, h, w, c)
-    frames = nhwc if layout == "nhwc" else nhwc.permute(0, 3, 1, 2).contiguous()
-
-    out = _pynvvc_frames_to_nhwc(frames)
-
-    assert out.shape == (n, h, w, c)
-    assert out.is_contiguous()
-    assert torch.equal(out, nhwc)  # content preserved / correctly transposed

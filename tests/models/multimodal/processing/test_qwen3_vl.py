@@ -1,19 +1,24 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Regression tests for Qwen3-VL processor.
+"""Regression tests for Qwen3-VL processing and vision inputs."""
 
-Covers the fix for num_frames-based timestamp calculation
-(issue vllm-project/vllm#35909).
-"""
-
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
 import pytest
+import torch
+import torch.nn as nn
 
 from vllm.config import ModelConfig
+from vllm.model_executor.models.qwen3_vl import (
+    Qwen3_VisionTransformer,
+    Qwen3VLForConditionalGeneration,
+)
+from vllm.model_executor.models.vision import FusedInputNorm
 from vllm.multimodal import MULTIMODAL_REGISTRY
 
+from ....conftest import ImageTestAssets
 from ...registry import HF_EXAMPLE_MODELS
 from ...utils import build_model_context
 
@@ -32,7 +37,15 @@ def _build_video_mm_data(
     ``total_num_frames`` is set equal to the ndarray frame count so
     that HF's ``sample_frames`` indices stay within bounds of the
     actual tensor that is passed."""
-    video = np.zeros((num_frames, height, width, 3), dtype=np.uint8)
+    frame, row, column = np.indices((num_frames, height, width), dtype=np.uint16)
+    video = np.stack(
+        (
+            (17 * frame + 3 * row + column) % 256,
+            (29 * frame + row + 5 * column + 41) % 256,
+            (7 * frame + 11 * row + 2 * column + 137) % 256,
+        ),
+        axis=-1,
+    ).astype(np.uint8)
     metadata = {
         "fps": original_fps,
         "duration": num_frames / original_fps,
@@ -42,6 +55,157 @@ def _build_video_mm_data(
         "do_sample_frames": True,
     }
     return {"video": [(video, metadata)]}
+
+
+def test_tchw_video_matches_thwc() -> None:
+    ctx = build_model_context(
+        MODEL_ID,
+        limit_mm_per_prompt={"image": 0, "video": 1},
+    )
+    processor = MULTIMODAL_REGISTRY.create_processor(ctx.model_config)
+    prompt = "<|vision_start|><|video_pad|><|vision_end|>"
+
+    thwc, metadata = _build_video_mm_data(4, width=97, height=65, original_fps=2)[
+        "video"
+    ][0]
+    metadata["do_sample_frames"] = False
+
+    def process(video):
+        return processor(
+            prompt,
+            mm_items=processor.info.parse_mm_data({"video": [(video, metadata)]}),
+            hf_processor_mm_kwargs={},
+        )
+
+    baseline = process(thwc)
+    candidate = process(np.ascontiguousarray(thwc.transpose(0, 3, 1, 2)))
+
+    assert candidate["prompt_token_ids"] == baseline["prompt_token_ids"]
+    baseline_mm = baseline["mm_kwargs"].get_data()
+    candidate_mm = candidate["mm_kwargs"].get_data()
+    assert torch.equal(
+        candidate_mm["pixel_values_videos"], baseline_mm["pixel_values_videos"]
+    )
+    assert torch.equal(candidate_mm["video_grid_thw"], baseline_mm["video_grid_thw"])
+
+
+@pytest.mark.parametrize("modality", ["image", "video"])
+def test_mm_device_do_normalize(
+    image_assets: ImageTestAssets,
+    modality: str,
+) -> None:
+    limits = {"image": int(modality == "image"), "video": int(modality == "video")}
+    ctx = build_model_context(MODEL_ID, limit_mm_per_prompt=limits)
+    assert ctx.model_config.multimodal_config.mm_device_do_normalize is True
+    ctx.model_config.multimodal_config.mm_device_do_normalize = False
+    processor = MULTIMODAL_REGISTRY.create_processor(ctx.model_config)
+
+    if modality == "image":
+        prompt = "<|vision_start|><|image_pad|><|vision_end|>"
+        mm_data = {"image": [image_assets[0].pil_image]}
+        pixel_key = "pixel_values"
+        hf_mm_kwargs: dict[str, Any] = {}
+    else:
+        prompt = "<|vision_start|><|video_pad|><|vision_end|>"
+        mm_data = _build_video_mm_data(num_frames=8)
+        pixel_key = "pixel_values_videos"
+        hf_mm_kwargs = {"num_frames": 8}
+
+    normalized = processor(
+        prompt,
+        mm_items=processor.info.parse_mm_data(mm_data),
+        hf_processor_mm_kwargs=hf_mm_kwargs,
+    )["mm_kwargs"].get_data()[pixel_key]
+    raw = processor(
+        prompt,
+        mm_items=processor.info.parse_mm_data(mm_data),
+        hf_processor_mm_kwargs=hf_mm_kwargs
+        | {"do_normalize": False, "do_rescale": False},
+    )["mm_kwargs"].get_data()[pixel_key]
+
+    assert raw.dtype == torch.uint8
+    ctx.model_config.multimodal_config.mm_device_do_normalize = True
+    input_norm = FusedInputNorm.from_model_config(ctx.model_config)
+    device_normalized = input_norm(raw, normalized.dtype)
+
+    assert device_normalized.dtype == normalized.dtype
+    torch.testing.assert_close(normalized, device_normalized)
+
+
+def test_vision_forward_normalizes_before_patch_embed() -> None:
+    observed_dtypes: list[torch.dtype] = []
+
+    class RecordingNorm(nn.Module):
+        def forward(self, inputs: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:
+            observed_dtypes.append(inputs.dtype)
+            return inputs.to(dtype)
+
+    class RecordingPatchEmbed(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.proj = nn.Linear(1, 1, bias=False)
+
+        def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+            observed_dtypes.append(inputs.dtype)
+            return inputs[:, :1]
+
+    visual = Qwen3_VisionTransformer.__new__(Qwen3_VisionTransformer)
+    nn.Module.__init__(visual)
+    visual.input_norm = RecordingNorm()
+    visual.patch_embed = RecordingPatchEmbed()
+    visual.blocks = nn.ModuleList()
+    visual.deepstack_visual_indexes = []
+    visual.deepstack_merger_list = nn.ModuleList()
+    visual.merger = nn.Identity()
+
+    output = visual(
+        torch.arange(8, dtype=torch.uint8).reshape(2, 4),
+        [[1, 1, 2]],
+        encoder_metadata={"pos_embeds": torch.zeros(2, 1)},
+    )
+
+    assert observed_dtypes == [torch.uint8, torch.float32]
+    assert output.shape == (2, 1, 1)
+
+
+@pytest.mark.parametrize(
+    ("device_normalize", "expected_dtype"),
+    [(False, torch.bfloat16), (True, torch.uint8)],
+)
+def test_encoder_cudagraph_capture_pixel_dtype(
+    device_normalize: bool,
+    expected_dtype: torch.dtype,
+) -> None:
+    class FakeVisual:
+        spatial_merge_size = 2
+        patch_embed = SimpleNamespace(
+            proj=SimpleNamespace(in_channels=3),
+            patch_size=14,
+            temporal_patch_size=2,
+        )
+
+        @staticmethod
+        def prepare_encoder_metadata(*args, **kwargs) -> dict:
+            return {}
+
+    model = SimpleNamespace(
+        visual=FakeVisual(),
+        multimodal_config=SimpleNamespace(
+            mm_device_do_normalize=device_normalize,
+        ),
+    )
+    capture_inputs = (
+        Qwen3VLForConditionalGeneration.prepare_encoder_cudagraph_capture_inputs(
+            model,
+            token_budget=64,
+            max_batch_size=1,
+            max_frames_per_batch=1,
+            device=torch.device("cpu"),
+            dtype=torch.bfloat16,
+        )
+    )
+
+    assert capture_inputs.values["pixel_values"].dtype == expected_dtype
 
 
 @pytest.mark.parametrize("model_id", [MODEL_ID])

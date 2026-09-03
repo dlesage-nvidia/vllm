@@ -201,6 +201,7 @@ class VideoBackend(VideoLoader):
     """
 
     _sampling_suffix: ClassVar[str] = ""
+    _pynvvideocodec_use_rgbp: ClassVar[bool] = False
 
     @classmethod
     def compute_frames_index_to_sample(
@@ -311,8 +312,8 @@ class PyNvVideoCodecVideoBackend(VideoBackend):
     sampled frame indices. It then acquires the raw decoded RGB byte count from
     the process-local multimodal GPU memory pool before decoding the selected
     frames into VRAM. Decoded frames are copied into pinned host memory before
-    the lease is released, so downstream preprocessing continues to receive a
-    CPU ``np.ndarray`` in NHWC RGB format.
+    the lease is released, so downstream preprocessing receives a CPU RGB
+    ``np.ndarray``.
     """
 
     @classmethod
@@ -342,6 +343,9 @@ class PyNvVideoCodecVideoBackend(VideoBackend):
     video_processor=("Qwen3VLVideoProcessor", "Cosmos3EdgeVideoProcessor"),
 )
 class Qwen3VLVideoBackend(VideoBackend):
+    # RGBP yields TCHW directly, which these processors accept without transpose.
+    _pynvvideocodec_use_rgbp = True
+
     @classmethod
     def compute_frames_index_to_sample(
         cls,
