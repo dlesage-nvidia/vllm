@@ -10,14 +10,55 @@ from typing import Any
 
 import numpy as np
 import pytest
+from PIL import Image
 
 from vllm.config import ModelConfig
 from vllm.multimodal import MULTIMODAL_REGISTRY
+from vllm.multimodal.cache import MultiModalProcessorOnlyCache
+from vllm.multimodal.media import MediaWithBytes as Wrapped
 
 from ...registry import HF_EXAMPLE_MODELS
 from ...utils import build_model_context
 
 MODEL_ID = "Qwen/Qwen3-VL-4B-Instruct"
+
+
+def test_native_chw_processor_matches_pillow_and_hwc_with_cache(monkeypatch) -> None:
+    ctx = build_model_context(
+        MODEL_ID,
+        limit_mm_per_prompt={"image": 1, "video": 0},
+        mm_processor_cache_gb=1,
+    )
+    cache = MultiModalProcessorOnlyCache(ctx.model_config)
+    processor = MULTIMODAL_REGISTRY.create_processor(ctx.model_config, cache=cache)
+    key = "input_data_format"
+    first, last = {key: "channels_first"}, {key: "channels_last"}
+    get = processor.get_image_processor_input_format
+    assert get({}) == "channels_first"
+    assert get({key: "unknown"}) == "pil"
+    assert get({"common_kwargs": last}) == "channels_last"
+    assert get({"images_kwargs": first, "common_kwargs": last}) == "channels_first"
+    assert get({**last, "images_kwargs": first}) == "channels_last"
+    hwc = (np.arange(56 * 84 * 3).reshape(56, 84, 3) % 251).astype(np.uint8)
+    chw = np.ascontiguousarray(np.moveaxis(hwc, -1, 0))
+    wrapped = Wrapped(chw, b"x", {"backend": "nvimagecodec", "output_layout": "CHW"})
+
+    prompt = "<|vision_start|><|image_pad|><|vision_end|>"
+
+    def process(item):
+        items = processor.info.parse_mm_data({"image": [item]})
+        return processor(prompt, mm_items=items)
+
+    pillow_result, hwc_result = map(process, (Image.fromarray(hwc, "RGB"), hwc))
+    monkeypatch.setattr(Image, "fromarray", lambda _: pytest.fail("CHW converted"))
+    cache.make_stats(delta=True)
+    native = [process(wrapped), process(wrapped)]
+    assert ((stats := cache.make_stats(delta=True)).hits, stats.total) == (1, 2)
+
+    for output in (hwc_result, *native):
+        for result_key in ("mm_kwargs", "prompt_token_ids", "mm_placeholders"):
+            assert output[result_key] == pillow_result[result_key]
+    assert native[0]["mm_hashes"] == native[1]["mm_hashes"]
 
 
 def _build_video_mm_data(

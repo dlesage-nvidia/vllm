@@ -90,6 +90,7 @@ from vllm.multimodal.parse import ImageSize, MultiModalDataItems
 from vllm.multimodal.processing import (
     BaseDummyInputsBuilder,
     BaseMultiModalProcessor,
+    ImageProcessorInputFormat,
     PromptReplacement,
     PromptUpdate,
     PromptUpdateDetails,
@@ -1315,6 +1316,22 @@ def _replace_video_token_placeholders(
 
 
 class Qwen3VLMultiModalProcessor(BaseMultiModalProcessor[Qwen3VLProcessingInfo]):
+    def get_image_processor_input_format(
+        self,
+        mm_processor_kwargs: Mapping[str, object],
+    ) -> ImageProcessorInputFormat:
+        for scope in (
+            mm_processor_kwargs,
+            mm_processor_kwargs.get("images_kwargs"),
+            mm_processor_kwargs.get("common_kwargs"),
+        ):
+            if isinstance(scope, Mapping) and "input_data_format" in scope:
+                value = scope["input_data_format"]
+                if value == "channels_first" or value == "channels_last":
+                    return value
+                return "pil"
+        return "channels_first"
+
     @staticmethod
     def _expands_only_video_token(hf_processor: ProcessorMixin) -> bool:
         """Transformers>=5.10 processors override `replace_video_token`

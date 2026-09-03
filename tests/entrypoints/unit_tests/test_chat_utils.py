@@ -18,6 +18,7 @@ from vllm.entrypoints.chat_utils import (
     MEDIA_CONNECTOR_REGISTRY,
     AsyncMultiModalItemTracker,
     ConversationMessage,
+    MultiModalItemTracker,
     _postprocess_messages,
     parse_chat_messages,
     parse_chat_messages_async,
@@ -3021,6 +3022,29 @@ async def test_resolve_items_does_not_leak_tasks_on_partial_failure():
         f"resolve_items left {len(leaked_tasks)} task(s) running after "
         f"raising: {leaked_tasks}"
     )
+
+
+def test_native_layout_is_request_local():
+    config = MagicMock(allowed_local_media_path="", allowed_media_domains=None)
+    merge = config.multimodal_config.merge_mm_processor_kwargs
+    merge.side_effect = lambda kwargs: {"s": True, **kwargs}
+    original = {"image": {"backend": "nvimagecodec", "output_layout": "untrusted"}}
+    for tracker_type, preferred, unified, layout in (
+        (MultiModalItemTracker, "pil", False, None),
+        (MultiModalItemTracker, "channels_first", False, "chw_rgb"),
+        (AsyncMultiModalItemTracker, "channels_last", False, "hwc_rgb"),
+        (AsyncMultiModalItemTracker, "channels_first", True, None),
+    ):
+        tracker = tracker_type(config, media_io_kwargs=original)
+        tracker.__dict__["use_unified_vision_chunk_modality"] = unified
+        tracker.__dict__["mm_processor"] = processor = MagicMock()
+        get_format = processor.get_image_processor_input_format
+        get_format.return_value = preferred
+        connector = tracker.create_parser({"request": True})._connector
+        assert connector.media_io_kwargs["image"].get("output_layout") == layout
+        assert tracker.media_io_kwargs is original
+        if not unified:
+            assert get_format.call_args.args == ({"s": True, "request": True},)
 
 
 def _assistant_tool_call(arguments, name="write"):

@@ -98,6 +98,10 @@ class ModalityDataItems(ABC, Generic[_T, _I]):
     def get_item_for_hash(self, index: int) -> object:
         return self.get(index)
 
+    def get_item_for_reparse(self, index: int) -> object:
+        """Get an item in the representation accepted by the data parser."""
+        return self.get(index)
+
     def get_all_items_for_hash(self) -> list[object]:
         return [self.get_item_for_hash(idx) for idx in range(self.get_count())]
 
@@ -128,6 +132,12 @@ class ProcessorBatchItems(ModalityDataItems[Sequence[_T], _T]):
     def get_item_for_hash(self, index: int) -> _T | MediaWithBytes[_T]:
         # Return raw item for hashing (preserves original_bytes if present)
         return self.data[index]
+
+    def get_item_for_reparse(self, index: int) -> _T | MediaWithBytes[_T] | None:
+        item = self.data[index]
+        if isinstance(item, MediaWithBytes) and item.media is None:
+            return None
+        return item
 
     def get_processor_data(self) -> Mapping[str, object]:
         return {f"{self.modality}s": self.get_all()}
@@ -366,6 +376,13 @@ class ImageProcessorItems(ProcessorBatchItems[HfImageItem | None]):
         super().__init__(data, "image")
 
     def get_image_size(self, item_idx: int) -> ImageSize:
+        raw = self.data[item_idx]
+        native_chw = (
+            isinstance(raw, MediaWithBytes)
+            and (raw.io_config or {}).get("backend") == "nvimagecodec"
+            and (raw.io_config or {}).get("output_layout") == "CHW"
+        )
+
         image = self.get(item_idx)
         if image is None:
             raise ValueError(f"Cannot get size of cached image at {item_idx}")
@@ -373,7 +390,7 @@ class ImageProcessorItems(ProcessorBatchItems[HfImageItem | None]):
         if isinstance(image, PILImage.Image):
             return ImageSize(*image.size)
         if isinstance(image, (np.ndarray, torch.Tensor)):
-            if image.ndim == 3 and image.shape[-1] in (1, 3, 4):
+            if not native_chw and image.ndim == 3 and image.shape[-1] in (1, 3, 4):
                 # HWC format (e.g. from np.array(PIL.Image)).
                 # PIL images are always channels-last.
                 h, w = image.shape[0], image.shape[1]

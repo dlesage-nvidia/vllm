@@ -1080,6 +1080,40 @@ When extracting frames client-side, the server loses important context about the
 
 By passing this metadata, the model can better understand the temporal distribution of the sampled frames and whether important moments might have been skipped.
 
+#### GPU Image Decoding with nvImageCodec
+
+The optional `nvimagecodec` backend decodes images through NVIDIA nvImageCodec
+before multimodal preprocessing. Install the CUDA-matched extra and select it at
+server startup:
+
+```bash
+pip install "vllm[nvimagecodec]"
+vllm serve Qwen/Qwen3-VL-2B-Instruct \
+  --media-io-kwargs '{"image": {"backend": "nvimagecodec"}}'
+```
+
+The official `vllm-openai` CUDA serving image includes the dependency. It
+supports Linux x86_64 and SBSA with CUDA 12 or 13. Tegra users must install
+`nvidia-nvimgcodec-tegra-cu12[all]` instead of the generic vLLM extra. See the
+[nvImageCodec installation guide](https://docs.nvidia.com/cuda/nvimagecodec/installation.html).
+
+Each API process owns one decoder and an unbounded FIFO that drains compatible
+images into native batches without capacity fallback. nvImageCodec routes JPEG,
+JPEG 2000/HTJ2K, TIFF, BMP, PNG, PNM, and WebP through its hardware, GPU, hybrid,
+or CPU plugins. Pillow handles only incompatible semantics such as animation or
+non-RGB output, plus valid images that an nvImageCodec parser declines.
+Malformed JPEGs, truncated inputs, unsupported bit depths, images over
+8,294,400 pixels, and native decode failures fail explicitly.
+
+The startup-only backend is unavailable in `--headless` and `vllm launch render`
+processes, with the Ray distributed executor, and with the Rust frontend. It
+exposes no tuning knobs. Native batches are capped at 20 for one API process and
+`max(1, 16 // API process count)` otherwise. Qwen3-VL receives native CHW arrays
+by default; other processors retain the Pillow boundary unless they opt into an
+array layout. vLLM logs and deducts two batch-wide device arenas sized for 4K
+RGB images, retained plugin workspace, and one shared CUDA context allowance
+per process from KV-cache capacity.
+
 #### Custom RGBA Background Color
 
 To use a custom background color for RGBA images, pass the `rgba_background_color` parameter via `--media-io-kwargs`:

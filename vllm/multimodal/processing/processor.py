@@ -9,6 +9,7 @@ from functools import lru_cache
 from typing import (
     TYPE_CHECKING,
     Generic,
+    Literal,
     NamedTuple,
     Protocol,
     TypeAlias,
@@ -50,6 +51,8 @@ else:
     BaseMultiModalProcessorCache = object
 
 logger = init_logger(__name__)
+
+ImageProcessorInputFormat: TypeAlias = Literal["pil", "channels_first", "channels_last"]
 
 
 @lru_cache(maxsize=2048)
@@ -1156,6 +1159,13 @@ class BaseMultiModalProcessor(ABC, Generic[_I]):
 
         return processor_data, passthrough_data
 
+    def get_image_processor_input_format(
+        self,
+        mm_processor_kwargs: Mapping[str, object],
+    ) -> ImageProcessorInputFormat:
+        """Return the preferred input representation for decoded images."""
+        return "pil"
+
     def _get_hf_processor_text(self, mm_counts: Mapping[str, int]) -> str | None:
         """
         Get the text to pass to the HF processor alongside the multi-modal
@@ -1272,16 +1282,16 @@ class BaseMultiModalProcessor(ABC, Generic[_I]):
 
         mm_missing_data = {}
         for modality, idxs in mm_missing_idxs.items():
+            items = mm_data_items[modality]
             missing_modality_data = []
             for idx in idxs:
-                data = mm_data_items[modality][idx]
+                data = items.get_item_for_reparse(idx)
                 if data is None:
                     raise ValueError(
                         f"Cache miss for {modality} at index {idx} "
                         f"but data is not provided."
                     )
-                else:
-                    missing_modality_data.append(data)
+                missing_modality_data.append(data)
             mm_missing_data[modality] = missing_modality_data
 
         mm_missing_items = self.info.parse_mm_data(mm_missing_data, validate=False)
