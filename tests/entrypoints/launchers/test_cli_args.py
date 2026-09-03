@@ -5,6 +5,7 @@ import json
 
 import pytest
 
+import vllm.envs as envs
 from tests.utils import VLLM_PATH
 from vllm.entrypoints.launchers.cli_args import (
     make_arg_parser,
@@ -148,6 +149,38 @@ def test_multiple_valid_inputs(serve_parser):
 
 
 ### Tests for serve argument validation that run prior to loading
+def test_nvimagecodec_requires_gpu_api_process(serve_parser):
+    for flag, value in (("headless", True), ("launch_component", "render")):
+        args = serve_parser.parse_args([])
+        args.media_io_kwargs = {"image": {"backend": "nvimagecodec"}}
+        setattr(args, flag, value)
+        with pytest.raises(ValueError, match="requires a GPU-capable API process"):
+            validate_parsed_serve_args(args)
+
+
+@pytest.mark.parametrize(
+    ("ray", "ray_dp", "rust", "error"),
+    [
+        (True, False, False, "does not support the Ray distributed executor"),
+        (False, True, False, "does not support the Ray distributed executor"),
+        (False, False, True, "does not support the Rust frontend"),
+    ],
+)
+def test_nvimagecodec_rejects_unaccounted_frontend(
+    serve_parser, monkeypatch, ray, ray_dp, rust, error
+):
+    args = serve_parser.parse_args([])
+    args.media_io_kwargs = {"image": {"backend": "nvimagecodec"}}
+    if ray:
+        args.distributed_executor_backend = "ray"
+    if ray_dp:
+        args.data_parallel_backend = "ray"
+    monkeypatch.setattr(envs, "VLLM_USE_RUST_FRONTEND", rust)
+
+    with pytest.raises(ValueError, match=error):
+        validate_parsed_serve_args(args)
+
+
 def test_enable_auto_choice_passes_without_tool_call_parser(serve_parser):
     """Ensure validation fails if tool choice is enabled with no call parser"""
     # If we enable-auto-tool-choice, explode with no tool-call-parser

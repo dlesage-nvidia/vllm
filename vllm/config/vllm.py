@@ -1654,6 +1654,7 @@ class VllmConfig:
         self._resolve_allow_missing_mm_embeddings()
         self._resolve_mm_processor_device()
         self._validate_mm_processor_device()
+        self._validate_nvimagecodec_frontend()
 
         if self.use_v2_model_runner:
             self._validate_v2_model_runner()
@@ -2540,6 +2541,28 @@ class VllmConfig:
             return
 
         mm_config.validate_mm_processor_device(self.ec_transfer_config)
+
+    def _validate_nvimagecodec_frontend(self) -> None:
+        model_config = self.model_config
+        if model_config is None:
+            return
+        mm_config = model_config.multimodal_config
+        if mm_config is None or not mm_config.use_gpu_image_backend():
+            return
+        if (
+            self.parallel_config.use_ray
+            or self.parallel_config.data_parallel_backend == "ray"
+        ):
+            raise ValueError(
+                "The nvimagecodec image backend does not support the Ray "
+                "distributed executor because the frontend GPU is not placed "
+                "or memory-accounted by Ray."
+            )
+        if envs.VLLM_USE_RUST_FRONTEND:
+            raise ValueError(
+                "The nvimagecodec image backend does not support the Rust "
+                "frontend, which has a separate image-loading path."
+            )
 
     def _get_v2_model_runner_unsupported_features(self) -> list[str]:
         """Collect features not yet supported by the V2 model runner."""

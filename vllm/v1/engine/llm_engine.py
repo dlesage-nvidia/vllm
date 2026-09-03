@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+import contextlib
 import time
 import weakref
 from collections.abc import Callable, Mapping
@@ -139,6 +140,15 @@ class LLMEngine:
 
         # Don't keep the dummy data in memory
         self.reset_mm_cache()
+
+        try:
+            self.renderer.initialize_image_decode_backend()
+        except BaseException:
+            with contextlib.suppress(Exception):
+                self.engine_core.shutdown()
+            with contextlib.suppress(Exception):
+                self.renderer.shutdown()
+            raise
 
     @classmethod
     def from_vllm_config(

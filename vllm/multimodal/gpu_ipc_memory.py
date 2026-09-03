@@ -1,19 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Admission control for frontend GPU-side multimodal work.
+"""Memory accounting for frontend GPU-side multimodal work.
 
-When multimodal media is decoded on the GPU in the API-server (frontend)
-process, the decoded buffers compete for the same device memory that the
-engine reserves for weights, activations, and the KV cache. To keep the
-frontend's GPU usage within a sequestered budget (see
-``MultiModalConfig.mm_ipc_gpu_memory_gb``), decode paths acquire the number of
-bytes they need from a process-global :class:`MultiModalGPUMemoryPool` before
-allocating on the device and release them once the device memory is freed.
+Transient callers can opt into the ``mm_ipc_gpu_memory_gb`` byte-counting
+semaphore below. An acquire blocks until enough of that explicit raw-frame
+budget is free, and the engine deducts the same aggregate budget from KV-cache
+capacity.
 
-The pool is a simple byte-counting semaphore: ``acquire`` blocks until enough
-budget is free, so concurrent requests serialize rather than oversubscribe the
-GPU. It lives only in the frontend process; the engine carves the matching
-amount out of its KV-cache budget so the headroom physically exists.
+Fixed decoder topologies are accounted separately. In particular, the
+nvImageCodec image service owns a fixed number of resident device arenas and
+does not acquire leases from this semaphore. The engine automatically deducts
+those decoder resources and their CUDA context in
+``reserve_mm_ipc_gpu_memory`` whenever the corresponding backend is enabled.
 """
 
 import threading
@@ -169,6 +167,10 @@ def reserve_mm_ipc_gpu_memory(
       reservation scales with its configured ``hw_decoders`` value, and the
       entire decoder reservation scales with ``api_process_count`` because
       these resources are not shared between processes.
+    * For the nvImageCodec image backend, each API process's fixed two-wave
+      device arenas, retained plugin workspace, and CUDA context. Its batch cap
+      is derived from ``api_process_count``; it does not consume the optional
+      raw-frame semaphore budget.
 
     Args:
         available_kv_cache_memory_bytes: KV-cache capacity before reserving
@@ -188,6 +190,10 @@ def reserve_mm_ipc_gpu_memory(
         return available_kv_cache_memory_bytes
 
     from vllm import envs
+    from vllm.multimodal.image_decoders.nvimagecodec import (
+        NVIMAGECODEC_CUDA_CONTEXT_BYTES,
+        get_nvimagecodec_non_context_bytes,
+    )
     from vllm.multimodal.video_decoders import (
         PYNVVIDEOCODEC_DEFAULT_HW_DECODERS,
         PYNVVIDEOCODEC_VIDEO_BACKEND,
@@ -219,15 +225,24 @@ def reserve_mm_ipc_gpu_memory(
         if uses_pynvvideocodec
         else 1
     )
+    uses_gpu_video = mm_config.use_gpu_video_backend()
+    uses_gpu_image = mm_config.use_gpu_image_backend()
+    per_server_video_decoder_bytes = (
+        PYNVVIDEOCODEC_DECODER_GPU_MEMORY_BYTES * hw_decoders if uses_gpu_video else 0
+    )
+    per_server_image_decoder_bytes = (
+        get_nvimagecodec_non_context_bytes(num_api_servers) if uses_gpu_image else 0
+    )
+    per_server_context_bytes = max(
+        PYNVVIDEOCODEC_CUDA_CONTEXT_BYTES if uses_gpu_video else 0,
+        NVIMAGECODEC_CUDA_CONTEXT_BYTES if uses_gpu_image else 0,
+    )
     per_server_decoder_bytes = (
-        PYNVVIDEOCODEC_DECODER_GPU_MEMORY_BYTES * hw_decoders
-        + PYNVVIDEOCODEC_CUDA_CONTEXT_BYTES
+        per_server_video_decoder_bytes
+        + per_server_image_decoder_bytes
+        + per_server_context_bytes
     )
-    decoder_reserved_bytes = (
-        num_api_servers * per_server_decoder_bytes
-        if mm_config.use_gpu_video_backend()
-        else 0
-    )
+    decoder_reserved_bytes = num_api_servers * per_server_decoder_bytes
     reserved_bytes = raw_frame_reserved_bytes + decoder_reserved_bytes
     if reserved_bytes <= 0:
         return available_kv_cache_memory_bytes
@@ -241,7 +256,7 @@ def reserve_mm_ipc_gpu_memory(
             f"{format_gib(decoder_reserved_bytes)} GiB decoder cache budget), "
             f"but only {format_gib(available_kv_cache_memory_bytes)} GiB is "
             "available for the KV cache. Reduce mm_ipc_gpu_memory_gb or "
-            "hw_decoders, use a different video backend, or increase "
+            "the frontend GPU backend reservation, use a CPU backend, or increase "
             "gpu_memory_utilization."
         )
     logger.info_once(

@@ -28,6 +28,7 @@ ARG UBUNTU_VERSION=24.04
 ARG INSTALL_RUBIN_PRERELEASE=false
 ARG TRITON_INSTALL_FROM_SOURCE_REPO=
 ARG TRITON_INSTALL_FROM_SOURCE_REVISION=
+ARG NVIMAGECODEC_VERSION=0.9.0.20
 # DeepEPv2 requires NCCL >= 2.30.4 (GIN backend).
 # This version is used for CUDA 12+ builds to keep the DeepEP build and
 # runtime NCCL versions compatible.
@@ -99,6 +100,7 @@ FROM ${BUILD_BASE_IMAGE} AS base
 ARG TARGETPLATFORM
 ARG INSTALL_RUBIN_PRERELEASE
 ARG CUDA_VERSION
+ARG NVIMAGECODEC_VERSION
 ARG PYTHON_VERSION
 ARG USE_SCCACHE
 ARG SCCACHE_DOWNLOAD_URL
@@ -733,6 +735,7 @@ FROM ${FINAL_BASE_IMAGE} AS vllm-runtime-base
 
 ARG INSTALL_RUBIN_PRERELEASE
 ARG CUDA_VERSION
+ARG NVIMAGECODEC_VERSION
 ARG PYTHON_VERSION
 ARG NCCL_VERSION
 ARG DEADSNAKES_MIRROR_URL
@@ -984,6 +987,17 @@ ARG RUNAI_MODEL_STREAMER_VERSION=">=0.15.7"
 RUN --mount=type=cache,target=/opt/uv/cache \
     uv pip install --system accelerate 'modelscope<1.38' \
         "timm${TIMM_VERSION}" "runai-model-streamer[s3,gcs,azure]${RUNAI_MODEL_STREAMER_VERSION}"
+
+# Install the optional image backend in both serving and CUDA test images.
+RUN --mount=type=cache,target=/opt/uv/cache \
+    CUDA_MAJOR="${CUDA_VERSION%%.*}"; \
+    if { [ "${TARGETPLATFORM}" = "linux/amd64" ] \
+        || [ "${TARGETPLATFORM}" = "linux/arm64" ]; } \
+        && { [ "${CUDA_MAJOR}" = "12" ] \
+        || [ "${CUDA_MAJOR}" = "13" ]; }; then \
+        uv pip install --system \
+            "nvidia-nvimgcodec-cu${CUDA_MAJOR}[all]==${NVIMAGECODEC_VERSION}"; \
+    fi
 
 # ============================================================
 # VLLM INSTALLATION (depends on build stage)

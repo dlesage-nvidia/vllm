@@ -5,9 +5,11 @@ import asyncio
 import mimetypes
 import os
 import shutil
+import threading
 import time
 from io import BytesIO
 from tempfile import NamedTemporaryFile, TemporaryDirectory
+from unittest.mock import Mock
 
 import aiohttp
 import numpy as np
@@ -20,7 +22,7 @@ from PIL import Image, ImageChops
 from vllm.assets.base import VLLM_S3_BUCKET_URL
 from vllm.multimodal.image import convert_image_mode
 from vllm.multimodal.inputs import PlaceholderRange
-from vllm.multimodal.media import MediaConnector
+from vllm.multimodal.media import MediaConnector, MediaIO
 
 # Test different image extensions (JPG/PNG) and formats (gray/RGB/RGBA)
 TEST_IMAGE_ASSETS = [
@@ -66,6 +68,33 @@ async def test_fetch_image_http(image_url: str):
     image_sync = connector.fetch_image(image_url)
     image_async = await connector.fetch_image_async(image_url)
     assert _image_equals(image_sync, image_async)
+
+
+@pytest.mark.asyncio
+async def test_load_from_url_async_uses_media_io_async_methods(monkeypatch, tmp_path):
+    media_io = Mock(spec=MediaIO)
+    local_file = tmp_path / "image.bin"
+    connector = MediaConnector(allowed_local_media_path=tmp_path)
+    event_loop_thread = threading.get_ident()
+    parse_threads = []
+    parse_data_url = connector._parse_data_url
+
+    def record_parse_thread(url):
+        parse_threads.append(threading.get_ident())
+        return parse_data_url(url)
+
+    monkeypatch.setattr(connector, "_parse_data_url", record_parse_thread)
+    monkeypatch.setattr(connector, "_get_cached_bytes", lambda _url: b"cached")
+    cases = [
+        ("data:image/png;base64,encoded", "base64", ("image/png", "encoded")),
+        ("https://example.com/a", "bytes", (b"cached",)),
+        (local_file.as_uri(), "file", (local_file,)),
+    ]
+    for url, kind, args in cases:
+        await connector.load_from_url_async(url, media_io)
+        assert getattr(media_io, f"load_{kind}_async").await_args.args == args
+        getattr(media_io, f"load_{kind}").assert_not_called()
+    assert parse_threads and parse_threads[0] != event_loop_thread
 
 
 @pytest.mark.asyncio

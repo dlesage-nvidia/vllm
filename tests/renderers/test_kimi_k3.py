@@ -1,11 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 from dataclasses import dataclass, field
+from io import BytesIO
 from typing import Any
 
 import pytest
+from PIL import Image
 
 from vllm.exceptions import VLLMValidationError
+from vllm.multimodal.media import ImageMediaIO
 from vllm.renderers import ChatParams
 from vllm.renderers.kimi_k3 import KimiK3Renderer, _merge_k3_media_io_kwargs
 from vllm.renderers.registry import RENDERER_REGISTRY
@@ -84,6 +87,27 @@ def test_k3_media_io_defaults_preserve_original_mode():
     assert _merge_k3_media_io_kwargs(
         {"image": {"rgba_background_color": (0, 0, 0)}}
     ) == {"image": {"image_mode": None, "rgba_background_color": (0, 0, 0)}}
+
+    assert _merge_k3_media_io_kwargs({"image": {"backend": "nvimagecodec"}}) == {
+        "image": {"backend": "nvimagecodec", "image_mode": None}
+    }
+
+
+def test_k3_native_fallback_preserves_transparency(monkeypatch):
+    import vllm.multimodal.media.image as image_io_module
+
+    with BytesIO() as buffer:
+        Image.new("RGBA", (16, 16), (10, 20, 30, 0)).save(buffer, "PNG")
+        data = buffer.getvalue()
+
+    monkeypatch.setattr(
+        image_io_module, "preflight_image_nvimagecodec", lambda *_a, **_k: None
+    )
+    native_kwargs = _merge_k3_media_io_kwargs({"image": {"backend": "nvimagecodec"}})
+    assert native_kwargs is not None
+    fallback = ImageMediaIO(**native_kwargs["image"]).load_bytes(data).media
+    assert isinstance(fallback, Image.Image) and fallback.mode == "RGBA"
+    assert fallback.getpixel((0, 0)) == (10, 20, 30, 0)
 
 
 def test_apply_chat_template_forces_tokenize_and_pins_return_dict():

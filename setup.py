@@ -1344,6 +1344,16 @@ def get_requirements() -> list[str]:
     return requirements
 
 
+def get_nvimagecodec_requirements() -> list[str]:
+    import platform
+
+    cuda_major = (torch.version.cuda or "").partition(".")[0]
+    supported_arch = platform.machine() in {"x86_64", "AMD64", "aarch64", "arm64"}
+    if not (_is_cuda() and supported_arch and cuda_major in ("12", "13")):
+        return []
+    return [f"nvidia-nvimgcodec-cu{cuda_major}[all]>=0.9.0.20"]
+
+
 ext_modules = []
 
 if _is_cuda() or _is_hip():
@@ -1520,6 +1530,7 @@ setup(
             "mistral_common[audio]",
         ],  # Required for audio processing
         "video": [],  # Kept for backwards compatibility
+        "nvimagecodec": get_nvimagecodec_requirements(),
         # NVIDIA DeepStream (NVDEC) GPU video-decode backend. Linux x86-64
         # only; also needs system GStreamer + libv4l (see docs).
         "deepstream": ["nvidia-deepstream-videodecode-cu13>=9.0.2"],

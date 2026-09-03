@@ -212,3 +212,19 @@ def test_hash_media_io_noop_config_preserves_hash():
     assert hasher.hash_kwargs("blake3", image=loaded) == hasher.hash_kwargs(
         "blake3", image=plain
     )
+
+
+def test_hash_image_array_includes_backend_and_layout():
+    pixels = np.zeros((2, 3, 3), dtype=np.uint8)
+    configs = [
+        {"backend": "nvimagecodec", "output_layout": "HWC"},
+        {"backend": "nvimagecodec", "output_layout": "CHW"},
+        {"backend": "pillow", "output_layout": "HWC"},
+    ]
+    hashes = {
+        MultiModalHasher.hash_kwargs(
+            "blake3", image=MediaWithBytes(pixels, b"same", config)
+        )
+        for config in configs
+    }
+    assert len(hashes) == len(configs)

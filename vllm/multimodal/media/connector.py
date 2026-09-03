@@ -10,7 +10,7 @@ import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 from urllib.request import url2pathname
 
 import aiohttp
@@ -18,7 +18,7 @@ import numpy as np
 import numpy.typing as npt
 import requests
 import torch
-from PIL import Image, UnidentifiedImageError
+from PIL import UnidentifiedImageError
 from urllib3.util import Url, parse_url
 
 import vllm.envs as envs
@@ -34,7 +34,7 @@ from vllm.utils.registry import ExtensionManager
 
 from .audio import AudioEmbeddingMediaIO, AudioMediaIO
 from .base import MediaIO, MediaWithBytes
-from .image import ImageEmbeddingMediaIO, ImageMediaIO
+from .image import ImageEmbeddingMediaIO, ImageMediaIO, LoadedImage
 from .video import VideoEmbeddingMediaIO, VideoMediaIO
 
 logger = init_logger(__name__)
@@ -47,6 +47,19 @@ global_thread_pool = ThreadPoolExecutor(
 atexit.register(global_thread_pool.shutdown)
 
 MEDIA_CONNECTOR_REGISTRY = ExtensionManager()
+
+
+def _create_image_io(
+    image_mode: str | None,
+    media_io_kwargs: dict[str, dict[str, Any]],
+    *,
+    output_layout: Literal["hwc_rgb", "chw_rgb"] | None = None,
+) -> ImageMediaIO:
+    image_io_kwargs = {"image_mode": image_mode} | media_io_kwargs.get("image", {})
+    if output_layout is not None:
+        image_io_kwargs["output_layout"] = output_layout
+    return ImageMediaIO(**image_io_kwargs)
+
 
 MODALITY_IO_MAP: dict[str, type[MediaIO]] = {
     "audio": AudioMediaIO,
@@ -315,6 +328,11 @@ class MediaConnector:
         url: str,
         media_io: MediaIO[_M],
     ) -> _M:  # type: ignore[type-var]
+        media_type, data = self._parse_data_url(url)
+        return media_io.load_base64(media_type, data)
+
+    @staticmethod
+    def _parse_data_url(url: str) -> tuple[str, str]:
         # Format per RFC 2397:
         # data:[<mediatype>][;<param>=<value>]*[;base64],<data>
         data_spec, sep, data = url[5:].partition(",")
@@ -328,13 +346,16 @@ class MediaConnector:
             raise NotImplementedError(msg)
 
         media_type = media_type.partition(";")[0]
-        return media_io.load_base64(media_type, data)
+        return media_type, data
 
     def _load_file_url(
         self,
         url_spec: Url,
         media_io: MediaIO[_M],
     ) -> _M:  # type: ignore[type-var]
+        return media_io.load_file(self._resolve_file_url(url_spec))
+
+    def _resolve_file_url(self, url_spec: Url) -> Path:
         allowed_local_media_path = self.allowed_local_media_path
         if allowed_local_media_path is None:
             raise RuntimeError(
@@ -350,7 +371,7 @@ class MediaConnector:
                 f"of `--allowed-local-media-path {allowed_local_media_path}`."
             )
 
-        return media_io.load_file(filepath)
+        return filepath
 
     def _assert_url_in_allowed_media_domains(self, url_spec: Url) -> None:
         if (
@@ -416,10 +437,14 @@ class MediaConnector:
         loop = asyncio.get_running_loop()
 
         if url[:5].lower() == "data:":
-            future = loop.run_in_executor(
-                global_thread_pool, self._load_data_url, url, media_io
+            media_type, base64_data = await loop.run_in_executor(
+                global_thread_pool, self._parse_data_url, url
             )
-            return await future
+            return await media_io.load_base64_async(
+                media_type,
+                base64_data,
+                executor=global_thread_pool,
+            )
 
         url_spec = parse_url(url)
 
@@ -431,10 +456,10 @@ class MediaConnector:
                 global_thread_pool, self._get_cached_bytes, url
             )
             if cached is not None:
-                future = loop.run_in_executor(
-                    global_thread_pool, media_io.load_bytes, cached
+                return await media_io.load_bytes_async(
+                    cached,
+                    executor=global_thread_pool,
                 )
-                return await future
 
             connection = self.connection
             try:
@@ -453,14 +478,19 @@ class MediaConnector:
             await loop.run_in_executor(
                 global_thread_pool, self._put_cached_bytes, url, data
             )
-            future = loop.run_in_executor(global_thread_pool, media_io.load_bytes, data)
-            return await future
+            return await media_io.load_bytes_async(
+                data,
+                executor=global_thread_pool,
+            )
 
         if url_spec.scheme == "file":
-            future = loop.run_in_executor(
-                global_thread_pool, self._load_file_url, url_spec, media_io
+            filepath = await loop.run_in_executor(
+                global_thread_pool, self._resolve_file_url, url_spec
             )
-            return await future
+            return await media_io.load_file_async(
+                filepath,
+                executor=global_thread_pool,
+            )
         msg = "The URL must be either a HTTP, data or file URL."
         raise ValueError(msg)
 
@@ -499,7 +529,7 @@ class MediaConnector:
         image_url: str,
         *,
         image_mode: str | None = "RGB",
-    ) -> Image.Image:
+    ) -> LoadedImage:
         """
         Load a PIL image from an HTTP or base64 data URL.
 
@@ -507,9 +537,7 @@ class MediaConnector:
         `media_io_kwargs={"image": {"image_mode": None}}` to keep the
         original image mode (e.g. preserving the alpha channel).
         """
-        image_io = ImageMediaIO(
-            **({"image_mode": image_mode} | self.media_io_kwargs.get("image", {}))
-        )
+        image_io = _create_image_io(image_mode, self.media_io_kwargs)
 
         try:
             return self.load_from_url(
@@ -526,7 +554,7 @@ class MediaConnector:
         image_url: str,
         *,
         image_mode: str | None = "RGB",
-    ) -> Image.Image:
+    ) -> LoadedImage:
         """
         Asynchronously load a PIL image from an HTTP or base64 data URL.
 
@@ -534,9 +562,7 @@ class MediaConnector:
         `media_io_kwargs={"image": {"image_mode": None}}` to keep the
         original image mode (e.g. preserving the alpha channel).
         """
-        image_io = ImageMediaIO(
-            **({"image_mode": image_mode} | self.media_io_kwargs.get("image", {}))
-        )
+        image_io = _create_image_io(image_mode, self.media_io_kwargs)
 
         try:
             return await self.load_from_url_async(
@@ -558,8 +584,8 @@ class MediaConnector:
         """
         Load video from an HTTP or base64 data URL.
         """
-        image_io = ImageMediaIO(
-            **({"image_mode": image_mode} | self.media_io_kwargs.get("image", {}))
+        image_io = _create_image_io(
+            image_mode, self.media_io_kwargs, output_layout="hwc_rgb"
         )
         video_io_kwargs = dict(self.media_io_kwargs.get("video", {}))
         if "video_backend" not in video_io_kwargs and (
@@ -588,8 +614,8 @@ class MediaConnector:
         `media_io_kwargs={"image": {"image_mode": None}}` to keep the
         original image mode (e.g. preserving the alpha channel).
         """
-        image_io = ImageMediaIO(
-            **({"image_mode": image_mode} | self.media_io_kwargs.get("image", {}))
+        image_io = _create_image_io(
+            image_mode, self.media_io_kwargs, output_layout="hwc_rgb"
         )
         video_io_kwargs = dict(self.media_io_kwargs.get("video", {}))
         if "video_backend" not in video_io_kwargs and (

@@ -299,6 +299,14 @@ class BaseRenderer(ABC, Generic[_T]):
     def shutdown(self) -> None:
         self._resources.close()
 
+    def initialize_image_decode_backend(self) -> None:
+        """Initialize the post-fork image decoder for this renderer."""
+        from vllm.multimodal.media.image import initialize_image_decode_backend
+
+        release = initialize_image_decode_backend(self.config)
+        if release is not None:
+            self._resources.callback(release)
+
     def get_bos_token_id(self) -> int | None:
         if self.tokenizer is None:
             logger.warning_once(

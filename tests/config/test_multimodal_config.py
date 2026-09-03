@@ -7,6 +7,7 @@ import pytest
 import torch
 from transformers import PretrainedConfig
 
+import vllm.envs as envs
 from vllm.config.ec_transfer import ECRole, ECTransferConfig
 from vllm.config.model import ModelConfig
 from vllm.config.multimodal import MultiModalConfig
@@ -64,6 +65,17 @@ def test_use_gpu_video_backend_from_media_io_kwargs(backend_arg: str):
     )
 
     assert config.use_gpu_video_backend()
+
+
+def test_image_backend_validation():
+    with patch(
+        "vllm.multimodal.image_decoders.nvimagecodec.ensure_nvimagecodec_available",
+    ) as check:
+        kwargs = {"image": {"backend": "nvimagecodec"}}
+        assert MultiModalConfig(media_io_kwargs=kwargs).use_gpu_image_backend()
+        check.assert_called_once()
+    with pytest.raises(ValueError, match="Unknown image backend"):
+        MultiModalConfig(media_io_kwargs={"image": {"backend": "unknown"}})
 
 
 def test_mm_encoder_fp8_scale_path_requires_fp8():
@@ -375,3 +387,31 @@ def test_vllm_config_runs_the_mm_processor_device_check():
         pytest.raises(ValueError, match="also runs the language model"),
     ):
         VllmConfig._validate_mm_processor_device(vllm_config)
+
+
+@pytest.mark.parametrize(
+    ("use_ray", "ray_dp", "rust_frontend", "error"),
+    [
+        (True, False, False, "does not support the Ray distributed executor"),
+        (False, True, False, "does not support the Ray distributed executor"),
+        (False, False, True, "does not support the Rust frontend"),
+    ],
+)
+def test_nvimagecodec_requires_accounted_python_frontend(
+    monkeypatch, use_ray, ray_dp, rust_frontend, error
+):
+    model_config = MagicMock(spec=ModelConfig)
+    with patch(
+        "vllm.multimodal.image_decoders.nvimagecodec.ensure_nvimagecodec_available"
+    ):
+        model_config.multimodal_config = MultiModalConfig(
+            media_io_kwargs={"image": {"backend": "nvimagecodec"}}
+        )
+    vllm_config = MagicMock(spec=VllmConfig)
+    vllm_config.model_config = model_config
+    vllm_config.parallel_config.use_ray = use_ray
+    vllm_config.parallel_config.data_parallel_backend = "ray" if ray_dp else "mp"
+    monkeypatch.setattr(envs, "VLLM_USE_RUST_FRONTEND", rust_frontend)
+
+    with pytest.raises(ValueError, match=error):
+        VllmConfig._validate_nvimagecodec_frontend(vllm_config)

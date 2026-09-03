@@ -11,11 +11,19 @@ from vllm.multimodal.inputs import (
     MultiModalSharedField,
     PlaceholderRange,
 )
+from vllm.multimodal.media import MediaConnector
 from vllm.multimodal.utils import (
     argsort_mm_positions,
     encode_image_url,
+    fetch_image,
     group_and_batch_mm_items,
 )
+
+
+def test_standalone_fetch_image_forces_pillow(monkeypatch):
+    monkeypatch.setattr(MediaConnector, "fetch_image", lambda x, _: x.media_io_kwargs)
+    result = fetch_image("data:image/jpeg;base64,", {"backend": "nvimagecodec"})
+    assert result == {"image": {"backend": "pillow"}}
 
 
 @pytest.mark.parametrize(

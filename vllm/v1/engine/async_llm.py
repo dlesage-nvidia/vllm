@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import asyncio
+import contextlib
 import os
 import socket
 import time
@@ -202,6 +203,18 @@ class AsyncLLM(EngineClient):
                 activities=["CPU"],
             )
 
+        try:
+            self.renderer.initialize_image_decode_backend()
+        except BaseException:
+            with contextlib.suppress(Exception):
+                self.engine_core.shutdown()
+            with contextlib.suppress(Exception):
+                self.renderer.shutdown()
+            if self.output_handler is not None:
+                with contextlib.suppress(Exception):
+                    cancel_task_threadsafe(self.output_handler)
+            raise
+
     @classmethod
     def from_vllm_config(
         cls,
@@ -262,7 +275,6 @@ class AsyncLLM(EngineClient):
     def shutdown(self, timeout: float | None = None) -> None:
         """Shutdown, cleaning up the background proc and IPC."""
         shutdown_prometheus()
-
         if renderer := getattr(self, "renderer", None):
             renderer.shutdown()
 
