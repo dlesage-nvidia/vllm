@@ -3049,11 +3049,15 @@ def test_native_layout_is_request_local():
             assert get_format.call_args.args == ({"s": True, "request": True},)
 
 
-@pytest.mark.parametrize(("image_count", "expected"), [(1, True), (2, False)])
+@pytest.mark.parametrize(
+    ("image_count", "companion_modality", "expected"),
+    [(1, None, True), (2, None, False), (1, "video", False), (1, "audio", False)],
+)
 @pytest.mark.asyncio
-async def test_async_qwen_single_image_enables_borrowed_delivery(
+async def test_async_qwen_only_image_enables_borrowed_delivery(
     monkeypatch,
     image_count,
+    companion_modality,
     expected,
 ):
     config = MagicMock(
@@ -3069,6 +3073,8 @@ async def test_async_qwen_single_image_enables_borrowed_delivery(
     tracker.__dict__["mm_processor"] = processor = MagicMock()
     processor.supports_borrowed_pinned_image_inputs.return_value = True
     tracker._items_by_modality["image"] = [lambda: None] * image_count
+    if companion_modality is not None:
+        tracker._items_by_modality[companion_modality] = [lambda: None]
     parser = tracker.create_parser()
     parser.__dict__["_connector"] = MediaConnector(
         media_io_kwargs={"image": {"backend": "nvimagecodec"}}

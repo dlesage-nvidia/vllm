@@ -338,9 +338,10 @@ class _NvImageCodecDecoder:
         self._check_owner()
         if len(permits) != len(items):
             raise RuntimeError("invalid nvImageCodec pinned output reservation")
+        device_layout = items[0].output_layout
+        if any(item.output_layout != device_layout for item in items):
+            raise RuntimeError("nvImageCodec waves must use one output layout")
         arena = self._available.popleft()
-        all_chw = all(item.output_layout == "chw_rgb" for item in items)
-        device_layout: NvImageCodecOutputLayout = "chw_rgb" if all_chw else "hwc_rgb"
         arena.items = items
         try:
             self._submit_on_arena(arena, device_layout, permits)
@@ -381,7 +382,11 @@ class _NvImageCodecDecoder:
                 item = token.items[index]
                 if item.delivery == "owned":
                     continue
-                if item.output_layout != "chw_rgb" or item.orientation != 1:
+                if (
+                    token.device_layout != "chw_rgb"
+                    or item.output_layout != "chw_rgb"
+                    or item.orientation != 1
+                ):
                     raise RuntimeError(
                         "borrowed nvImageCodec output requires unoriented RGB/CHW"
                     )
@@ -657,31 +662,43 @@ class _NvImageCodecService:
         self,
         claimed: tuple[_DecodeJob, ...],
     ) -> tuple[_DecodeJob, ...]:
-        jobs = list(claimed)
         with self._condition:
-            while self._jobs and len(jobs) < self._batch_cap:
-                job = self._jobs.popleft()
-                if job[1].set_running_or_notify_cancel():
-                    jobs.append(job)
-                else:
-                    self._outstanding.discard(job[1])
-        return tuple(jobs)
+            return self._take_matching_locked(claimed)
 
     def _claim(self, *, wait: bool) -> tuple[_DecodeJob, ...] | None:
-        jobs = []
         with self._condition:
             while wait and not self._jobs and not self._closed:
                 self._condition.wait()
             if self._closed and not self._jobs:
                 return None
-            while self._jobs:
-                job = self._jobs.popleft()
+            return self._take_matching_locked(())
+
+    def _take_matching_locked(
+        self,
+        claimed: tuple[_DecodeJob, ...],
+    ) -> tuple[_DecodeJob, ...]:
+        jobs = list(claimed)
+        while not jobs and self._jobs:
+            job = self._jobs.popleft()
+            if job[1].set_running_or_notify_cancel():
+                jobs.append(job)
+            else:
+                self._outstanding.discard(job[1])
+        if not jobs or len(jobs) == self._batch_cap:
+            return tuple(jobs)
+
+        output_layout = jobs[0][0].output_layout
+        retained: deque[_DecodeJob] = deque()
+        while self._jobs and len(jobs) < self._batch_cap:
+            job = self._jobs.popleft()
+            if job[0].output_layout == output_layout:
                 if job[1].set_running_or_notify_cancel():
                     jobs.append(job)
                 else:
                     self._outstanding.discard(job[1])
-                if len(jobs) == self._batch_cap:
-                    break
+            else:
+                retained.append(job)
+        self._jobs.extendleft(reversed(retained))
         return tuple(jobs)
 
     def _fail(self, error: BaseException) -> None:

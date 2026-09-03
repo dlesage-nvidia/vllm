@@ -1305,7 +1305,11 @@ class AsyncMultiModalContentParser(BaseMultiModalContentParser):
                 image = await fetch_image_async(
                     image_url,
                     _borrow_output=(
-                        len(self._tracker._items_by_modality.get("image", ())) == 1
+                        sum(
+                            len(items)
+                            for items in self._tracker._items_by_modality.values()
+                        )
+                        == 1
                         and self._tracker._supports_borrowed_pinned_image(
                             self._mm_processor_kwargs
                         )

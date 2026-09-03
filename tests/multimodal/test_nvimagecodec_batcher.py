@@ -29,12 +29,14 @@ class _FakeDecoder:
             assert self.gate[1].wait(timeout=_T)
             raise RuntimeError("constructor failed")
         self.widths: list[int] = []
+        self.layouts: list[tuple[str, ...]] = []
         self.device_index = device_index
         self.closed = False
         type(self).instance = self
 
     def submit(self, items: tuple[NvImageCodecInput, ...], permits) -> object:
         self.widths.append(len(items))
+        self.layouts.append(tuple(item.output_layout for item in items))
         if len(self.widths) == 1:
             self.gate[0].set()
             assert self.gate[1].wait(timeout=_T)
@@ -103,6 +105,30 @@ def test_batches_fifo_jobs_skips_cancellation_and_isolates_item_errors() -> None
     assert [future.result(timeout=_T) for future in queued[1:]] == list(range(3, 9))
     service.close()
     assert decoder.widths == [1, 5, 2]
+
+
+def test_service_does_not_mix_output_layouts_in_one_wave() -> None:
+    service, decoder, _ = _service(batch_cap=3)
+    first = service.submit(_input(1))
+    assert decoder.gate[0].wait(timeout=_T)
+    chw = [
+        service.submit(
+            NvImageCodecInput(b"", object(), value, 1, 1, output_layout="chw_rgb")
+        )
+        for value in (3, 5)
+    ]
+    hwc = [service.submit(_input(value)) for value in (4, 6)]
+    decoder.gate[1].set()
+
+    assert first.result(timeout=_T) == 1
+    assert [future.result(timeout=_T) for future in chw] == [3, 5]
+    assert [future.result(timeout=_T) for future in hwc] == [4, 6]
+    service.close()
+    assert decoder.layouts == [
+        ("hwc_rgb",),
+        ("chw_rgb", "chw_rgb"),
+        ("hwc_rgb", "hwc_rgb"),
+    ]
 
 
 def test_close_finishes_active_work_and_rejects_backlog() -> None:
