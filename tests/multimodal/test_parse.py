@@ -5,6 +5,8 @@ import pytest
 import torch
 from PIL import Image
 
+from vllm.multimodal.image_decoders.nvimagecodec import _PinnedImageLease
+from vllm.multimodal.media import MediaWithBytes
 from vllm.multimodal.parse import (
     ImageProcessorItems,
     MultiModalDataParser,
@@ -36,6 +38,21 @@ def test_image_size_hwc_chw(image):
     items = ImageProcessorItems([image])
 
     assert items.get_image_size(0) == (W, H)
+
+
+def test_pinned_chw_image_size_and_processor_data() -> None:
+    host = torch.zeros((3, H, W), dtype=torch.uint8)
+    lease = _PinnedImageLease(host, width=W, height=H)
+    wrapped = MediaWithBytes(
+        lease,
+        b"encoded",
+        {"backend": "nvimagecodec"},
+    )
+    items = ImageProcessorItems([wrapped])
+
+    assert items.get_image_size(0) == (W, H)
+    assert items.get_processor_data()["images"] == [host]
+    lease.release()
 
 
 @pytest.mark.parametrize(

@@ -14,6 +14,13 @@ ASSETS_DIR = Path(__file__).parent.parent / "assets"
 assert ASSETS_DIR.exists()
 
 
+def test_image_backend_is_startup_only():
+    with pytest.raises(ValueError, match="Unknown image backend"):
+        ImageMediaIO(backend="unknown")
+    with pytest.raises(ValueError, match="fixed at startup"):
+        ImageMediaIO.merge_kwargs({"backend": "nvimagecodec"}, {"backend": "pillow"})
+
+
 def test_image_media_io_rgba_custom_background(tmp_path):
     """Test RGBA to RGB conversion with custom background colors."""
     # Create a simple RGBA image with transparent and opaque pixels

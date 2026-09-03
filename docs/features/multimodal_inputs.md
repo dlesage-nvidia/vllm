@@ -779,6 +779,23 @@ Full example: [examples/generate/multimodal/openai_chat_completion_client_for_mu
     export VLLM_IMAGE_FETCH_TIMEOUT=<timeout>
     ```
 
+#### GPU Image Decoding with nvImageCodec
+
+The optional `nvimagecodec` backend accelerates simple RGB JPEG inputs for
+Qwen3-VL serving. Install the CUDA-matched extra and select it at server startup:
+
+```bash
+pip install "vllm[nvimagecodec]"
+vllm serve Qwen/Qwen3-VL-2B-Instruct \
+  --media-io-kwargs '{"image": {"backend": "nvimagecodec"}}'
+```
+
+The official `vllm-openai` CUDA serving image includes the dependency. The
+native path applies only to asynchronous requests whose single multimodal item
+is an EXIF-free, 8-bit RGB JPEG of at most 3840 x 2160 pixels, using Qwen3-VL's default
+channels-first processor input. Pillow handles every other case. The backend is
+unavailable with headless or render-only processes, Ray, and the Rust frontend.
+
 ### Video Inputs
 
 Instead of `image_url`, you can pass a video file via `video_url`. Here is a simple example using [LLaVA-OneVision](https://huggingface.co/llava-hf/llava-onevision-qwen2-0.5b-ov-hf).

@@ -24,6 +24,7 @@ from vllm.entrypoints.chat_utils import (
 )
 from vllm.exceptions import VLLMValidationError
 from vllm.inputs import MultiModalDataDict, MultiModalUUIDDict
+from vllm.multimodal.media import MediaConnector
 from vllm.multimodal.utils import (
     encode_audio_url,
     encode_image_url,
@@ -3020,6 +3021,81 @@ async def test_resolve_items_does_not_leak_tasks_on_partial_failure():
     assert not leaked_tasks, (
         f"resolve_items left {len(leaked_tasks)} task(s) running after "
         f"raising: {leaked_tasks}"
+    )
+
+
+@pytest.mark.parametrize(
+    ("image_count", "companion_modality", "processor_kwargs", "expected"),
+    [
+        (1, None, None, True),
+        (2, None, None, False),
+        (1, "video", None, False),
+        (1, None, {"input_data_format": "channels_last"}, False),
+        (
+            1,
+            None,
+            {
+                "input_data_format": "channels_first",
+                "images_kwargs": {"input_data_format": "channels_last"},
+            },
+            False,
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_async_qwen_only_image_enables_borrowed_delivery(
+    monkeypatch,
+    image_count,
+    companion_modality,
+    processor_kwargs,
+    expected,
+):
+    config = MagicMock(
+        allowed_local_media_path="",
+        allowed_media_domains=None,
+        multimodal_config=None,
+    )
+    tracker = AsyncMultiModalItemTracker(
+        config,
+        media_io_kwargs={"image": {"backend": "nvimagecodec"}},
+    )
+    tracker.__dict__["use_unified_vision_chunk_modality"] = False
+    tracker._items_by_modality["image"] = [lambda: None] * image_count
+    if companion_modality is not None:
+        tracker._items_by_modality[companion_modality] = [lambda: None]
+    parser = tracker.create_parser(processor_kwargs)
+    parser.__dict__["_connector"] = MediaConnector(
+        media_io_kwargs={"image": {"backend": "nvimagecodec"}}
+    )
+    captured = None
+
+    async def load(_self, _url, image_io, **_kwargs):
+        nonlocal captured
+        captured = image_io._borrow_output
+        return "decoded"
+
+    monkeypatch.setattr(MediaConnector, "load_from_url_async", load)
+
+    assert await parser._image_with_uuid_async("data:image/jpeg;base64,eA==", None) == (
+        "decoded",
+        None,
+    )
+    assert captured is expected
+
+
+@pytest.mark.asyncio
+async def test_async_custom_image_connector_gets_no_private_options():
+    tracker = AsyncMultiModalItemTracker(MagicMock())
+    parser = tracker.create_parser()
+
+    class CustomConnector:
+        async def fetch_image_async(self, _url):
+            return "decoded"
+
+    parser.__dict__["_connector"] = CustomConnector()
+    assert await parser._image_with_uuid_async("custom://image", None) == (
+        "decoded",
+        None,
     )
 
 

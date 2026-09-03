@@ -63,6 +63,12 @@ class LLMEngine:
         self.model_config = vllm_config.model_config
         self.observability_config = vllm_config.observability_config
 
+        mm_config = self.model_config.multimodal_config
+        if mm_config is not None and mm_config.use_gpu_image_backend():
+            raise ValueError(
+                "The nvimagecodec image backend supports async serving only."
+            )
+
         tracing_endpoint = self.observability_config.otlp_traces_endpoint
         if tracing_endpoint is not None:
             init_tracer("vllm.llm_engine", tracing_endpoint)
