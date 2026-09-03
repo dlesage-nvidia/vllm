@@ -1482,7 +1482,11 @@ class Qwen3VLMultiModalProcessor(BaseMultiModalProcessor[Qwen3VLProcessingInfo])
                 video_grid_thw_lst.append(video_outputs["video_grid_thw"])
                 pixel_values_videos_lst.append(video_outputs["pixel_values_videos"])
             video_outputs = dict(
-                pixel_values_videos=torch.cat(pixel_values_videos_lst),
+                pixel_values_videos=(
+                    pixel_values_videos_lst[0]
+                    if len(pixel_values_videos_lst) == 1
+                    else torch.cat(pixel_values_videos_lst)
+                ),
                 video_grid_thw=torch.cat(video_grid_thw_lst),
                 timestamps=timestamps_per_video,
             )
