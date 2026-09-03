@@ -996,7 +996,7 @@ RUN --mount=type=cache,target=/opt/uv/cache \
         && { [ "${CUDA_MAJOR}" = "12" ] \
         || [ "${CUDA_MAJOR}" = "13" ]; }; then \
         uv pip install --system \
-            "nvidia-nvimgcodec-cu${CUDA_MAJOR}[all]==${NVIMAGECODEC_VERSION}"; \
+            "nvidia-nvimgcodec-cu${CUDA_MAJOR}[nvjpeg]==${NVIMAGECODEC_VERSION}"; \
     fi
 
 # ============================================================

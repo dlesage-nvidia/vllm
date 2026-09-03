@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-import contextlib
 import time
 import weakref
 from collections.abc import Callable, Mapping
@@ -63,6 +62,12 @@ class LLMEngine:
         self.vllm_config = vllm_config
         self.model_config = vllm_config.model_config
         self.observability_config = vllm_config.observability_config
+
+        mm_config = self.model_config.multimodal_config
+        if mm_config is not None and mm_config.use_gpu_image_backend():
+            raise ValueError(
+                "The nvimagecodec image backend supports async serving only."
+            )
 
         tracing_endpoint = self.observability_config.otlp_traces_endpoint
         if tracing_endpoint is not None:
@@ -140,15 +145,6 @@ class LLMEngine:
 
         # Don't keep the dummy data in memory
         self.reset_mm_cache()
-
-        try:
-            self.renderer.initialize_image_decode_backend()
-        except BaseException:
-            with contextlib.suppress(Exception):
-                self.engine_core.shutdown()
-            with contextlib.suppress(Exception):
-                self.renderer.shutdown()
-            raise
 
     @classmethod
     def from_vllm_config(

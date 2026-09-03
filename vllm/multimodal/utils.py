@@ -359,8 +359,7 @@ def fetch_image(
         This method has direct access to local files and is only intended
         to be called by user code. Never call this from the online server!
     """
-    # This helper has no engine-owned GPU reservation or lifecycle.
-    media_io_kwargs = {"image": {**(image_io_kwargs or {}), "backend": "pillow"}}
+    media_io_kwargs = None if not image_io_kwargs else {"image": image_io_kwargs}
     media_connector = MediaConnector(
         media_io_kwargs=media_io_kwargs,
         allowed_local_media_path="/",

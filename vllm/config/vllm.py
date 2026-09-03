@@ -2549,6 +2549,16 @@ class VllmConfig:
         mm_config = model_config.multimodal_config
         if mm_config is None or not mm_config.use_gpu_image_backend():
             return
+        from vllm.platforms import current_platform
+
+        if not current_platform.is_cuda():
+            raise ValueError(
+                "The nvimagecodec image backend requires an NVIDIA CUDA platform."
+            )
+        if model_config.hf_config.model_type != "qwen3_vl":
+            raise ValueError(
+                "The nvimagecodec image backend currently supports only Qwen3-VL."
+            )
         if (
             self.parallel_config.use_ray
             or self.parallel_config.data_parallel_backend == "ray"

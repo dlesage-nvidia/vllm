@@ -214,17 +214,17 @@ def test_hash_media_io_noop_config_preserves_hash():
     )
 
 
-def test_hash_image_array_includes_backend_and_layout():
-    pixels = np.zeros((2, 3, 3), dtype=np.uint8)
-    configs = [
-        {"backend": "nvimagecodec", "output_layout": "HWC"},
-        {"backend": "nvimagecodec", "output_layout": "CHW"},
-        {"backend": "pillow", "output_layout": "HWC"},
-    ]
-    hashes = {
-        MultiModalHasher.hash_kwargs(
-            "blake3", image=MediaWithBytes(pixels, b"same", config)
+def test_hash_borrowed_image_uses_encoded_bytes():
+    from vllm.multimodal.image_decoders.nvimagecodec import _PinnedImageLease
+
+    images = [
+        MediaWithBytes(
+            _PinnedImageLease(np.full((3, 2, 3), value), width=3, height=2),
+            data,
+            {"backend": "nvimagecodec"},
         )
-        for config in configs
-    }
-    assert len(hashes) == len(configs)
+        for value, data in ((0, b"same"), (1, b"same"), (0, b"different"))
+    ]
+    hashes = [MultiModalHasher.hash_kwargs("blake3", image=item) for item in images]
+    assert hashes[0] == hashes[1]
+    assert hashes[0] != hashes[2]

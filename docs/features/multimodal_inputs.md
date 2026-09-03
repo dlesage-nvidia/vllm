@@ -779,6 +779,23 @@ Full example: [examples/generate/multimodal/openai_chat_completion_client_for_mu
     export VLLM_IMAGE_FETCH_TIMEOUT=<timeout>
     ```
 
+#### GPU Image Decoding with nvImageCodec
+
+The optional `nvimagecodec` backend accelerates simple RGB JPEG inputs for
+Qwen3-VL serving. Install the CUDA-matched extra and select it at server startup:
+
+```bash
+pip install "vllm[nvimagecodec]"
+vllm serve Qwen/Qwen3-VL-2B-Instruct \
+  --media-io-kwargs '{"image": {"backend": "nvimagecodec"}}'
+```
+
+The official `vllm-openai` CUDA serving image includes the dependency. The
+native path applies only to asynchronous requests whose single multimodal item
+is an EXIF-free, 8-bit RGB JPEG of at most 3840 x 2160 pixels, using Qwen3-VL's default
+channels-first processor input. Pillow handles every other case. The backend is
+unavailable with headless or render-only processes, Ray, and the Rust frontend.
+
 ### Video Inputs
 
 Instead of `image_url`, you can pass a video file via `video_url`. Here is a simple example using [LLaVA-OneVision](https://huggingface.co/llava-hf/llava-onevision-qwen2-0.5b-ov-hf).
@@ -1079,40 +1096,6 @@ When extracting frames client-side, the server loses important context about the
 - **Frame rate**: The original playback speed
 
 By passing this metadata, the model can better understand the temporal distribution of the sampled frames and whether important moments might have been skipped.
-
-#### GPU Image Decoding with nvImageCodec
-
-The optional `nvimagecodec` backend decodes images through NVIDIA nvImageCodec
-before multimodal preprocessing. Install the CUDA-matched extra and select it at
-server startup:
-
-```bash
-pip install "vllm[nvimagecodec]"
-vllm serve Qwen/Qwen3-VL-2B-Instruct \
-  --media-io-kwargs '{"image": {"backend": "nvimagecodec"}}'
-```
-
-The official `vllm-openai` CUDA serving image includes the dependency. It
-supports Linux x86_64 and SBSA with CUDA 12 or 13. Tegra users must install
-`nvidia-nvimgcodec-tegra-cu12[all]` instead of the generic vLLM extra. See the
-[nvImageCodec installation guide](https://docs.nvidia.com/cuda/nvimagecodec/installation.html).
-
-Each API process owns one decoder and an unbounded FIFO that drains compatible
-images into native batches without capacity fallback. nvImageCodec routes JPEG,
-JPEG 2000/HTJ2K, TIFF, BMP, PNG, PNM, and WebP through its hardware, GPU, hybrid,
-or CPU plugins. Pillow handles only incompatible semantics such as animation or
-non-RGB output, plus valid images that an nvImageCodec parser declines.
-Malformed JPEGs, truncated inputs, unsupported bit depths, images over
-8,294,400 pixels, and native decode failures fail explicitly.
-
-The startup-only backend is unavailable in `--headless` and `vllm launch render`
-processes, with the Ray distributed executor, and with the Rust frontend. It
-exposes no tuning knobs. Native batches are capped at 20 for one API process and
-`max(1, 16 // API process count)` otherwise. Qwen3-VL receives native CHW arrays
-by default; other processors retain the Pillow boundary unless they opt into an
-array layout. vLLM logs and deducts two batch-wide device arenas sized for 4K
-RGB images, retained plugin workspace, and one shared CUDA context allowance
-per process from KV-cache capacity.
 
 #### Custom RGBA Background Color
 

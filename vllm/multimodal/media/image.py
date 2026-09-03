@@ -2,19 +2,17 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import asyncio
-import atexit
 import contextlib
 import os
 import threading
 from collections.abc import Callable
 from concurrent.futures import Executor, Future
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 from typing import Any, TypeAlias
 
 import numpy as np
-import numpy.typing as npt
 import pybase64
 import torch
 from PIL import Image
@@ -24,7 +22,6 @@ from vllm.multimodal.image_decoders.nvimagecodec import (
     NVIMAGECODEC_IMAGE_BACKEND,
     PILLOW_IMAGE_BACKEND,
     NvImageCodecInput,
-    NvImageCodecOutputLayout,
     NvImageCodecResult,
     _PinnedImageLease,
     create_nvimagecodec_decode_service,
@@ -42,7 +39,7 @@ from .base import MediaIO, MediaWithBytes
 
 MAGIC_NUMPY_PREFIX = b"\x93NUMPY"  # https://numpy.org/devdocs/reference/generated/numpy.lib.format.html#format-version-1-0
 
-DecodedImage: TypeAlias = Image.Image | npt.NDArray[np.uint8] | _PinnedImageLease
+DecodedImage: TypeAlias = Image.Image | _PinnedImageLease
 LoadedImage: TypeAlias = MediaWithBytes[DecodedImage]
 
 
@@ -61,7 +58,6 @@ def _release_abandoned_nvimagecodec_result(
 
 @dataclass
 class _NvImageCodecState:
-    pid: int
     api_process_count: int
     device_index: int
     service: Any
@@ -75,7 +71,7 @@ _nvimagecodec_service_lock = threading.Lock()
 def _get_nvimagecodec_decode_service():
     """Return the service created during post-fork server initialization."""
     state = _nvimagecodec_state
-    if state is None or state.pid != os.getpid():
+    if state is None:
         raise RuntimeError(
             "The nvImageCodec image backend was not initialized in this process."
         )
@@ -89,9 +85,8 @@ def initialize_nvimagecodec_decode_service(
     """Acquire the process-local decoder and return an idempotent release."""
     global _nvimagecodec_state
 
-    pid = os.getpid()
     with _nvimagecodec_service_lock:
-        if _nvimagecodec_state is not None and _nvimagecodec_state.pid == pid:
+        if _nvimagecodec_state is not None:
             if (
                 _nvimagecodec_state.api_process_count != api_process_count
                 or _nvimagecodec_state.device_index != device_index
@@ -112,7 +107,7 @@ def initialize_nvimagecodec_decode_service(
                     service.close()
                 raise
             _nvimagecodec_state = _NvImageCodecState(
-                pid, api_process_count, device_index, service
+                api_process_count, device_index, service
             )
         acquired_state = _nvimagecodec_state
 
@@ -127,7 +122,7 @@ def initialize_nvimagecodec_decode_service(
                 return
             released = True
             state = _nvimagecodec_state
-            if state is not acquired_state or os.getpid() != pid:
+            if state is not acquired_state:
                 return
             state.users -= 1
             if state.users == 0:
@@ -175,15 +170,6 @@ def _nvimagecodec_device_index(assigned_physical_gpu_ids: list[int] | None) -> i
     return visible_physical_ids.index(physical_id)
 
 
-def _close_nvimagecodec_decode_service() -> None:
-    global _nvimagecodec_state
-
-    with _nvimagecodec_service_lock:
-        state, _nvimagecodec_state = _nvimagecodec_state, None
-    if state is not None and state.pid == os.getpid():
-        state.service.close()
-
-
 def _reset_nvimagecodec_decode_service_after_fork() -> None:
     global _nvimagecodec_state, _nvimagecodec_service_lock
 
@@ -194,7 +180,6 @@ def _reset_nvimagecodec_decode_service_after_fork() -> None:
 
 
 os.register_at_fork(after_in_child=_reset_nvimagecodec_decode_service_after_fork)
-atexit.register(_close_nvimagecodec_decode_service)
 
 
 class ImageMediaIO(MediaIO[LoadedImage]):
@@ -219,8 +204,6 @@ class ImageMediaIO(MediaIO[LoadedImage]):
                     f"not {requested!r}."
                 )
         merged = super().merge_kwargs(default_kwargs, runtime_kwargs)
-        # Output layout is selected from a processor capability, not user input.
-        merged.pop("output_layout", None)
         merged.pop("_borrow_output", None)
         return merged
 
@@ -229,7 +212,6 @@ class ImageMediaIO(MediaIO[LoadedImage]):
         image_mode: str | None = "RGB",
         *,
         backend: str = PILLOW_IMAGE_BACKEND,
-        output_layout: NvImageCodecOutputLayout | None = None,
         _borrow_output: bool = False,
         **kwargs,
     ) -> None:
@@ -239,9 +221,6 @@ class ImageMediaIO(MediaIO[LoadedImage]):
         # (i.e. no conversion, alpha channel is preserved as-is).
         self.image_mode = image_mode
         self.backend = validate_image_backend(backend)
-        if output_layout not in (None, "hwc_rgb", "chw_rgb"):
-            raise ValueError(f"Unknown image output layout: {output_layout!r}")
-        self.output_layout = output_layout
         self._borrow_output = _borrow_output
         # `kwargs` contains custom arguments from
         # --media-io-kwargs for this modality, merged with
@@ -270,8 +249,12 @@ class ImageMediaIO(MediaIO[LoadedImage]):
             )
         self.rgba_background_color = rgba_bg
 
-    def _convert_image_mode(self, image: Image.Image) -> Image.Image:
+    def _convert_image_mode(
+        self, image: Image.Image | MediaWithBytes[Image.Image]
+    ) -> Image.Image:
         """Convert image mode with custom background color."""
+        if isinstance(image, MediaWithBytes):
+            image = image.media
         if self.image_mode is None or image.mode == self.image_mode:
             return image
         elif image.mode == "RGBA" and self.image_mode == "RGB":
@@ -307,48 +290,19 @@ class ImageMediaIO(MediaIO[LoadedImage]):
         return MediaWithBytes(converted, data, io_config)
 
     def _prepare_bytes(self, data: bytes) -> LoadedImage | NvImageCodecInput:
-        if self.backend == PILLOW_IMAGE_BACKEND:
+        if self.backend == PILLOW_IMAGE_BACKEND or not self._borrow_output:
             return self._load_bytes_pillow(data)
 
         prepared = preflight_image_nvimagecodec(
             data,
             image_mode=self.image_mode,
-            output_layout=self.output_layout or "hwc_rgb",
         )
         if prepared is None:
             return self._load_bytes_pillow(data)
         return prepared
 
-    def _wrap_native(
-        self,
-        array: NvImageCodecResult,
-        data: bytes,
-    ) -> LoadedImage:
-        layout = "CHW" if self.output_layout == "chw_rgb" else "HWC"
-        media = array if self.output_layout is not None else Image.fromarray(array)
-        return MediaWithBytes(
-            media,
-            data,
-            {"backend": NVIMAGECODEC_IMAGE_BACKEND, "output_layout": layout},
-        )
-
-    def _select_async_delivery(self, item: NvImageCodecInput) -> NvImageCodecInput:
-        if (
-            self._borrow_output
-            and item.output_layout == "chw_rgb"
-            and item.orientation == 1
-            and item.data.startswith(b"\xff\xd8")
-        ):
-            return replace(item, delivery="borrowed")
-        return item
-
     def load_bytes(self, data: bytes) -> LoadedImage:
-        prepared = self._prepare_bytes(data)
-        if isinstance(prepared, MediaWithBytes):
-            return prepared
-
-        array = _get_nvimagecodec_decode_service().submit(prepared).result()
-        return self._wrap_native(array, data)
+        return self._load_bytes_pillow(data)
 
     async def load_bytes_async(
         self,
@@ -361,14 +315,15 @@ class ImageMediaIO(MediaIO[LoadedImage]):
         if isinstance(prepared, MediaWithBytes):
             return prepared
 
-        prepared = self._select_async_delivery(prepared)
         future = _get_nvimagecodec_decode_service().submit(prepared)
         try:
-            array = await asyncio.wrap_future(future)
+            lease = await asyncio.wrap_future(future)
         except BaseException:
             future.add_done_callback(_release_abandoned_nvimagecodec_result)
             raise
-        return self._wrap_native(array, data)
+        if lease is None:
+            return await loop.run_in_executor(executor, self._load_bytes_pillow, data)
+        return MediaWithBytes(lease, data, {"backend": NVIMAGECODEC_IMAGE_BACKEND})
 
     async def load_base64_async(
         self,
@@ -377,8 +332,6 @@ class ImageMediaIO(MediaIO[LoadedImage]):
         *,
         executor: Executor | None = None,
     ) -> LoadedImage:
-        if self.backend == PILLOW_IMAGE_BACKEND:
-            return await super().load_base64_async(media_type, data, executor=executor)
         loop = asyncio.get_running_loop()
         encoded = await loop.run_in_executor(
             executor,
@@ -392,8 +345,6 @@ class ImageMediaIO(MediaIO[LoadedImage]):
         *,
         executor: Executor | None = None,
     ) -> LoadedImage:
-        if self.backend == PILLOW_IMAGE_BACKEND:
-            return await super().load_file_async(filepath, executor=executor)
         loop = asyncio.get_running_loop()
         data = await loop.run_in_executor(executor, filepath.read_bytes)
         return await self.load_bytes_async(data, executor=executor)
@@ -406,11 +357,11 @@ class ImageMediaIO(MediaIO[LoadedImage]):
 
     def encode_base64(
         self,
-        media: Image.Image | MediaWithBytes[Image.Image],
+        media: Image.Image,
         *,
         image_format: str = "PNG",
     ) -> str:
-        image = media.media if isinstance(media, MediaWithBytes) else media
+        image = media
 
         with BytesIO() as buffer:
             image = self._convert_image_mode(image)

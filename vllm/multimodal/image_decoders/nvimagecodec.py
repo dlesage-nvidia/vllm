@@ -5,113 +5,75 @@ import contextlib
 import importlib.util
 import os
 import threading
-import time
 import weakref
 from collections import deque
-from concurrent.futures import Future, InvalidStateError, ThreadPoolExecutor
+from concurrent.futures import Future, InvalidStateError
 from dataclasses import dataclass, field
 from io import BytesIO
-from typing import Any, Literal, TypeAlias
+from typing import Any, TypeAlias
 
-import numpy as np
 import regex as re
-from PIL import ExifTags, Image, ImageOps
+from PIL import Image
 
 import vllm.envs as envs
 from vllm.utils.mem_constants import MiB_bytes
 
-_NATIVE_CODECS = frozenset({"bmp", "jpeg", "jpeg2k", "png", "pnm", "tiff", "webp"})
 _JPEG_EXIF_SIGNATURE = b"Exif\x00\x00"
 _JPEG_SCAN_MARKER = re.compile(rb"\xff[^\x00\xff\xd0-\xd7]")
 _JPEG_SOF_MARKERS = frozenset(range(0xC0, 0xD0)) - {0xC4, 0xC8, 0xCC}
-_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
-_JPEG2000_SIGNATURE = b"\x00\x00\x00\x0cjP  \r\n\x87\n"
-_TIFF_SIGNATURES = (b"II*\x00", b"MM\x00*", b"II+\x00", b"MM\x00+")
-_BMP_DIB_HEADER_SIZES = frozenset({12, 40, 52, 56, 64, 108, 124})
-_JP2_SUPERBOX_TYPES = frozenset({b"jp2h", b"res "})
 _MAX_NATIVE_PIXELS = 3840 * 2160
 _SINGLE_PROCESS_BATCH_CAP = 20
 _MULTI_PROCESS_AGGREGATE_BATCH_CAP = 16
 _DEVICE_ARENAS = 2
 _DECODER_MAX_NUM_CPU_THREADS = 4
-_NATIVE_TIFF_COMPRESSIONS = frozenset({"jpeg", "raw", "tiff_adobe_deflate", "tiff_lzw"})
 _MISSING_PACKAGE_ERROR = "nvImageCodec requires CUDA-matched nvidia-nvimgcodec."
 
-# nvJPEG, nvJPEG 2000, and nvTIFF retain raster-dependent workspace for the
-# Decoder lifetime. CUDA context memory stays separate so image and video share
-# one max(context) reservation instead of double-counting it.
+# The decoder retains two batch-wide device arenas and plugin workspace. CUDA
+# context memory is shared with the video decoder when both backends are used.
 NVIMAGECODEC_BYTES_PER_BATCH_SLOT = _DEVICE_ARENAS * _MAX_NATIVE_PIXELS * 3
 NVIMAGECODEC_PLUGIN_WORKSPACE_BYTES = 1664 * MiB_bytes
 NVIMAGECODEC_CUDA_CONTEXT_BYTES = 640 * MiB_bytes
 
 PILLOW_IMAGE_BACKEND = "pillow"
 NVIMAGECODEC_IMAGE_BACKEND = "nvimagecodec"
-NvImageCodecOutputLayout: TypeAlias = Literal["hwc_rgb", "chw_rgb"]
-NvImageCodecDelivery: TypeAlias = Literal["owned", "borrowed"]
 
 
 class _PinnedOutputBudget:
-    """Process-wide bound for resident and borrowed pinned tensors."""
+    """Bound borrowed pinned outputs without splitting a decode wave."""
 
-    def __init__(self) -> None:
+    def __init__(self, cap: int = 0) -> None:
         self._pid = os.getpid()
         self._condition = threading.Condition()
-        self._cap = 0
+        self._cap = cap
         self._in_use = 0
-        self._peak = 0
-        self._waits = 0
-        self._parked_ns = 0
 
     def configure(self, cap: int) -> None:
-        if cap <= 0:
-            raise ValueError("pinned output budget must be positive")
         with self._condition:
             self._cap = cap
             self._condition.notify_all()
 
     def try_acquire(self, count: int) -> tuple["_PinnedPermit", ...]:
-        if count <= 0:
-            raise ValueError("pinned output reservation must be positive")
         with self._condition:
             if self._in_use + count > self._cap:
                 return ()
-            permits = tuple(_PinnedPermit(self, self._pid) for _ in range(count))
             self._in_use += count
-            self._peak = max(self._peak, self._in_use)
-            return permits
+            return tuple(_PinnedPermit(self) for _ in range(count))
 
-    def wait_for(
-        self,
-        count: int,
-        stop: threading.Event,
-    ) -> bool:
-        started = time.perf_counter_ns()
+    def wait_for(self, count: int, stop: threading.Event) -> bool:
         with self._condition:
-            self._waits += 1
             while not stop.is_set() and self._in_use + count > self._cap:
                 self._condition.wait()
-            self._parked_ns += time.perf_counter_ns() - started
             return not stop.is_set()
 
     def wake_all(self) -> None:
         with self._condition:
             self._condition.notify_all()
 
-    def snapshot(self) -> dict[str, int]:
-        with self._condition:
-            return {
-                "pinned_output_cap": self._cap,
-                "pinned_outputs_in_use": self._in_use,
-                "pinned_outputs_peak": self._peak,
-                "pinned_output_waits": self._waits,
-                "pinned_output_parked_ns": self._parked_ns,
-            }
-
     def _release(self, permit: "_PinnedPermit") -> None:
-        if permit._pid != os.getpid():
+        if self._pid != os.getpid():
             return
         with self._condition:
-            if permit._budget is not self or permit._released:
+            if permit._released:
                 return
             permit._released = True
             self._in_use -= 1
@@ -119,11 +81,8 @@ class _PinnedOutputBudget:
 
 
 class _PinnedPermit:
-    """One budget unit that follows the lifetime of its pinned tensor."""
-
-    def __init__(self, budget: _PinnedOutputBudget, pid: int) -> None:
+    def __init__(self, budget: _PinnedOutputBudget) -> None:
         self._budget = budget
-        self._pid = pid
         self._attached = False
         self._released = False
 
@@ -150,18 +109,17 @@ os.register_at_fork(after_in_child=_reset_pinned_output_budget_after_fork)
 
 
 class _PinnedImageLease:
-    """Opaque processor-scoped borrow of one pinned RGB/CHW tensor."""
+    """Processor-scoped borrow of one pinned RGB/CHW tensor."""
 
     _is_vllm_nvimagecodec_pinned_lease = True
 
-    __slots__ = ("_host", "_pid", "height", "output_layout", "width")
+    __slots__ = ("_host", "_pid", "height", "width")
 
     def __init__(self, host: object, *, width: int, height: int) -> None:
         self._host: object | None = host
         self._pid = os.getpid()
         self.width = width
         self.height = height
-        self.output_layout: Literal["chw_rgb"] = "chw_rgb"
 
     def borrow_tensor(self) -> object:
         if self._pid != os.getpid():
@@ -178,7 +136,7 @@ class _PinnedImageLease:
 
 
 def get_nvimagecodec_batch_cap(api_process_count: int = 1) -> int:
-    """Share a bounded aggregate arena budget across API processes."""
+    """Reduce each process's arena capacity as the API process count grows."""
     if api_process_count <= 0:
         raise ValueError("api_process_count must be a positive integer")
     if api_process_count == 1:
@@ -188,21 +146,19 @@ def get_nvimagecodec_batch_cap(api_process_count: int = 1) -> int:
 
 def get_nvimagecodec_non_context_bytes(api_process_count: int = 1) -> int:
     batch_cap = get_nvimagecodec_batch_cap(api_process_count)
-    arena_bytes = batch_cap * NVIMAGECODEC_BYTES_PER_BATCH_SLOT
-    return arena_bytes + NVIMAGECODEC_PLUGIN_WORKSPACE_BYTES
+    return (
+        batch_cap * NVIMAGECODEC_BYTES_PER_BATCH_SLOT
+        + NVIMAGECODEC_PLUGIN_WORKSPACE_BYTES
+    )
 
 
 @dataclass(frozen=True)
 class NvImageCodecInput:
-    """An image admitted to the fixed RGB uint8 decode contract."""
+    """An RGB JPEG admitted to the borrowed CHW decode path."""
 
-    data: bytes
     code_stream: object
     width: int
     height: int
-    orientation: int
-    output_layout: NvImageCodecOutputLayout = "hwc_rgb"
-    delivery: NvImageCodecDelivery = "owned"
 
 
 def validate_image_backend(backend: object) -> str:
@@ -219,16 +175,15 @@ class _DeviceArena:
     decode_done: Any
     copy_done: Any
     images: list[Any | None]
-    device_layout: NvImageCodecOutputLayout = "hwc_rgb"
     items: tuple[NvImageCodecInput, ...] = ()
-    copies: list[tuple[int, Any, Any, _PinnedPermit]] = field(default_factory=list)
+    copies: list[tuple[int, Any, Any]] = field(default_factory=list)
 
     def reset(self) -> None:
         self.items = ()
         self.copies.clear()
 
 
-NvImageCodecResult: TypeAlias = np.ndarray | _PinnedImageLease
+NvImageCodecResult: TypeAlias = _PinnedImageLease | None
 _DecodeJob: TypeAlias = tuple[NvImageCodecInput, Future[NvImageCodecResult]]
 
 
@@ -251,7 +206,7 @@ def ensure_nvimagecodec_available() -> None:
 
 
 class _NvImageCodecDecoder:
-    """One owner-thread Decoder with the fixed two-arena host-delivery path."""
+    """One owner-thread decoder with two reusable device arenas."""
 
     def __init__(
         self, batch_cap: int = _SINGLE_PROCESS_BATCH_CAP, device_index: int = 0
@@ -266,19 +221,12 @@ class _NvImageCodecDecoder:
         device = torch.device("cuda", device_index)
         self._decode_stream = torch.Stream(device=device)
         self._copy_stream = torch.Stream(device=device)
-        params = dict(
+        self._params = nvimgcodec.DecodeParams(
             allow_any_depth=False,
             apply_exif_orientation=False,
             color_spec=nvimgcodec.ColorSpec.SRGB,
+            sample_format=nvimgcodec.SampleFormat.P_RGB,
         )
-        self._params = {
-            "hwc_rgb": nvimgcodec.DecodeParams(
-                **params, sample_format=nvimgcodec.SampleFormat.I_RGB
-            ),
-            "chw_rgb": nvimgcodec.DecodeParams(
-                **params, sample_format=nvimgcodec.SampleFormat.P_RGB
-            ),
-        }
         self._decoder = nvimgcodec.Decoder(
             device_id=device_index,
             max_num_cpu_threads=_DECODER_MAX_NUM_CPU_THREADS,
@@ -288,7 +236,6 @@ class _NvImageCodecDecoder:
                     nvimgcodec.BackendKind.HW_GPU_ONLY,
                     nvimgcodec.BackendKind.GPU_ONLY,
                     nvimgcodec.BackendKind.HYBRID_CPU_GPU,
-                    nvimgcodec.BackendKind.CPU_ONLY,
                 )
             ],
         )
@@ -297,11 +244,6 @@ class _NvImageCodecDecoder:
             for _ in range(_DEVICE_ARENAS)
         ]
         self._available = deque(self._arenas)
-        self._materializer = ThreadPoolExecutor(
-            max_workers=_DECODER_MAX_NUM_CPU_THREADS,
-            thread_name_prefix="vllm-nvimagecodec-materializer",
-        )
-        # nvImageCodec fixes nvJPEG's maximum batch from its first JPEG call.
         try:
             self._prime_jpeg_hardware_route(nvimgcodec, batch_cap)
         except BaseException:
@@ -313,18 +255,16 @@ class _NvImageCodecDecoder:
         buffer = BytesIO()
         with Image.new("RGB", (64, 64), (73, 131, 197)) as image:
             image.save(buffer, "JPEG", quality=90, subsampling=2)
-        data = buffer.getvalue()
-        code_streams = [nvimgcodec.CodeStream(data) for _ in range(batch_cap)]
+        streams = [nvimgcodec.CodeStream(buffer.getvalue()) for _ in range(batch_cap)]
         with self._decode_stream:
             outputs = self._decoder.decode(
-                code_streams,
-                params=self._params["chw_rgb"],
+                streams,
+                params=self._params,
                 cuda_stream=self._decode_stream.native_handle,
             )
         self._decode_stream.synchronize()
         if len(outputs) != batch_cap:
             raise RuntimeError("nvImageCodec returned the wrong JPEG primer width")
-
         for output in outputs:
             if output is None:
                 raise RuntimeError("nvImageCodec failed the JPEG hardware-route primer")
@@ -338,13 +278,10 @@ class _NvImageCodecDecoder:
         self._check_owner()
         if len(permits) != len(items):
             raise RuntimeError("invalid nvImageCodec pinned output reservation")
-        device_layout = items[0].output_layout
-        if any(item.output_layout != device_layout for item in items):
-            raise RuntimeError("nvImageCodec waves must use one output layout")
         arena = self._available.popleft()
         arena.items = items
         try:
-            self._submit_on_arena(arena, device_layout, permits)
+            self._submit_on_arena(arena, permits)
         except BaseException:
             for stream in (self._decode_stream, self._copy_stream):
                 with contextlib.suppress(BaseException):
@@ -356,44 +293,15 @@ class _NvImageCodecDecoder:
             raise
         return arena
 
-    def collect(self, token: _DeviceArena) -> list[NvImageCodecResult | Exception]:
+    def collect(self, arena: _DeviceArena) -> list[NvImageCodecResult]:
         self._check_owner()
         try:
-            token.copy_done.synchronize()
-            owned = [
-                copy
-                for copy in token.copies
-                if token.items[copy[0]].delivery == "owned"
-            ]
-            arrays = list(
-                self._materializer.map(
-                    self._materialize,
-                    (token.items[index] for index, _, _, _ in owned),
-                    [token.device_layout] * len(owned),
-                    (host for _, _, host, _ in owned),
-                )
-            )
-            results: list[NvImageCodecResult | Exception] = [
-                ValueError("nvImageCodec failed to decode image") for _ in token.items
-            ]
-            for (index, _, _, _), array in zip(owned, arrays, strict=True):
-                results[index] = array
-            for index, _, host, _ in token.copies:
-                item = token.items[index]
-                if item.delivery == "owned":
-                    continue
-                if (
-                    token.device_layout != "chw_rgb"
-                    or item.output_layout != "chw_rgb"
-                    or item.orientation != 1
-                ):
-                    raise RuntimeError(
-                        "borrowed nvImageCodec output requires unoriented RGB/CHW"
-                    )
+            arena.copy_done.synchronize()
+            results: list[NvImageCodecResult] = [None] * len(arena.items)
+            for index, _, host in arena.copies:
+                item = arena.items[index]
                 results[index] = _PinnedImageLease(
-                    host,
-                    width=item.width,
-                    height=item.height,
+                    host, width=item.width, height=item.height
                 )
             return results
         except BaseException:
@@ -401,17 +309,13 @@ class _NvImageCodecDecoder:
                 self._copy_stream.synchronize()
             raise
         finally:
-            token.reset()
-            self._available.append(token)
+            arena.reset()
+            self._available.append(arena)
 
     def close(self) -> None:
         self._check_owner()
         failures = []
-        for cleanup in (
-            self._decode_stream.synchronize,
-            self._copy_stream.synchronize,
-            self._materializer.shutdown,
-        ):
+        for cleanup in (self._decode_stream.synchronize, self._copy_stream.synchronize):
             try:
                 cleanup()
             except BaseException as error:
@@ -422,7 +326,6 @@ class _NvImageCodecDecoder:
         self._available.clear()
         self._arenas.clear()
         self._decoder = None
-        self._params.clear()
         self._copy_stream = None
         self._decode_stream = None
         if failures:
@@ -431,32 +334,26 @@ class _NvImageCodecDecoder:
     def _submit_on_arena(
         self,
         arena: _DeviceArena,
-        device_layout: NvImageCodecOutputLayout,
         permits: tuple[_PinnedPermit, ...],
     ) -> None:
         items = arena.items
         reusable = arena.images[: len(items)]
-        reuse_images = (
-            arena.device_layout == device_layout
-            and len(reusable) == len(items)
-            and all(
-                image is not None
-                and tuple(int(value) for value in image.shape)
-                == self._device_shape(item, device_layout)
-                for item, image in zip(items, reusable, strict=True)
-            )
+        reuse_images = len(reusable) == len(items) and all(
+            image is not None
+            and tuple(int(value) for value in image.shape)
+            == (3, item.height, item.width)
+            for item, image in zip(items, reusable, strict=True)
         )
         if not reuse_images:
             arena.images.clear()
             reusable.clear()
-            arena.device_layout = device_layout
+
         kwargs = {
-            "params": self._params[device_layout],
+            "params": self._params,
             "cuda_stream": self._decode_stream.native_handle,
         }
         if reuse_images:
             kwargs["images"] = reusable
-
         with self._decode_stream:
             outputs = self._decoder.decode(
                 [item.code_stream for item in items],
@@ -471,10 +368,7 @@ class _NvImageCodecDecoder:
             if output is None:
                 permits[index].release()
                 continue
-            if reuse_images and output is not reusable[index]:
-                raise RuntimeError("nvImageCodec did not reuse its device arena")
-            shape = self._device_shape(item, device_layout)
-            self._validate_device_output(output, shape)
+            self._validate_device_output(output, (3, item.height, item.width))
             arena.images[index] = output
             view = self._torch.from_dlpack(output)
             host = self._torch.empty(
@@ -484,10 +378,10 @@ class _NvImageCodecDecoder:
                 pin_memory=True,
             )
             permits[index].attach(host)
-            arena.copies.append((index, view, host, permits[index]))
+            arena.copies.append((index, view, host))
         with self._copy_stream:
             self._copy_stream.wait_event(arena.decode_done)
-            for _, view, host, _ in arena.copies:
+            for _, view, host in arena.copies:
                 host.copy_(view, non_blocking=True)
             arena.copy_done.record(self._copy_stream)
 
@@ -501,28 +395,7 @@ class _NvImageCodecDecoder:
             or str(output.dtype) != "uint8"
             or output.device_id != self._device_index
         ):
-            raise RuntimeError("nvImageCodec violated the RGB device contract")
-
-    @staticmethod
-    def _device_shape(
-        item: NvImageCodecInput,
-        device_layout: NvImageCodecOutputLayout,
-    ) -> tuple[int, int, int]:
-        shape = (item.height, item.width)
-        return (3, *shape) if device_layout == "chw_rgb" else (*shape, 3)
-
-    @staticmethod
-    def _materialize(
-        item: NvImageCodecInput,
-        device_layout: NvImageCodecOutputLayout,
-        host: Any,
-    ) -> np.ndarray:
-        staging = host.numpy()
-        hwc = staging if device_layout == "hwc_rgb" else np.moveaxis(staging, 0, -1)
-        source = _apply_exif_orientation_view(hwc, item.orientation)
-        if item.output_layout == "chw_rgb":
-            source = np.moveaxis(source, -1, 0)
-        return np.array(source, dtype=np.uint8, copy=True, order="C")
+            raise RuntimeError("nvImageCodec violated the RGB/CHW device contract")
 
     def _check_owner(self) -> None:
         if threading.get_ident() != self._owner_thread_id:
@@ -535,6 +408,8 @@ class _NvImageCodecService:
     def __init__(self, batch_cap: int, device_index: int = 0) -> None:
         self._batch_cap = batch_cap
         self._device_index = device_index
+        _pinned_output_budget.configure(_DEVICE_ARENAS * batch_cap)
+        self._budget = _pinned_output_budget
         self._jobs: deque[_DecodeJob] = deque()
         self._condition = threading.Condition()
         self._closed = False
@@ -572,7 +447,7 @@ class _NvImageCodecService:
             self._jobs.clear()
             self._outstanding.difference_update(job[1] for job in rejected)
             self._condition.notify()
-        _pinned_output_budget.wake_all()
+        self._budget.wake_all()
         for _, future in rejected:
             if future.set_running_or_notify_cancel():
                 future.set_exception(RuntimeError("nvImageCodec decoder is closed"))
@@ -614,23 +489,20 @@ class _NvImageCodecService:
                     stopping = True
                     break
 
-                permits = _pinned_output_budget.try_acquire(len(held))
+                permits = self._budget.try_acquire(len(held))
                 if not permits:
                     if pending:
                         break
-                    if not _pinned_output_budget.wait_for(len(held), self._stop_event):
+                    if not self._budget.wait_for(len(held), self._stop_event):
                         self._reject_claimed(held)
                         held = ()
                         stopping = True
                     else:
-                        held = self._top_up_claimed(held)
+                        held = self._claim(wait=False, claimed=held) or ()
                     continue
 
                 try:
-                    token = decoder.submit(
-                        tuple(job[0] for job in held),
-                        permits,
-                    )
+                    token = decoder.submit(tuple(job[0] for job in held), permits)
                 except BaseException:
                     for permit in permits:
                         permit.release()
@@ -644,12 +516,29 @@ class _NvImageCodecService:
             jobs, token = pending.popleft()
             results = decoder.collect(token)
             for (_, future), result in zip(jobs, results, strict=True):
-                if isinstance(result, Exception):
-                    future.set_exception(result)
-                else:
-                    future.set_result(result)
+                future.set_result(result)
             with self._condition:
                 self._outstanding.difference_update(job[1] for job in jobs)
+
+    def _claim(
+        self,
+        *,
+        wait: bool,
+        claimed: tuple[_DecodeJob, ...] = (),
+    ) -> tuple[_DecodeJob, ...] | None:
+        with self._condition:
+            while wait and not self._jobs and not self._closed:
+                self._condition.wait()
+            if self._closed and not self._jobs and not claimed:
+                return None
+            jobs = list(claimed)
+            while self._jobs and len(jobs) < self._batch_cap:
+                job = self._jobs.popleft()
+                if job[1].set_running_or_notify_cancel():
+                    jobs.append(job)
+                else:
+                    self._outstanding.discard(job[1])
+            return tuple(jobs)
 
     def _reject_claimed(self, jobs: tuple[_DecodeJob, ...]) -> None:
         error = RuntimeError("nvImageCodec decoder is closed")
@@ -657,49 +546,6 @@ class _NvImageCodecService:
             self._outstanding.difference_update(job[1] for job in jobs)
         for _, future in jobs:
             future.set_exception(error)
-
-    def _top_up_claimed(
-        self,
-        claimed: tuple[_DecodeJob, ...],
-    ) -> tuple[_DecodeJob, ...]:
-        with self._condition:
-            return self._take_matching_locked(claimed)
-
-    def _claim(self, *, wait: bool) -> tuple[_DecodeJob, ...] | None:
-        with self._condition:
-            while wait and not self._jobs and not self._closed:
-                self._condition.wait()
-            if self._closed and not self._jobs:
-                return None
-            return self._take_matching_locked(())
-
-    def _take_matching_locked(
-        self,
-        claimed: tuple[_DecodeJob, ...],
-    ) -> tuple[_DecodeJob, ...]:
-        jobs = list(claimed)
-        while not jobs and self._jobs:
-            job = self._jobs.popleft()
-            if job[1].set_running_or_notify_cancel():
-                jobs.append(job)
-            else:
-                self._outstanding.discard(job[1])
-        if not jobs or len(jobs) == self._batch_cap:
-            return tuple(jobs)
-
-        output_layout = jobs[0][0].output_layout
-        retained: deque[_DecodeJob] = deque()
-        while self._jobs and len(jobs) < self._batch_cap:
-            job = self._jobs.popleft()
-            if job[0].output_layout == output_layout:
-                if job[1].set_running_or_notify_cancel():
-                    jobs.append(job)
-                else:
-                    self._outstanding.discard(job[1])
-            else:
-                retained.append(job)
-        self._jobs.extendleft(reversed(retained))
-        return tuple(jobs)
 
     def _fail(self, error: BaseException) -> None:
         with self._condition:
@@ -711,7 +557,6 @@ class _NvImageCodecService:
             futures = tuple(self._outstanding)
             self._outstanding.clear()
             self._jobs.clear()
-            self._condition.notify_all()
         if not self._ready.done():
             self._ready.set_exception(failure)
         for future in futures:
@@ -725,9 +570,9 @@ def create_nvimagecodec_decode_service(
     device_index: int = 0,
 ) -> _NvImageCodecService:
     """Create the process-local nvImageCodec owner."""
-    batch_cap = get_nvimagecodec_batch_cap(api_process_count)
-    _pinned_output_budget.configure(_DEVICE_ARENAS * batch_cap)
-    return _NvImageCodecService(batch_cap, device_index)
+    return _NvImageCodecService(
+        get_nvimagecodec_batch_cap(api_process_count), device_index
+    )
 
 
 def jpeg_has_complete_scan_and_eoi(data: bytes) -> bool:
@@ -787,390 +632,45 @@ def jpeg_has_complete_scan_and_eoi(data: bytes) -> bool:
     return False
 
 
-def _png_has_complete_iend(data: bytes) -> bool:
-    if not data.startswith(_PNG_SIGNATURE):
-        return False
-
-    position = len(_PNG_SIGNATURE)
-    while position + 12 <= len(data):
-        chunk_length = int.from_bytes(data[position : position + 4], "big")
-        chunk_end = position + 12 + chunk_length
-        if chunk_end > len(data):
-            return False
-        if data[position + 4 : position + 8] == b"IEND":
-            return chunk_length == 0
-        position = chunk_end
-    return False
-
-
-def _parse_bmp_header(data: bytes) -> tuple[int, int] | None:
-    if len(data) < 18:
-        return None
-    declared_size = int.from_bytes(data[2:6], "little")
-    pixel_offset = int.from_bytes(data[10:14], "little")
-    dib_size = int.from_bytes(data[14:18], "little")
-    header_end = 14 + dib_size
-    if (
-        dib_size not in _BMP_DIB_HEADER_SIZES
-        or header_end > len(data)
-        or (declared_size and declared_size > len(data))
-    ):
-        return None
-
-    if dib_size == 12:
-        width = int.from_bytes(data[18:20], "little")
-        height = int.from_bytes(data[20:22], "little")
-        planes = int.from_bytes(data[22:24], "little")
-        bits = int.from_bytes(data[24:26], "little")
-        compression = image_size = 0
-    else:
-        width = int.from_bytes(data[18:22], "little", signed=True)
-        height = int.from_bytes(data[22:26], "little", signed=True)
-        planes = int.from_bytes(data[26:28], "little")
-        bits = int.from_bytes(data[28:30], "little")
-        compression = int.from_bytes(data[30:34], "little")
-        image_size = int.from_bytes(data[34:38], "little")
-
-    valid_compression = compression == 0 or (
-        (compression, bits) in {(1, 8), (2, 4)}
-        or (compression == 3 and bits in {16, 24, 32})
-    )
-    file_end = declared_size or len(data)
-    if (
-        width <= 0
-        or height == 0
-        or planes != 1
-        or bits not in {1, 4, 8, 16, 24, 32}
-        or not valid_compression
-        or pixel_offset < header_end
-        or pixel_offset >= file_end
-        or (compression in {1, 2} and height < 0)
-        or (image_size and pixel_offset + image_size > file_end)
-    ):
-        return None
-    if compression in {0, 3}:
-        row_bytes = ((width * bits + 31) // 32) * 4
-        if pixel_offset + row_bytes * abs(height) > file_end:
-            return None
-
-    return bits, compression
-
-
-def _jp2_has_valid_box_structure(data: bytes) -> bool:
-    ranges = [(0, len(data))]
-    while ranges:
-        position, end = ranges.pop()
-        while position < end:
-            if end - position < 8:
-                return False
-            box_length = int.from_bytes(data[position : position + 4], "big")
-            box_type = data[position + 4 : position + 8]
-            header_length = 8
-            if box_length == 1:
-                if end - position < 16:
-                    return False
-                box_length = int.from_bytes(data[position + 8 : position + 16], "big")
-                header_length = 16
-            elif box_length == 0:
-                box_length = end - position
-            if box_length < header_length or box_length > end - position:
-                return False
-            box_end = position + box_length
-            if box_type in _JP2_SUPERBOX_TYPES:
-                ranges.append((position + header_length, box_end))
-            position = box_end
-    return True
-
-
-def _signed_native_codec(data: bytes) -> tuple[str, str] | None:
-    if data.startswith(b"\xff\xd8"):
-        return "jpeg", "JPEG"
-    if data.startswith(_PNG_SIGNATURE):
-        return "png", "PNG"
-    if data.startswith(b"BM"):
-        return "bmp", "BMP"
-    if data.startswith(_TIFF_SIGNATURES):
-        return "tiff", "TIFF"
-    if data.startswith(_JPEG2000_SIGNATURE) or data.startswith(b"\xff\x4f"):
-        return "jpeg2k", "JPEG 2000"
-    if len(data) >= 12 and data.startswith(b"RIFF") and data[8:12] == b"WEBP":
-        return "webp", "WebP"
-    if (
-        len(data) >= 3
-        and data[0:1] == b"P"
-        and data[1:2] in (b"1", b"2", b"3", b"4", b"5", b"6", b"7")
-        and data[2:3].isspace()
-    ):
-        return "pnm", "PNM"
-    return None
-
-
-def _pnm_maxval(data: bytes) -> int | None:
-    if data[:2] not in (b"P2", b"P3", b"P5", b"P6"):
-        return None
-
-    position = 2
-    tokens: list[bytes] = []
-    while len(tokens) < 3:
-        while position < len(data) and data[position : position + 1].isspace():
-            position += 1
-        if position < len(data) and data[position] == ord("#"):
-            position += 1
-            while position < len(data) and data[position] not in (ord("\r"), ord("\n")):
-                position += 1
-            if position == len(data):
-                return None
-            continue
-        start = position
-        while (
-            position < len(data)
-            and not data[position : position + 1].isspace()
-            and data[position] != ord("#")
-        ):
-            position += 1
-        if start == position:
-            return None
-        tokens.append(data[start:position])
-    try:
-        return int(tokens[2])
-    except ValueError:
-        return None
-
-
-def _apply_exif_orientation_view(
-    array: np.ndarray,
-    orientation: int | None,
-) -> np.ndarray:
-    if orientation in (None, 1):
-        return array
-    if orientation == 2:
-        oriented = np.flip(array, axis=1)
-    elif orientation == 3:
-        oriented = np.flip(array, axis=(0, 1))
-    elif orientation == 4:
-        oriented = np.flip(array, axis=0)
-    elif orientation == 5:
-        oriented = np.swapaxes(array, 0, 1)
-    elif orientation == 6:
-        oriented = np.rot90(array, k=3)
-    elif orientation == 7:
-        oriented = np.flip(np.swapaxes(array, 0, 1), axis=(0, 1))
-    elif orientation == 8:
-        oriented = np.rot90(array, k=1)
-    else:
-        raise ValueError(f"invalid EXIF orientation: {orientation}")
-    return oriented
-
-
-def _opened_pillow_semantics(
-    image: Image.Image, codec: str, preserve_mode: bool = False
-) -> tuple[int, bool]:
-    frame_count = int(getattr(image, "n_frames", 1))
-    if bool(getattr(image, "is_animated", False)) or frame_count > 1:
-        return 1, True
-    has_transparency = image.mode in {"RGBA", "LA", "PA", "RGBa", "La"}
-    has_transparency = has_transparency or "transparency" in image.info
-    if preserve_mode and (image.mode != "RGB" or has_transparency):
-        return 1, True
-    if has_transparency and image.mode != "RGB":
-        return 1, True
-    if (
-        codec == "tiff"
-        and image.info.get("compression") not in _NATIVE_TIFF_COMPRESSIONS
-    ):
-        return 1, True
-    if codec == "tiff" and image.mode not in {"1", "L", "P", "RGB"}:
-        return 1, True
-    if codec == "tiff" and (
-        image.tag_v2.get(262) == 0 or image.tag_v2.get(266, 1) == 2
-    ):
-        return 1, True
-
-    try:
-        exif = image.getexif()
-        orientation = exif.get(ExifTags.Base.Orientation, 1)
-        if ExifTags.Base.ImageID in exif:
-            return 1, True
-    except Exception:
-        orientation = 1
-
-    if not isinstance(orientation, int) or orientation not in range(1, 9):
-        orientation = 1
-    return orientation, False
-
-
-def _pillow_can_decode(data: bytes) -> bool:
-    try:
-        with Image.open(BytesIO(data)) as image:
-            width, height = image.size
-            max_pixels = envs.VLLM_MAX_IMAGE_PIXELS
-            if width * height > _MAX_NATIVE_PIXELS or (
-                max_pixels > 0 and width * height > max_pixels
-            ):
-                return False
-            with contextlib.suppress(Exception):
-                image = ImageOps.exif_transpose(image)
-            image.load()
-            return True
-    except MemoryError:
-        raise
-    except Exception:
-        return False
-
-
-def _palette_tiff_bit_depth(data: bytes) -> int | None:
-    try:
-        with Image.open(BytesIO(data)) as image:
-            if image.mode != "P":
-                return None
-            bits = image.tag_v2.get(258)
-            if isinstance(bits, tuple) and len(bits) == 1:
-                bits = bits[0]
-            return bits if isinstance(bits, int) else None
-    except (OSError, ValueError) as exc:
-        raise ValueError(f"Failed to inspect TIFF metadata: {exc}") from exc
-
-
-def _pillow_semantics(
-    data: bytes, codec: str, num_channels: int, preserve_mode: bool = False
-) -> tuple[int, bool]:
-    needs_metadata = (
-        preserve_mode
-        or codec in {"png", "tiff", "webp"}
-        or (codec in {"bmp", "jpeg2k", "pnm"} and num_channels in {2, 4})
-        or (codec == "jpeg" and _JPEG_EXIF_SIGNATURE in data)
-    )
-    if not needs_metadata:
-        return 1, False
-
-    try:
-        with Image.open(BytesIO(data)) as image:
-            return _opened_pillow_semantics(image, codec, preserve_mode)
-    except (OSError, ValueError) as exc:
-        raise ValueError(f"Failed to inspect image metadata: {exc}") from exc
-
-
-def _validate_metadata(
-    codec: str, width: int, height: int, precision: int, num_channels: int
-) -> None:
-    if width <= 0 or height <= 0:
-        raise ValueError("nvImageCodec reported invalid image dimensions")
-
-    max_pixels = envs.VLLM_MAX_IMAGE_PIXELS
-    pixels = width * height
-    if max_pixels > 0 and pixels > max_pixels:
-        raise ValueError(
-            f"Image dimensions {width}x{height} ({pixels} pixels) exceed "
-            f"the maximum of {max_pixels} pixels. Set VLLM_MAX_IMAGE_PIXELS "
-            "to increase this limit."
-        )
-    if not 1 <= precision <= 8:
-        raise ValueError(
-            f"nvImageCodec {codec} precision {precision} is not supported by "
-            "the RGB uint8 output contract"
-        )
-    if not 1 <= num_channels <= 4:
-        raise ValueError("nvImageCodec reported an invalid image channel count")
-
-
 def preflight_image_nvimagecodec(
     data: bytes,
     *,
     image_mode: str | None = "RGB",
-    output_layout: NvImageCodecOutputLayout = "hwc_rgb",
 ) -> NvImageCodecInput | None:
-    """Classify encoded bytes for native decode without decoding pixels.
-
-    Returns ``None`` when Pillow owns the image semantics. Invalid images raise
-    ``ValueError`` and never enter a native decode wave.
-    """
-    if output_layout not in ("hwc_rgb", "chw_rgb"):
-        raise ValueError(f"Unknown nvImageCodec output layout: {output_layout!r}")
-    if image_mode not in (None, "RGB"):
+    """Admit simple 8-bit RGB JPEGs; leave all other images to Pillow."""
+    if image_mode != "RGB" or not data.startswith(b"\xff\xd8"):
         return None
-
-    signed_codec = _signed_native_codec(data)
-    bmp_header = None
-    if signed_codec is not None:
-        codec, _ = signed_codec
-        if codec == "jpeg" and not jpeg_has_complete_scan_and_eoi(data):
-            raise ValueError(
-                "Invalid JPEG image: malformed or incomplete marker stream"
-            )
-        if codec == "png" and not _png_has_complete_iend(data):
-            raise ValueError("Invalid PNG image: incomplete or missing IEND chunk")
-        if (
-            codec == "jpeg2k"
-            and data.startswith(_JPEG2000_SIGNATURE)
-            and not _jp2_has_valid_box_structure(data)
-        ):
-            raise ValueError("Invalid JPEG 2000 image: malformed JP2 box structure")
-        if codec == "bmp":
-            bmp_header = _parse_bmp_header(data)
-            if bmp_header is None:
-                raise ValueError(
-                    "Invalid BMP image: truncated data or unsupported DIB header"
-                )
+    if not jpeg_has_complete_scan_and_eoi(data):
+        return None
+    if _JPEG_EXIF_SIGNATURE in data:
+        return None
 
     nvimgcodec = _load_nvimgcodec()
     try:
         code_stream = nvimgcodec.CodeStream(data)
-        codec = str(code_stream.codec_name).lower()
-    except MemoryError:
-        raise
-    except Exception as exc:
-        if signed_codec is not None:
-            codec, label = signed_codec
-            if _pillow_can_decode(data):
-                return None
-            raise ValueError(f"Invalid {label} image: {exc}") from exc
-        return None
-    if codec not in _NATIVE_CODECS:
-        return None
-
-    try:
-        if codec == "tiff":
-            code_stream = code_stream.get_sub_code_stream(0)
+        if str(code_stream.codec_name).lower() != "jpeg":
+            return None
         width = int(code_stream.width)
         height = int(code_stream.height)
         precision = int(code_stream.precision)
         num_channels = int(code_stream.num_channels)
     except MemoryError:
         raise
-    except Exception as exc:
-        if _pillow_can_decode(data):
-            return None
-        raise ValueError(f"Invalid {codec} image metadata: {exc}") from exc
-
-    if min(width, height, precision, num_channels) <= 0 and _pillow_can_decode(data):
+    except Exception:
         return None
-    if codec == "tiff" and precision == 16:
-        palette_depth = _palette_tiff_bit_depth(data)
-        if palette_depth == 8:
-            # TIFF ColorMap entries are 16-bit even when the palette indices
-            # and decoded RGB samples are 8-bit; nvImageCodec reports the former.
-            precision = 8
-        elif palette_depth is not None:
-            return None
-    _validate_metadata(codec, width, height, precision, num_channels)
-    if width * height > _MAX_NATIVE_PIXELS:
+
+    if width <= 0 or height <= 0:
+        return None
+    pixels = width * height
+    max_pixels = envs.VLLM_MAX_IMAGE_PIXELS
+    if max_pixels > 0 and pixels > max_pixels:
         raise ValueError(
-            f"Image dimensions {width}x{height} exceed the nvImageCodec "
-            f"frontend's fixed raster ceiling of {_MAX_NATIVE_PIXELS} pixels"
+            f"Image dimensions {width}x{height} ({pixels} pixels) exceed "
+            f"the maximum of {max_pixels} pixels. Set VLLM_MAX_IMAGE_PIXELS "
+            "to increase this limit."
         )
-
-    if codec == "jpeg2k" and num_channels == 4:
+    if pixels > _MAX_NATIVE_PIXELS:
         return None
-    if codec == "bmp" and bmp_header != (24, 0):
+    if precision != 8 or num_channels != 3:
         return None
-    if codec == "pnm" and _pnm_maxval(data) not in (None, 255):
-        return None
-    orientation, use_pillow = _pillow_semantics(
-        data, codec, num_channels, preserve_mode=image_mode is None
-    )
-    if use_pillow:
-        return None
-
-    return NvImageCodecInput(
-        data, code_stream, width, height, orientation, output_layout
-    )
+    return NvImageCodecInput(code_stream, width, height)

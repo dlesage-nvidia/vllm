@@ -1122,59 +1122,37 @@ class BaseRenderer(ABC, Generic[_T]):
 
         if tok_params is None:
             tok_params = self.default_chat_tok_params
+        effective_prompt_extras = dict(prompt_extras or {})
+        effective_prompt_extras["media_io_kwargs"] = chat_params.media_io_kwargs or {}
 
-        rendered = [
-            asyncio.ensure_future(self.render_messages_async(conversation, chat_params))
-            for conversation in conversations
-        ]
-
-        out_conversations = list[list["ConversationMessage"]]()
-        dict_prompts = list[DictPrompt]()
-        try:
-            rendered_results = await asyncio.gather(*rendered)
-        except BaseException:
-            for task in rendered:
-                if task.done() and not task.cancelled() and task.exception() is None:
-                    _, prompt = task.result()
-                    release_borrowed_image_resources(prompt.get("multi_modal_data"))
-                elif not task.done():
-                    task.add_done_callback(self._release_failed_render_resources)
-            raise
-
-        for conv, prompt in rendered_results:
-            out_conversations.append(conv)
-            dict_prompts.append(prompt)
-
-        try:
-            tok_prompts = await self.tokenize_prompts_async(dict_prompts, tok_params)
-
-            prompt_extras = dict(prompt_extras or {})
-            prompt_extras["media_io_kwargs"] = chat_params.media_io_kwargs or {}
-            self._apply_prompt_extras(tok_prompts, prompt_extras)
-
-            eng_prompts = await asyncio.gather(
-                *(
+        async def render_one(conversation):
+            out_conversation, dict_prompt = await self.render_messages_async(
+                conversation, chat_params
+            )
+            try:
+                tok_prompt = (
+                    await self.tokenize_prompts_async([dict_prompt], tok_params)
+                )[0]
+                self._apply_prompt_extras([tok_prompt], effective_prompt_extras)
+                processing = asyncio.ensure_future(
                     self.process_for_engine_async(
-                        p, arrival_time, skip_mm_cache=skip_mm_cache
+                        tok_prompt, arrival_time, skip_mm_cache=skip_mm_cache
                     )
-                    for p in tok_prompts
+                )
+            except BaseException:
+                release_borrowed_image_resources(dict_prompt.get("multi_modal_data"))
+                raise
+
+            processing.add_done_callback(
+                lambda _: release_borrowed_image_resources(
+                    dict_prompt.get("multi_modal_data")
                 )
             )
-        except BaseException:
-            for prompt in dict_prompts:
-                release_borrowed_image_resources(prompt.get("multi_modal_data"))
-            raise
+            return out_conversation, await asyncio.shield(processing)
 
+        rendered = await asyncio.gather(
+            *(render_one(conversation) for conversation in conversations)
+        )
+        out_conversations = [result[0] for result in rendered]
+        eng_prompts = [result[1] for result in rendered]
         return out_conversations, eng_prompts
-
-    @staticmethod
-    def _release_failed_render_resources(
-        task: asyncio.Future[tuple[list["ConversationMessage"], DictPrompt]],
-    ) -> None:
-        if task.cancelled():
-            return
-        try:
-            _, prompt = task.result()
-        except BaseException:
-            return
-        release_borrowed_image_resources(prompt.get("multi_modal_data"))

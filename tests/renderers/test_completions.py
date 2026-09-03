@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+import asyncio
 import io
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -13,10 +14,7 @@ import torch
 from vllm.config import ModelConfig
 from vllm.exceptions import VLLMValidationError
 from vllm.inputs import SingletonPrompt
-from vllm.multimodal.image_decoders.nvimagecodec import (
-    _PinnedImageLease,
-    _PinnedOutputBudget,
-)
+from vllm.multimodal.image_decoders.nvimagecodec import _PinnedImageLease
 from vllm.multimodal.media import MediaWithBytes
 from vllm.renderers import ChatParams, TokenizeParams
 from vllm.renderers.hf import HfRenderer
@@ -131,25 +129,17 @@ def _preprocess_prompt(
     ]
 
 
-def _make_budgeted_image():
-    budget = _PinnedOutputBudget()
-    budget.configure(1)
-    (permit,) = budget.try_acquire(1)
+def _make_borrowed_image():
     host = torch.zeros((3, 8, 8), dtype=torch.uint8)
-    permit.attach(host)
     lease = _PinnedImageLease(host, width=8, height=8)
-    image = MediaWithBytes(
-        lease,
-        b"encoded",
-        {"backend": "nvimagecodec", "output_layout": "CHW"},
-    )
-    return budget, lease, image
+    image = MediaWithBytes(lease, b"encoded", {"backend": "nvimagecodec"})
+    return lease, image
 
 
 @pytest.mark.asyncio
 async def test_async_template_error_releases_borrowed_image(monkeypatch) -> None:
     renderer = _build_renderer(MockModelConfig(enable_prompt_embeds=False))
-    budget, lease, image = _make_budgeted_image()
+    lease, image = _make_borrowed_image()
 
     async def parse(*_args, **_kwargs):
         return [], {"image": [image]}, {"image": [None]}
@@ -166,35 +156,57 @@ async def test_async_template_error_releases_borrowed_image(monkeypatch) -> None
 
     with pytest.raises(RuntimeError, match="template failed"):
         await renderer.render_messages_async([], ChatParams())
-    assert budget.snapshot()["pinned_outputs_in_use"] == 0
     with pytest.raises(RuntimeError, match="expired"):
         lease.borrow_tensor()
     renderer._resources.close()
 
 
 @pytest.mark.asyncio
-async def test_async_tokenization_error_releases_borrowed_image(monkeypatch) -> None:
+async def test_async_chat_pipelines_processing_and_releases_borrows(
+    monkeypatch,
+) -> None:
     renderer = _build_renderer(MockModelConfig(enable_prompt_embeds=False))
-    budget, lease, image = _make_budgeted_image()
+    borrowed = [_make_borrowed_image(), _make_borrowed_image()]
+    processing_started = asyncio.Event()
 
-    async def render(*_args, **_kwargs):
-        return [], {"prompt": "", "multi_modal_data": {"image": [image]}}
+    async def render(conversation, *_args, **_kwargs):
+        index = int(conversation[0]["content"])
+        if index:
+            await processing_started.wait()
+        return [], {
+            "prompt": str(index),
+            "multi_modal_data": {"image": [borrowed[index][1]]},
+        }
 
-    async def fail_tokenize(*_args, **_kwargs):
-        raise RuntimeError("tokenization failed")
+    async def tokenize(prompts, *_args, **_kwargs):
+        prompt = prompts[0]
+        if prompt["prompt"] == "1":
+            raise RuntimeError("tokenization failed")
+        return [{"prompt_token_ids": [], **prompt}]
+
+    async def process(*_args, **_kwargs):
+        processing_started.set()
+        return {}
 
     monkeypatch.setattr(renderer, "render_messages_async", render)
-    monkeypatch.setattr(renderer, "tokenize_prompts_async", fail_tokenize)
+    monkeypatch.setattr(renderer, "tokenize_prompts_async", tokenize)
+    monkeypatch.setattr(renderer, "process_for_engine_async", process)
 
     with pytest.raises(RuntimeError, match="tokenization failed"):
-        await renderer.render_chat_async(
-            [[]],
-            ChatParams(),
-            TokenizeParams(max_total_tokens=16),
+        await asyncio.wait_for(
+            renderer.render_chat_async(
+                [
+                    [{"role": "user", "content": "0"}],
+                    [{"role": "user", "content": "1"}],
+                ],
+                ChatParams(),
+                TokenizeParams(max_total_tokens=16),
+            ),
+            timeout=1,
         )
-    assert budget.snapshot()["pinned_outputs_in_use"] == 0
-    with pytest.raises(RuntimeError, match="expired"):
-        lease.borrow_tensor()
+    for lease, _ in borrowed:
+        with pytest.raises(RuntimeError, match="expired"):
+            lease.borrow_tensor()
     renderer._resources.close()
 
 

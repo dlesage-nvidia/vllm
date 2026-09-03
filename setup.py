@@ -1345,13 +1345,10 @@ def get_requirements() -> list[str]:
 
 
 def get_nvimagecodec_requirements() -> list[str]:
-    import platform
-
     cuda_major = (torch.version.cuda or "").partition(".")[0]
-    supported_arch = platform.machine() in {"x86_64", "AMD64", "aarch64", "arm64"}
-    if not (_is_cuda() and supported_arch and cuda_major in ("12", "13")):
+    if not (_is_cuda() and cuda_major in ("12", "13")):
         return []
-    return [f"nvidia-nvimgcodec-cu{cuda_major}[all]>=0.9.0.20"]
+    return [f"nvidia-nvimgcodec-cu{cuda_major}[nvjpeg]>=0.9.0.20"]
 
 
 ext_modules = []

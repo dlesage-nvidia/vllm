@@ -68,8 +68,8 @@ from vllm.multimodal.inputs import (
 from vllm.multimodal.media import (
     MEDIA_CONNECTOR_REGISTRY,
     MediaConnector,
-    MediaWithBytes,
 )
+from vllm.multimodal.parse import release_borrowed_image_resources
 from vllm.multimodal.processing import BaseMultiModalProcessor
 from vllm.renderers.embed_utils import (
     safe_load_prompt_embeds,
@@ -444,15 +444,6 @@ _T = TypeVar("_T")
 _AsyncMultiModalItem: TypeAlias = Callable[[], Awaitable[tuple[object, str | None]]]
 
 
-def _release_borrowed_image_result(result: tuple[object, str | None]) -> None:
-    item = result[0]
-    if not isinstance(item, MediaWithBytes):
-        return
-    media = item.media
-    if getattr(type(media), "_is_vllm_nvimagecodec_pinned_lease", False) is True:
-        media.release()
-
-
 def _release_borrowed_image_task(
     task: asyncio.Future[tuple[object, str | None]],
 ) -> None:
@@ -462,7 +453,7 @@ def _release_borrowed_image_task(
         result = task.result()
     except BaseException:
         return
-    _release_borrowed_image_result(result)
+    release_borrowed_image_resources(result[0])
 
 
 # Backward compatibility for single item input
@@ -590,6 +581,7 @@ class BaseMultiModalItemTracker(ABC, Generic[_T]):
 
         self._model_config = model_config
         self._media_io_kwargs = media_io_kwargs
+
         self._items_by_modality = defaultdict[str, list[_T]](list)
         # Track original modality for each vision_chunk item (image or video)
         self._modality_order = defaultdict[str, list[str]](list)
@@ -634,32 +626,6 @@ class BaseMultiModalItemTracker(ABC, Generic[_T]):
     def mm_processor(self):
         return self.mm_registry.create_processor(self.model_config)
 
-    def _create_connector(
-        self, mm_processor_kwargs: dict[str, Any] | None
-    ) -> MediaConnector:
-        media_io_kwargs = self.media_io_kwargs
-        image_kwargs = (media_io_kwargs or {}).get("image", {})
-        if image_kwargs.get("backend") == "nvimagecodec":
-            media_io_kwargs = dict(media_io_kwargs or {})
-            image_kwargs = dict(image_kwargs)
-            image_kwargs.pop("output_layout", None)
-            if not self.use_unified_vision_chunk_modality:
-                kwargs = mm_processor_kwargs or {}
-                if mm_config := self.model_config.multimodal_config:
-                    kwargs = mm_config.merge_mm_processor_kwargs(kwargs)
-                preferred = self.mm_processor.get_image_processor_input_format(kwargs)
-                if preferred != "pil":
-                    image_kwargs["output_layout"] = (
-                        "chw_rgb" if preferred == "channels_first" else "hwc_rgb"
-                    )
-            media_io_kwargs["image"] = image_kwargs
-        return MEDIA_CONNECTOR_REGISTRY.load(
-            envs.VLLM_MEDIA_CONNECTOR,
-            media_io_kwargs=media_io_kwargs,
-            allowed_local_media_path=self.allowed_local_media_path,
-            allowed_media_domains=self.allowed_media_domains,
-        )
-
     def _supports_borrowed_pinned_image(
         self,
         mm_processor_kwargs: dict[str, Any] | None,
@@ -673,7 +639,10 @@ class BaseMultiModalItemTracker(ABC, Generic[_T]):
         kwargs = mm_processor_kwargs or {}
         if mm_config := self.model_config.multimodal_config:
             kwargs = mm_config.merge_mm_processor_kwargs(kwargs)
-        return self.mm_processor.supports_borrowed_pinned_image_inputs(kwargs)
+        for scope in (kwargs.get("images_kwargs"), kwargs.get("common_kwargs"), kwargs):
+            if isinstance(scope, dict) and "input_data_format" in scope:
+                return scope["input_data_format"] == "channels_first"
+        return True
 
     @property
     def video_processor_name(self) -> str | None:
@@ -959,9 +928,6 @@ class AsyncMultiModalItemTracker(BaseMultiModalItemTracker[_AsyncMultiModalItem]
                 # (or itself fail) before we raise, instead of abandoning
                 # still-in-flight fetches (real network/thread-pool work) the
                 # moment the first one fails.
-                for completed in results:
-                    if not isinstance(completed, BaseException):
-                        _release_borrowed_image_result(completed)
                 raise result
 
         resolved_items_by_modality: dict[str, list[Any]] = {}
@@ -983,7 +949,7 @@ class AsyncMultiModalItemTracker(BaseMultiModalItemTracker[_AsyncMultiModalItem]
         except BaseException:
             for result in results:
                 if not isinstance(result, BaseException):
-                    _release_borrowed_image_result(result)
+                    release_borrowed_image_resources(result[0])
             raise
 
     def create_parser(
@@ -1086,7 +1052,14 @@ class MultiModalContentParser(BaseMultiModalContentParser):
 
     @cached_property
     def _connector(self) -> MediaConnector:
-        return self._tracker._create_connector(self._mm_processor_kwargs)
+        # Connector setup may probe VLLM_MEDIA_CACHE. Defer it until a request
+        # actually contains media so text-only parsing never blocks on that I/O.
+        return MEDIA_CONNECTOR_REGISTRY.load(
+            envs.VLLM_MEDIA_CONNECTOR,
+            media_io_kwargs=self._tracker.media_io_kwargs,
+            allowed_local_media_path=self._tracker.allowed_local_media_path,
+            allowed_media_domains=self._tracker.allowed_media_domains,
+        )
 
     @property
     def model_config(self) -> ModelConfig:
@@ -1260,7 +1233,14 @@ class AsyncMultiModalContentParser(BaseMultiModalContentParser):
 
     @cached_property
     def _connector(self) -> MediaConnector:
-        return self._tracker._create_connector(self._mm_processor_kwargs)
+        # Connector setup may probe VLLM_MEDIA_CACHE. Defer it until a request
+        # actually contains media so text-only parsing never blocks on that I/O.
+        return MEDIA_CONNECTOR_REGISTRY.load(
+            envs.VLLM_MEDIA_CONNECTOR,
+            media_io_kwargs=self._tracker.media_io_kwargs,
+            allowed_local_media_path=self._tracker.allowed_local_media_path,
+            allowed_media_domains=self._tracker.allowed_media_domains,
+        )
 
     @property
     def model_config(self) -> ModelConfig:
@@ -1302,18 +1282,14 @@ class AsyncMultiModalContentParser(BaseMultiModalContentParser):
                 getattr(fetch_image_async, "__func__", None)
                 is MediaConnector.fetch_image_async
             ):
+                borrow_output = sum(
+                    len(items) for items in self._tracker._items_by_modality.values()
+                ) == 1 and self._tracker._supports_borrowed_pinned_image(
+                    self._mm_processor_kwargs
+                )
                 image = await fetch_image_async(
                     image_url,
-                    _borrow_output=(
-                        sum(
-                            len(items)
-                            for items in self._tracker._items_by_modality.values()
-                        )
-                        == 1
-                        and self._tracker._supports_borrowed_pinned_image(
-                            self._mm_processor_kwargs
-                        )
-                    ),
+                    _borrow_output=borrow_output,
                 )
             else:
                 image = await fetch_image_async(image_url)

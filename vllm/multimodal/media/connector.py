@@ -10,7 +10,7 @@ import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Literal, TypeVar
+from typing import Any, TypeVar
 from urllib.request import url2pathname
 
 import aiohttp
@@ -53,13 +53,9 @@ def _create_image_io(
     image_mode: str | None,
     media_io_kwargs: dict[str, dict[str, Any]],
     *,
-    output_layout: Literal["hwc_rgb", "chw_rgb"] | None = None,
     borrow_output: bool = False,
 ) -> ImageMediaIO:
     image_io_kwargs = {"image_mode": image_mode} | media_io_kwargs.get("image", {})
-    image_io_kwargs.pop("_borrow_output", None)
-    if output_layout is not None:
-        image_io_kwargs["output_layout"] = output_layout
     image_io_kwargs["_borrow_output"] = borrow_output
     return ImageMediaIO(**image_io_kwargs)
 
@@ -440,13 +436,9 @@ class MediaConnector:
         loop = asyncio.get_running_loop()
 
         if url[:5].lower() == "data:":
-            media_type, base64_data = await loop.run_in_executor(
-                global_thread_pool, self._parse_data_url, url
-            )
+            media_type, base64_data = self._parse_data_url(url)
             return await media_io.load_base64_async(
-                media_type,
-                base64_data,
-                executor=global_thread_pool,
+                media_type, base64_data, executor=global_thread_pool
             )
 
         url_spec = parse_url(url)
@@ -460,8 +452,7 @@ class MediaConnector:
             )
             if cached is not None:
                 return await media_io.load_bytes_async(
-                    cached,
-                    executor=global_thread_pool,
+                    cached, executor=global_thread_pool
                 )
 
             connection = self.connection
@@ -481,19 +472,13 @@ class MediaConnector:
             await loop.run_in_executor(
                 global_thread_pool, self._put_cached_bytes, url, data
             )
-            return await media_io.load_bytes_async(
-                data,
-                executor=global_thread_pool,
-            )
+            return await media_io.load_bytes_async(data, executor=global_thread_pool)
 
         if url_spec.scheme == "file":
             filepath = await loop.run_in_executor(
                 global_thread_pool, self._resolve_file_url, url_spec
             )
-            return await media_io.load_file_async(
-                filepath,
-                executor=global_thread_pool,
-            )
+            return await media_io.load_file_async(filepath, executor=global_thread_pool)
         msg = "The URL must be either a HTTP, data or file URL."
         raise ValueError(msg)
 
@@ -592,9 +577,7 @@ class MediaConnector:
         """
         Load video from an HTTP or base64 data URL.
         """
-        image_io = _create_image_io(
-            image_mode, self.media_io_kwargs, output_layout="hwc_rgb"
-        )
+        image_io = _create_image_io(image_mode, self.media_io_kwargs)
         video_io_kwargs = dict(self.media_io_kwargs.get("video", {}))
         if "video_backend" not in video_io_kwargs and (
             video_backend := get_video_loader_backend_for_processor(video_processor)
@@ -622,9 +605,7 @@ class MediaConnector:
         `media_io_kwargs={"image": {"image_mode": None}}` to keep the
         original image mode (e.g. preserving the alpha channel).
         """
-        image_io = _create_image_io(
-            image_mode, self.media_io_kwargs, output_layout="hwc_rgb"
-        )
+        image_io = _create_image_io(image_mode, self.media_io_kwargs)
         video_io_kwargs = dict(self.media_io_kwargs.get("video", {}))
         if "video_backend" not in video_io_kwargs and (
             video_backend := get_video_loader_backend_for_processor(video_processor)

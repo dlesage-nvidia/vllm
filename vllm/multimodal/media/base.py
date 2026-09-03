@@ -89,15 +89,6 @@ class MediaIO(ABC, Generic[_T]):
     def load_bytes(self, data: bytes) -> _T:
         raise NotImplementedError
 
-    async def load_bytes_async(
-        self,
-        data: bytes,
-        *,
-        executor: Executor | None = None,
-    ) -> _T:
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(executor, self.load_bytes, data)
-
     @abstractmethod
     def load_base64(self, media_type: str, data: str) -> _T:
         """
@@ -105,6 +96,16 @@ class MediaIO(ABC, Generic[_T]):
         https://www.iana.org/assignments/media-types/media-types.xhtml
         """
         raise NotImplementedError
+
+    @abstractmethod
+    def load_file(self, filepath: Path) -> _T:
+        raise NotImplementedError
+
+    async def load_bytes_async(
+        self, data: bytes, *, executor: Executor | None = None
+    ) -> _T:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(executor, self.load_bytes, data)
 
     async def load_base64_async(
         self,
@@ -116,15 +117,8 @@ class MediaIO(ABC, Generic[_T]):
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(executor, self.load_base64, media_type, data)
 
-    @abstractmethod
-    def load_file(self, filepath: Path) -> _T:
-        raise NotImplementedError
-
     async def load_file_async(
-        self,
-        filepath: Path,
-        *,
-        executor: Executor | None = None,
+        self, filepath: Path, *, executor: Executor | None = None
     ) -> _T:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(executor, self.load_file, filepath)

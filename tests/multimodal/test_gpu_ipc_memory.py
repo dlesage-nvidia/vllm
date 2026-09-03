@@ -20,7 +20,7 @@ from vllm.multimodal.video_decoders.pynvvideocodec import (
     PYNVVIDEOCODEC_CUDA_CONTEXT_BYTES,
     PYNVVIDEOCODEC_DECODER_GPU_MEMORY_BYTES,
 )
-from vllm.utils.mem_constants import GiB_bytes, MiB_bytes
+from vllm.utils.mem_constants import GiB_bytes
 
 
 def _mm_config(
@@ -262,34 +262,23 @@ def test_nvimagecodec_memory_reservations(monkeypatch: pytest.MonkeyPatch):
         lambda: None,
     )
     monkeypatch.setenv("VLLM_VIDEO_LOADER_BACKEND", "opencv")
-    assert nvcodec.NVIMAGECODEC_BYTES_PER_BATCH_SLOT == 2 * 3840 * 2160 * 3
-    assert 1664 * MiB_bytes == nvcodec.NVIMAGECODEC_PLUGIN_WORKSPACE_BYTES
-    assert 640 * MiB_bytes == nvcodec.NVIMAGECODEC_CUDA_CONTEXT_BYTES
-    with pytest.raises(ValueError, match="positive integer"):
-        nvcodec.get_nvimagecodec_batch_cap(0)
-    assert [nvcodec.get_nvimagecodec_batch_cap(n) for n in (16, 17)] == [1, 1]
     available_bytes = 16 * GiB_bytes
-    for api_process_count, batch_cap in ((1, 20), (2, 8), (4, 4)):
-        assert nvcodec.get_nvimagecodec_batch_cap(api_process_count) == batch_cap
-        non_context = nvcodec.get_nvimagecodec_non_context_bytes(api_process_count)
-        assert non_context == (
-            batch_cap * nvcodec.NVIMAGECODEC_BYTES_PER_BATCH_SLOT
-            + nvcodec.NVIMAGECODEC_PLUGIN_WORKSPACE_BYTES
-        )
-        reserved = api_process_count * (
-            non_context + nvcodec.NVIMAGECODEC_CUDA_CONTEXT_BYTES
-        )
-        assert reserve_mm_ipc_gpu_memory(
-            available_bytes,
-            _mm_config(image_backend="nvimagecodec"),
-            api_process_count=api_process_count,
-        ) == (available_bytes - reserved)
+    api_process_count = 2
+    reserved = api_process_count * (
+        nvcodec.get_nvimagecodec_non_context_bytes(api_process_count)
+        + nvcodec.NVIMAGECODEC_CUDA_CONTEXT_BYTES
+    )
+    assert reserve_mm_ipc_gpu_memory(
+        available_bytes,
+        _mm_config(image_backend="nvimagecodec"),
+        api_process_count=api_process_count,
+    ) == (available_bytes - reserved)
 
-    mm_config = _mm_config(
+    combined = _mm_config(
         image_backend="nvimagecodec",
         video_backend=PYNVVIDEOCODEC_VIDEO_BACKEND,
     )
-    expected_per_process = (
+    expected = (
         PYNVVIDEOCODEC_DECODER_GPU_MEMORY_BYTES * 2
         + nvcodec.get_nvimagecodec_non_context_bytes()
         + max(
@@ -297,6 +286,6 @@ def test_nvimagecodec_memory_reservations(monkeypatch: pytest.MonkeyPatch):
             nvcodec.NVIMAGECODEC_CUDA_CONTEXT_BYTES,
         )
     )
-    assert reserve_mm_ipc_gpu_memory(available_bytes, mm_config) == (
-        available_bytes - expected_per_process
+    assert reserve_mm_ipc_gpu_memory(available_bytes, combined) == (
+        available_bytes - expected
     )

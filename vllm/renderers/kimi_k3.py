@@ -10,28 +10,26 @@ from vllm.entrypoints.chat_utils import (
     parse_chat_messages_async,
 )
 from vllm.exceptions import VLLMValidationError
+from vllm.multimodal.media.connector import merge_media_io_kwargs
 from vllm.tokenizers.hf import HfTokenizer
 from vllm.utils.async_utils import make_async
 
 from .base import BaseRenderer
 from .inputs import DictPrompt
 from .inputs.preprocess import parse_dec_only_prompt
-from .params import ChatParams, recursively_merge_kwargs
+from .params import ChatParams
 
 # Keep the original image mode (including the alpha channel) for K3 instead of
 # flattening images onto a background color. Server-level (--media-io-kwargs)
 # and request-level media_io_kwargs still take precedence over this default.
+_K3_MEDIA_IO_DEFAULTS: dict[str, dict[str, Any]] = {"image": {"image_mode": None}}
 _K3_THINKING_EFFORTS = ("low", "high", "max")
 
 
 def _merge_k3_media_io_kwargs(
     media_io_kwargs: dict[str, dict[str, Any]] | None,
 ) -> dict[str, dict[str, Any]] | None:
-    return recursively_merge_kwargs(
-        {"image": {"image_mode": None}},
-        media_io_kwargs,
-        unset_values=(),
-    )
+    return merge_media_io_kwargs(_K3_MEDIA_IO_DEFAULTS, media_io_kwargs)
 
 
 def _dump_k3_template_value(value: Any) -> Any:

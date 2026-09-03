@@ -15,20 +15,10 @@ assert ASSETS_DIR.exists()
 
 
 def test_image_backend_is_startup_only():
+    with pytest.raises(ValueError, match="Unknown image backend"):
+        ImageMediaIO(backend="unknown")
     with pytest.raises(ValueError, match="fixed at startup"):
         ImageMediaIO.merge_kwargs({"backend": "nvimagecodec"}, {"backend": "pillow"})
-
-
-def test_encode_base64_accepts_loaded_image_wrapper():
-    preserving_io = ImageMediaIO(image_mode=None)
-    encoded = preserving_io.encode_base64(Image.new("RGBA", (1, 1), (1, 2, 3, 0)))
-    loaded = preserving_io.load_base64("image/png", encoded)
-
-    converted = ImageMediaIO().encode_base64(loaded)
-    result = ImageMediaIO().load_base64("image/png", converted)
-
-    assert result.media.mode == "RGB"
-    assert result.media.getpixel((0, 0)) == (255, 255, 255)
 
 
 def test_image_media_io_rgba_custom_background(tmp_path):

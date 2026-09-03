@@ -9,7 +9,6 @@ from functools import lru_cache
 from typing import (
     TYPE_CHECKING,
     Generic,
-    Literal,
     NamedTuple,
     Protocol,
     TypeAlias,
@@ -51,8 +50,6 @@ else:
     BaseMultiModalProcessorCache = object
 
 logger = init_logger(__name__)
-
-ImageProcessorInputFormat: TypeAlias = Literal["pil", "channels_first", "channels_last"]
 
 
 @lru_cache(maxsize=2048)
@@ -1159,20 +1156,6 @@ class BaseMultiModalProcessor(ABC, Generic[_I]):
 
         return processor_data, passthrough_data
 
-    def get_image_processor_input_format(
-        self,
-        mm_processor_kwargs: Mapping[str, object],
-    ) -> ImageProcessorInputFormat:
-        """Return the preferred input representation for decoded images."""
-        return "pil"
-
-    def supports_borrowed_pinned_image_inputs(
-        self,
-        mm_processor_kwargs: Mapping[str, object],
-    ) -> bool:
-        """Return whether image preprocessing synchronously copies CHW tensors."""
-        return False
-
     def _get_hf_processor_text(self, mm_counts: Mapping[str, int]) -> str | None:
         """
         Get the text to pass to the HF processor alongside the multi-modal
@@ -1289,16 +1272,16 @@ class BaseMultiModalProcessor(ABC, Generic[_I]):
 
         mm_missing_data = {}
         for modality, idxs in mm_missing_idxs.items():
-            items = mm_data_items[modality]
             missing_modality_data = []
             for idx in idxs:
-                data = items.get_item_for_reparse(idx)
+                data = mm_data_items[modality][idx]
                 if data is None:
                     raise ValueError(
                         f"Cache miss for {modality} at index {idx} "
                         f"but data is not provided."
                     )
-                missing_modality_data.append(data)
+                else:
+                    missing_modality_data.append(data)
             mm_missing_data[modality] = missing_modality_data
 
         mm_missing_items = self.info.parse_mm_data(mm_missing_data, validate=False)
@@ -1719,16 +1702,6 @@ class BaseMultiModalProcessor(ABC, Generic[_I]):
         return prompt_ids, mm_placeholders
 
     def apply(
-        self,
-        inputs: ProcessorInputs,
-        timing_ctx: TimingContext,
-    ) -> MultiModalInput:
-        try:
-            return self._apply(inputs, timing_ctx)
-        finally:
-            inputs.mm_data_items.release_processor_resources()
-
-    def _apply(
         self,
         inputs: ProcessorInputs,
         timing_ctx: TimingContext,

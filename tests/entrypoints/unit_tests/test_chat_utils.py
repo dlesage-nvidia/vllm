@@ -18,15 +18,13 @@ from vllm.entrypoints.chat_utils import (
     MEDIA_CONNECTOR_REGISTRY,
     AsyncMultiModalItemTracker,
     ConversationMessage,
-    MultiModalItemTracker,
     _postprocess_messages,
     parse_chat_messages,
     parse_chat_messages_async,
 )
 from vllm.exceptions import VLLMValidationError
 from vllm.inputs import MultiModalDataDict, MultiModalUUIDDict
-from vllm.multimodal.image_decoders.nvimagecodec import _PinnedImageLease
-from vllm.multimodal.media import MediaConnector, MediaWithBytes
+from vllm.multimodal.media import MediaConnector
 from vllm.multimodal.utils import (
     encode_audio_url,
     encode_image_url,
@@ -3026,38 +3024,30 @@ async def test_resolve_items_does_not_leak_tasks_on_partial_failure():
     )
 
 
-def test_native_layout_is_request_local():
-    config = MagicMock(allowed_local_media_path="", allowed_media_domains=None)
-    merge = config.multimodal_config.merge_mm_processor_kwargs
-    merge.side_effect = lambda kwargs: {"s": True, **kwargs}
-    original = {"image": {"backend": "nvimagecodec", "output_layout": "untrusted"}}
-    for tracker_type, preferred, unified, layout in (
-        (MultiModalItemTracker, "pil", False, None),
-        (MultiModalItemTracker, "channels_first", False, "chw_rgb"),
-        (AsyncMultiModalItemTracker, "channels_last", False, "hwc_rgb"),
-        (AsyncMultiModalItemTracker, "channels_first", True, None),
-    ):
-        tracker = tracker_type(config, media_io_kwargs=original)
-        tracker.__dict__["use_unified_vision_chunk_modality"] = unified
-        tracker.__dict__["mm_processor"] = processor = MagicMock()
-        get_format = processor.get_image_processor_input_format
-        get_format.return_value = preferred
-        connector = tracker.create_parser({"request": True})._connector
-        assert connector.media_io_kwargs["image"].get("output_layout") == layout
-        assert tracker.media_io_kwargs is original
-        if not unified:
-            assert get_format.call_args.args == ({"s": True, "request": True},)
-
-
 @pytest.mark.parametrize(
-    ("image_count", "companion_modality", "expected"),
-    [(1, None, True), (2, None, False), (1, "video", False), (1, "audio", False)],
+    ("image_count", "companion_modality", "processor_kwargs", "expected"),
+    [
+        (1, None, None, True),
+        (2, None, None, False),
+        (1, "video", None, False),
+        (1, None, {"input_data_format": "channels_last"}, False),
+        (
+            1,
+            None,
+            {
+                "input_data_format": "channels_first",
+                "images_kwargs": {"input_data_format": "channels_last"},
+            },
+            False,
+        ),
+    ],
 )
 @pytest.mark.asyncio
 async def test_async_qwen_only_image_enables_borrowed_delivery(
     monkeypatch,
     image_count,
     companion_modality,
+    processor_kwargs,
     expected,
 ):
     config = MagicMock(
@@ -3070,12 +3060,10 @@ async def test_async_qwen_only_image_enables_borrowed_delivery(
         media_io_kwargs={"image": {"backend": "nvimagecodec"}},
     )
     tracker.__dict__["use_unified_vision_chunk_modality"] = False
-    tracker.__dict__["mm_processor"] = processor = MagicMock()
-    processor.supports_borrowed_pinned_image_inputs.return_value = True
     tracker._items_by_modality["image"] = [lambda: None] * image_count
     if companion_modality is not None:
         tracker._items_by_modality[companion_modality] = [lambda: None]
-    parser = tracker.create_parser()
+    parser = tracker.create_parser(processor_kwargs)
     parser.__dict__["_connector"] = MediaConnector(
         media_io_kwargs={"image": {"backend": "nvimagecodec"}}
     )
@@ -3096,30 +3084,19 @@ async def test_async_qwen_only_image_enables_borrowed_delivery(
 
 
 @pytest.mark.asyncio
-async def test_async_item_validation_releases_borrowed_image() -> None:
-    config = MagicMock(is_multimodal_model=True)
-    tracker = AsyncMultiModalItemTracker(config)
-    tracker.__dict__["mm_processor"] = MagicMock()
-    lease = _PinnedImageLease(torch.zeros((3, 8, 8)), width=8, height=8)
-    image = MediaWithBytes(
-        lease,
-        b"encoded",
-        {"backend": "nvimagecodec", "output_layout": "CHW"},
+async def test_async_custom_image_connector_gets_no_private_options():
+    tracker = AsyncMultiModalItemTracker(MagicMock())
+    parser = tracker.create_parser()
+
+    class CustomConnector:
+        async def fetch_image_async(self, _url):
+            return "decoded"
+
+    parser.__dict__["_connector"] = CustomConnector()
+    assert await parser._image_with_uuid_async("custom://image", None) == (
+        "decoded",
+        None,
     )
-
-    async def load_image():
-        return image, None
-
-    async def load_image_embeds():
-        return torch.zeros((1, 8)), None
-
-    tracker._items_by_modality["image"] = [load_image]
-    tracker._items_by_modality["image_embeds"] = [load_image_embeds]
-
-    with pytest.raises(VLLMValidationError, match="Mixing raw image"):
-        await tracker.resolve_items()
-    with pytest.raises(RuntimeError, match="expired"):
-        lease.borrow_tensor()
 
 
 def _assistant_tool_call(arguments, name="write"):

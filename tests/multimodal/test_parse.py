@@ -40,33 +40,19 @@ def test_image_size_hwc_chw(image):
     assert items.get_image_size(0) == (W, H)
 
 
-@pytest.mark.parametrize("width", [1, 3, 4])
-def test_tagged_chw_image_preserves_layout_through_size_and_reparse(width):
-    chw = np.zeros((3, H, width), dtype=np.uint8)
-    config = {"backend": "nvimagecodec", "output_layout": "CHW"}
-    wrapped = MediaWithBytes(chw, b"encoded", config)
-    items = ImageProcessorItems([wrapped])
-
-    assert items.get_image_size(0) == (width, H)
-    assert items.get_processor_data()["images"][0] is chw
-    assert items.get_item_for_reparse(0) is wrapped
-
-
-def test_pinned_chw_image_expires_after_processor_release() -> None:
+def test_pinned_chw_image_size_and_processor_data() -> None:
     host = torch.zeros((3, H, W), dtype=torch.uint8)
     lease = _PinnedImageLease(host, width=W, height=H)
     wrapped = MediaWithBytes(
         lease,
         b"encoded",
-        {"backend": "nvimagecodec", "output_layout": "CHW"},
+        {"backend": "nvimagecodec"},
     )
     items = ImageProcessorItems([wrapped])
 
     assert items.get_image_size(0) == (W, H)
     assert items.get_processor_data()["images"] == [host]
-    items.release_processor_resources()
-    with pytest.raises(RuntimeError, match="expired"):
-        items.get_processor_data()
+    lease.release()
 
 
 @pytest.mark.parametrize(

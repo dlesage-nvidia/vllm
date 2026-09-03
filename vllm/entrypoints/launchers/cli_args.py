@@ -425,27 +425,13 @@ def validate_parsed_serve_args(args: argparse.Namespace):
         return
 
     image_io_kwargs = (getattr(args, "media_io_kwargs", None) or {}).get("image", {})
-    if image_io_kwargs.get("backend") == "nvimagecodec":
-        if (
-            getattr(args, "headless", False)
-            or getattr(args, "launch_component", None) == "render"
-        ):
-            raise ValueError(
-                "The nvimagecodec image backend requires a GPU-capable API process."
-            )
-        if (
-            getattr(args, "distributed_executor_backend", None) == "ray"
-            or getattr(args, "data_parallel_backend", None) == "ray"
-        ):
-            raise ValueError(
-                "The nvimagecodec image backend does not support the Ray "
-                "distributed executor."
-            )
-        if envs.VLLM_USE_RUST_FRONTEND:
-            raise ValueError(
-                "The nvimagecodec image backend does not support the Rust frontend."
-            )
-
+    if image_io_kwargs.get("backend") == "nvimagecodec" and (
+        getattr(args, "headless", False)
+        or getattr(args, "launch_component", None) == "render"
+    ):
+        raise ValueError(
+            "The nvimagecodec image backend requires a GPU-capable API process."
+        )
     # Ensure that the chat template is valid; raises if it likely isn't
     validate_chat_template(args.chat_template)
 

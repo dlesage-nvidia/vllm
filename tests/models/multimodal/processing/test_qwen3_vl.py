@@ -6,7 +6,6 @@ Covers the fix for num_frames-based timestamp calculation
 (issue vllm-project/vllm#35909).
 """
 
-from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -26,7 +25,7 @@ from ...utils import build_model_context
 MODEL_ID = "Qwen/Qwen3-VL-4B-Instruct"
 
 
-def test_native_chw_processor_matches_pillow_and_hwc_with_cache(monkeypatch) -> None:
+def test_native_chw_processor_matches_pillow() -> None:
     ctx = build_model_context(
         MODEL_ID,
         limit_mm_per_prompt={"image": 1, "video": 0},
@@ -34,27 +33,15 @@ def test_native_chw_processor_matches_pillow_and_hwc_with_cache(monkeypatch) -> 
     )
     cache = MultiModalProcessorOnlyCache(ctx.model_config)
     processor = MULTIMODAL_REGISTRY.create_processor(ctx.model_config, cache=cache)
-    key = "input_data_format"
-    first, last = {key: "channels_first"}, {key: "channels_last"}
-    get = processor.get_image_processor_input_format
-    assert get({}) == "channels_first"
-    assert get({key: "unknown"}) == "pil"
-    assert get({"common_kwargs": last}) == "channels_last"
-    assert get({"images_kwargs": first, "common_kwargs": last}) == "channels_first"
-    assert get({**last, "images_kwargs": first}) == "channels_last"
-    supports_borrow = processor.supports_borrowed_pinned_image_inputs
-    assert supports_borrow({})
-    assert not supports_borrow(last)
-    hwc = (np.arange(56 * 84 * 3).reshape(56, 84, 3) % 251).astype(np.uint8)
+    hwc = (np.arange(56 * 4 * 3).reshape(56, 4, 3) % 251).astype(np.uint8)
     chw = np.ascontiguousarray(np.moveaxis(hwc, -1, 0))
-    wrapped = Wrapped(chw, b"x", {"backend": "nvimagecodec", "output_layout": "CHW"})
-    pinned_host = torch.from_numpy(chw.copy())
-    lease = _PinnedImageLease(pinned_host, width=84, height=56)
-    pinned = Wrapped(
-        lease,
-        b"pinned",
-        {"backend": "nvimagecodec", "output_layout": "CHW"},
-    )
+    leases = [
+        _PinnedImageLease(torch.from_numpy(chw.copy()), width=4, height=56)
+        for _ in range(2)
+    ]
+    pinned = [
+        Wrapped(lease, b"same JPEG", {"backend": "nvimagecodec"}) for lease in leases
+    ]
 
     prompt = "<|vision_start|><|image_pad|><|vision_end|>"
 
@@ -62,28 +49,17 @@ def test_native_chw_processor_matches_pillow_and_hwc_with_cache(monkeypatch) -> 
         items = processor.info.parse_mm_data({"image": [item]})
         return processor(prompt, mm_items=items)
 
-    pillow_result, hwc_result = map(process, (Image.fromarray(hwc, "RGB"), hwc))
-    monkeypatch.setattr(Image, "fromarray", lambda _: pytest.fail("CHW converted"))
-    cache.make_stats(delta=True)
-    native = [process(wrapped), process(wrapped), process(pinned)]
-    assert ((stats := cache.make_stats(delta=True)).hits, stats.total) == (1, 3)
-
-    for output in (hwc_result, *native):
+    pillow_result = process(Image.fromarray(hwc, "RGB"))
+    native_results = [process(item) for item in pinned]
+    input_ptr = leases[0].borrow_tensor().untyped_storage().data_ptr()
+    for lease in leases:
+        lease.release()
+    for native_result in native_results:
         for result_key in ("mm_kwargs", "prompt_token_ids", "mm_placeholders"):
-            assert output[result_key] == pillow_result[result_key]
-    assert native[0]["mm_hashes"] == native[1]["mm_hashes"]
-    with pytest.raises(RuntimeError, match="expired"):
-        lease.borrow_tensor()
-    pixel_values = native[-1]["mm_kwargs"]["image"][0]["pixel_values"].data
-    assert pixel_values.untyped_storage().data_ptr() != (
-        pinned_host.untyped_storage().data_ptr()
-    )
-    monkeypatch.setattr(
-        processor.info,
-        "get_hf_config",
-        lambda: SimpleNamespace(model_type="qwen3_vl_moe"),
-    )
-    assert not supports_borrow({})
+            assert native_result[result_key] == pillow_result[result_key]
+    assert cache.make_stats().hits == 1
+    pixel_values = native_results[0]["mm_kwargs"]["image"][0]["pixel_values"].data
+    assert pixel_values.untyped_storage().data_ptr() != input_ptr
 
 
 def _build_video_mm_data(
