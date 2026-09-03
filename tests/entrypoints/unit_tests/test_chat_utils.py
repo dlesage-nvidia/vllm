@@ -25,6 +25,7 @@ from vllm.entrypoints.chat_utils import (
 )
 from vllm.exceptions import VLLMValidationError
 from vllm.inputs import MultiModalDataDict, MultiModalUUIDDict
+from vllm.multimodal.media import MediaConnector
 from vllm.multimodal.utils import (
     encode_audio_url,
     encode_image_url,
@@ -3045,6 +3046,46 @@ def test_native_layout_is_request_local():
         assert tracker.media_io_kwargs is original
         if not unified:
             assert get_format.call_args.args == ({"s": True, "request": True},)
+
+
+@pytest.mark.parametrize(("image_count", "expected"), [(1, True), (2, False)])
+@pytest.mark.asyncio
+async def test_async_qwen_single_image_enables_borrowed_delivery(
+    monkeypatch,
+    image_count,
+    expected,
+):
+    config = MagicMock(
+        allowed_local_media_path="",
+        allowed_media_domains=None,
+        multimodal_config=None,
+    )
+    tracker = AsyncMultiModalItemTracker(
+        config,
+        media_io_kwargs={"image": {"backend": "nvimagecodec"}},
+    )
+    tracker.__dict__["use_unified_vision_chunk_modality"] = False
+    tracker.__dict__["mm_processor"] = processor = MagicMock()
+    processor.supports_borrowed_pinned_image_inputs.return_value = True
+    tracker._items_by_modality["image"] = [lambda: None] * image_count
+    parser = tracker.create_parser()
+    parser.__dict__["_connector"] = MediaConnector(
+        media_io_kwargs={"image": {"backend": "nvimagecodec"}}
+    )
+    captured = None
+
+    async def load(_self, _url, image_io, **_kwargs):
+        nonlocal captured
+        captured = image_io._borrow_output
+        return "decoded"
+
+    monkeypatch.setattr(MediaConnector, "load_from_url_async", load)
+
+    assert await parser._image_with_uuid_async("data:image/jpeg;base64,eA==", None) == (
+        "decoded",
+        None,
+    )
+    assert captured is expected
 
 
 def _assistant_tool_call(arguments, name="write"):

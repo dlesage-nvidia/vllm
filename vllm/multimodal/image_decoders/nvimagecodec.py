@@ -3,7 +3,10 @@
 
 import contextlib
 import importlib.util
+import os
 import threading
+import time
+import weakref
 from collections import deque
 from concurrent.futures import Future, InvalidStateError, ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -44,6 +47,134 @@ NVIMAGECODEC_CUDA_CONTEXT_BYTES = 640 * MiB_bytes
 PILLOW_IMAGE_BACKEND = "pillow"
 NVIMAGECODEC_IMAGE_BACKEND = "nvimagecodec"
 NvImageCodecOutputLayout: TypeAlias = Literal["hwc_rgb", "chw_rgb"]
+NvImageCodecDelivery: TypeAlias = Literal["owned", "borrowed"]
+
+
+class _PinnedOutputBudget:
+    """Process-wide bound for resident and borrowed pinned tensors."""
+
+    def __init__(self) -> None:
+        self._pid = os.getpid()
+        self._condition = threading.Condition()
+        self._cap = 0
+        self._in_use = 0
+        self._peak = 0
+        self._waits = 0
+        self._parked_ns = 0
+
+    def configure(self, cap: int) -> None:
+        if cap <= 0:
+            raise ValueError("pinned output budget must be positive")
+        with self._condition:
+            self._cap = cap
+            self._condition.notify_all()
+
+    def try_acquire(self, count: int) -> tuple["_PinnedPermit", ...]:
+        if count <= 0:
+            raise ValueError("pinned output reservation must be positive")
+        with self._condition:
+            if self._in_use + count > self._cap:
+                return ()
+            permits = tuple(_PinnedPermit(self, self._pid) for _ in range(count))
+            self._in_use += count
+            self._peak = max(self._peak, self._in_use)
+            return permits
+
+    def wait_for(
+        self,
+        count: int,
+        stop: threading.Event,
+    ) -> bool:
+        started = time.perf_counter_ns()
+        with self._condition:
+            self._waits += 1
+            while not stop.is_set() and self._in_use + count > self._cap:
+                self._condition.wait()
+            self._parked_ns += time.perf_counter_ns() - started
+            return not stop.is_set()
+
+    def wake_all(self) -> None:
+        with self._condition:
+            self._condition.notify_all()
+
+    def snapshot(self) -> dict[str, int]:
+        with self._condition:
+            return {
+                "pinned_output_cap": self._cap,
+                "pinned_outputs_in_use": self._in_use,
+                "pinned_outputs_peak": self._peak,
+                "pinned_output_waits": self._waits,
+                "pinned_output_parked_ns": self._parked_ns,
+            }
+
+    def _release(self, permit: "_PinnedPermit") -> None:
+        if permit._pid != os.getpid():
+            return
+        with self._condition:
+            if permit._budget is not self or permit._released:
+                return
+            permit._released = True
+            self._in_use -= 1
+            self._condition.notify_all()
+
+
+class _PinnedPermit:
+    """One budget unit that follows the lifetime of its pinned tensor."""
+
+    def __init__(self, budget: _PinnedOutputBudget, pid: int) -> None:
+        self._budget = budget
+        self._pid = pid
+        self._attached = False
+        self._released = False
+
+    def attach(self, host: object) -> None:
+        if self._attached or self._released:
+            raise RuntimeError("invalid pinned output reservation")
+        weakref.finalize(host, self._budget._release, self)
+        self._attached = True
+
+    def release(self) -> None:
+        if not self._attached:
+            self._budget._release(self)
+
+
+_pinned_output_budget = _PinnedOutputBudget()
+
+
+def _reset_pinned_output_budget_after_fork() -> None:
+    global _pinned_output_budget
+    _pinned_output_budget = _PinnedOutputBudget()
+
+
+os.register_at_fork(after_in_child=_reset_pinned_output_budget_after_fork)
+
+
+class _PinnedImageLease:
+    """Opaque processor-scoped borrow of one pinned RGB/CHW tensor."""
+
+    _is_vllm_nvimagecodec_pinned_lease = True
+
+    __slots__ = ("_host", "_pid", "height", "output_layout", "width")
+
+    def __init__(self, host: object, *, width: int, height: int) -> None:
+        self._host: object | None = host
+        self._pid = os.getpid()
+        self.width = width
+        self.height = height
+        self.output_layout: Literal["chw_rgb"] = "chw_rgb"
+
+    def borrow_tensor(self) -> object:
+        if self._pid != os.getpid():
+            raise RuntimeError("cannot borrow an nvImageCodec output after fork")
+        if self._host is None:
+            raise RuntimeError("nvImageCodec pinned output lease has expired")
+        return self._host
+
+    def release(self) -> None:
+        self._host = None
+
+    def __reduce__(self):
+        raise TypeError("nvImageCodec pinned output leases cannot be serialized")
 
 
 def get_nvimagecodec_batch_cap(api_process_count: int = 1) -> int:
@@ -71,6 +202,7 @@ class NvImageCodecInput:
     height: int
     orientation: int
     output_layout: NvImageCodecOutputLayout = "hwc_rgb"
+    delivery: NvImageCodecDelivery = "owned"
 
 
 def validate_image_backend(backend: object) -> str:
@@ -89,14 +221,15 @@ class _DeviceArena:
     images: list[Any | None]
     device_layout: NvImageCodecOutputLayout = "hwc_rgb"
     items: tuple[NvImageCodecInput, ...] = ()
-    copies: list[tuple[int, Any, Any]] = field(default_factory=list)
+    copies: list[tuple[int, Any, Any, _PinnedPermit]] = field(default_factory=list)
 
     def reset(self) -> None:
         self.items = ()
         self.copies.clear()
 
 
-_DecodeJob: TypeAlias = tuple[NvImageCodecInput, Future[np.ndarray]]
+NvImageCodecResult: TypeAlias = np.ndarray | _PinnedImageLease
+_DecodeJob: TypeAlias = tuple[NvImageCodecInput, Future[NvImageCodecResult]]
 
 
 def _load_nvimgcodec():
@@ -197,40 +330,66 @@ class _NvImageCodecDecoder:
                 raise RuntimeError("nvImageCodec failed the JPEG hardware-route primer")
             self._validate_device_output(output, (3, 64, 64))
 
-    def submit(self, items: tuple[NvImageCodecInput, ...]) -> _DeviceArena:
+    def submit(
+        self,
+        items: tuple[NvImageCodecInput, ...],
+        permits: tuple[_PinnedPermit, ...],
+    ) -> _DeviceArena:
         self._check_owner()
+        if len(permits) != len(items):
+            raise RuntimeError("invalid nvImageCodec pinned output reservation")
         arena = self._available.popleft()
         all_chw = all(item.output_layout == "chw_rgb" for item in items)
         device_layout: NvImageCodecOutputLayout = "chw_rgb" if all_chw else "hwc_rgb"
         arena.items = items
         try:
-            self._submit_on_arena(arena, device_layout)
+            self._submit_on_arena(arena, device_layout, permits)
         except BaseException:
             for stream in (self._decode_stream, self._copy_stream):
                 with contextlib.suppress(BaseException):
                     stream.synchronize()
             arena.reset()
+            for permit in permits:
+                permit.release()
             self._available.appendleft(arena)
             raise
         return arena
 
-    def collect(self, token: _DeviceArena) -> list[np.ndarray | Exception]:
+    def collect(self, token: _DeviceArena) -> list[NvImageCodecResult | Exception]:
         self._check_owner()
         try:
             token.copy_done.synchronize()
+            owned = [
+                copy
+                for copy in token.copies
+                if token.items[copy[0]].delivery == "owned"
+            ]
             arrays = list(
                 self._materializer.map(
                     self._materialize,
-                    (token.items[index] for index, _, _ in token.copies),
-                    [token.device_layout] * len(token.copies),
-                    (host for _, _, host in token.copies),
+                    (token.items[index] for index, _, _, _ in owned),
+                    [token.device_layout] * len(owned),
+                    (host for _, _, host, _ in owned),
                 )
             )
-            results: list[np.ndarray | Exception] = [
+            results: list[NvImageCodecResult | Exception] = [
                 ValueError("nvImageCodec failed to decode image") for _ in token.items
             ]
-            for (index, _, _), array in zip(token.copies, arrays, strict=True):
+            for (index, _, _, _), array in zip(owned, arrays, strict=True):
                 results[index] = array
+            for index, _, host, _ in token.copies:
+                item = token.items[index]
+                if item.delivery == "owned":
+                    continue
+                if item.output_layout != "chw_rgb" or item.orientation != 1:
+                    raise RuntimeError(
+                        "borrowed nvImageCodec output requires unoriented RGB/CHW"
+                    )
+                results[index] = _PinnedImageLease(
+                    host,
+                    width=item.width,
+                    height=item.height,
+                )
             return results
         except BaseException:
             with contextlib.suppress(BaseException):
@@ -268,6 +427,7 @@ class _NvImageCodecDecoder:
         self,
         arena: _DeviceArena,
         device_layout: NvImageCodecOutputLayout,
+        permits: tuple[_PinnedPermit, ...],
     ) -> None:
         items = arena.items
         reusable = arena.images[: len(items)]
@@ -304,6 +464,7 @@ class _NvImageCodecDecoder:
         arena.images.extend([None] * (len(items) - len(arena.images)))
         for index, (item, output) in enumerate(zip(items, outputs, strict=True)):
             if output is None:
+                permits[index].release()
                 continue
             if reuse_images and output is not reusable[index]:
                 raise RuntimeError("nvImageCodec did not reuse its device arena")
@@ -317,10 +478,11 @@ class _NvImageCodecDecoder:
                 device="cpu",
                 pin_memory=True,
             )
-            arena.copies.append((index, view, host))
+            permits[index].attach(host)
+            arena.copies.append((index, view, host, permits[index]))
         with self._copy_stream:
             self._copy_stream.wait_event(arena.decode_done)
-            for _, view, host in arena.copies:
+            for _, view, host, _ in arena.copies:
                 host.copy_(view, non_blocking=True)
             arena.copy_done.record(self._copy_stream)
 
@@ -371,8 +533,9 @@ class _NvImageCodecService:
         self._jobs: deque[_DecodeJob] = deque()
         self._condition = threading.Condition()
         self._closed = False
+        self._stop_event = threading.Event()
         self._failure: BaseException | None = None
-        self._outstanding: set[Future[np.ndarray]] = set()
+        self._outstanding: set[Future[NvImageCodecResult]] = set()
         self._ready: Future[None] = Future()
         self._thread = threading.Thread(
             target=self._owner,
@@ -384,8 +547,8 @@ class _NvImageCodecService:
     def wait_until_ready(self) -> None:
         self._ready.result()
 
-    def submit(self, item: NvImageCodecInput) -> Future[np.ndarray]:
-        future: Future[np.ndarray] = Future()
+    def submit(self, item: NvImageCodecInput) -> Future[NvImageCodecResult]:
+        future: Future[NvImageCodecResult] = Future()
         with self._condition:
             if self._failure is not None:
                 raise RuntimeError("nvImageCodec decoder failed") from self._failure
@@ -399,10 +562,12 @@ class _NvImageCodecService:
     def close(self) -> None:
         with self._condition:
             self._closed = True
+            self._stop_event.set()
             rejected = tuple(self._jobs)
             self._jobs.clear()
             self._outstanding.difference_update(job[1] for job in rejected)
             self._condition.notify()
+        _pinned_output_budget.wake_all()
         for _, future in rejected:
             if future.set_running_or_notify_cancel():
                 future.set_exception(RuntimeError("nvImageCodec decoder is closed"))
@@ -425,17 +590,48 @@ class _NvImageCodecService:
 
     def _run(self, decoder: _NvImageCodecDecoder) -> None:
         pending: deque[tuple[tuple[_DecodeJob, ...], _DeviceArena]] = deque()
+        held: tuple[_DecodeJob, ...] = ()
         stopping = False
-        while pending or not stopping:
+        while pending or held or not stopping:
             while len(pending) < _DEVICE_ARENAS and not stopping:
-                jobs = self._claim(wait=not pending)
-                if jobs is None:
+                if not held:
+                    jobs = self._claim(wait=not pending)
+                    if jobs is None:
+                        stopping = True
+                        break
+                    if not jobs:
+                        break
+                    held = jobs
+
+                if self._stop_event.is_set():
+                    self._reject_claimed(held)
+                    held = ()
                     stopping = True
                     break
-                if not jobs:
-                    break
-                token = decoder.submit(tuple(job[0] for job in jobs))
-                pending.append((jobs, token))
+
+                permits = _pinned_output_budget.try_acquire(len(held))
+                if not permits:
+                    if pending:
+                        break
+                    if not _pinned_output_budget.wait_for(len(held), self._stop_event):
+                        self._reject_claimed(held)
+                        held = ()
+                        stopping = True
+                    else:
+                        held = self._top_up_claimed(held)
+                    continue
+
+                try:
+                    token = decoder.submit(
+                        tuple(job[0] for job in held),
+                        permits,
+                    )
+                except BaseException:
+                    for permit in permits:
+                        permit.release()
+                    raise
+                pending.append((held, token))
+                held = ()
 
             if not pending:
                 continue
@@ -449,6 +645,27 @@ class _NvImageCodecService:
                     future.set_result(result)
             with self._condition:
                 self._outstanding.difference_update(job[1] for job in jobs)
+
+    def _reject_claimed(self, jobs: tuple[_DecodeJob, ...]) -> None:
+        error = RuntimeError("nvImageCodec decoder is closed")
+        with self._condition:
+            self._outstanding.difference_update(job[1] for job in jobs)
+        for _, future in jobs:
+            future.set_exception(error)
+
+    def _top_up_claimed(
+        self,
+        claimed: tuple[_DecodeJob, ...],
+    ) -> tuple[_DecodeJob, ...]:
+        jobs = list(claimed)
+        with self._condition:
+            while self._jobs and len(jobs) < self._batch_cap:
+                job = self._jobs.popleft()
+                if job[1].set_running_or_notify_cancel():
+                    jobs.append(job)
+                else:
+                    self._outstanding.discard(job[1])
+        return tuple(jobs)
 
     def _claim(self, *, wait: bool) -> tuple[_DecodeJob, ...] | None:
         jobs = []
@@ -491,9 +708,9 @@ def create_nvimagecodec_decode_service(
     device_index: int = 0,
 ) -> _NvImageCodecService:
     """Create the process-local nvImageCodec owner."""
-    return _NvImageCodecService(
-        get_nvimagecodec_batch_cap(api_process_count), device_index
-    )
+    batch_cap = get_nvimagecodec_batch_cap(api_process_count)
+    _pinned_output_budget.configure(_DEVICE_ARENAS * batch_cap)
+    return _NvImageCodecService(batch_cap, device_index)
 
 
 def jpeg_has_complete_scan_and_eoi(data: bytes) -> bool:

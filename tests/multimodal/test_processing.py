@@ -6,14 +6,18 @@ from contextlib import nullcontext
 
 import numpy as np
 import pytest
+import torch
 
 from vllm.config import ModelConfig
 from vllm.exceptions import VLLMValidationError
 from vllm.multimodal import MULTIMODAL_REGISTRY
 from vllm.multimodal.hasher import MultiModalHasher
+from vllm.multimodal.image_decoders.nvimagecodec import _PinnedImageLease
+from vllm.multimodal.media import MediaWithBytes
 from vllm.multimodal.parse import MultiModalDataParser
 from vllm.multimodal.processing.context import (
     InputProcessingContext,
+    TimingContext,
     overlay_modality_mm_kwargs,
 )
 from vllm.multimodal.processing.inputs import ProcessorInputs
@@ -1142,6 +1146,30 @@ class _TextFallbackProcessor(BaseMultiModalProcessor):
 
 def _text_fallback_processor() -> BaseMultiModalProcessor:
     return _TextFallbackProcessor(_FakeTokenizer())
+
+
+def test_processor_apply_releases_pinned_image_on_error(monkeypatch) -> None:
+    lease = _PinnedImageLease(torch.zeros((3, 8, 8)), width=8, height=8)
+    wrapped = MediaWithBytes(
+        lease,
+        b"encoded",
+        {"backend": "nvimagecodec", "output_layout": "CHW"},
+    )
+    inputs = ProcessorInputs(
+        prompt=[],
+        mm_data_items=MultiModalDataParser().parse_mm_data({"image": [wrapped]}),
+    )
+    processor = _text_fallback_processor()
+
+    def fail(*_args):
+        raise RuntimeError("processor failed")
+
+    monkeypatch.setattr(processor, "_apply", fail)
+
+    with pytest.raises(RuntimeError, match="processor failed"):
+        processor.apply(inputs, TimingContext(enabled=False))
+    with pytest.raises(RuntimeError, match="expired"):
+        lease.borrow_tensor()
 
 
 def test_apply_prompt_updates_falls_back_to_text_matching():

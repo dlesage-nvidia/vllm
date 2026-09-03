@@ -65,7 +65,11 @@ from vllm.multimodal.inputs import (
     VisionChunkImage,
     VisionChunkVideo,
 )
-from vllm.multimodal.media import MEDIA_CONNECTOR_REGISTRY, MediaConnector
+from vllm.multimodal.media import (
+    MEDIA_CONNECTOR_REGISTRY,
+    MediaConnector,
+    MediaWithBytes,
+)
 from vllm.multimodal.processing import BaseMultiModalProcessor
 from vllm.renderers.embed_utils import (
     safe_load_prompt_embeds,
@@ -440,6 +444,27 @@ _T = TypeVar("_T")
 _AsyncMultiModalItem: TypeAlias = Callable[[], Awaitable[tuple[object, str | None]]]
 
 
+def _release_borrowed_image_result(result: tuple[object, str | None]) -> None:
+    item = result[0]
+    if not isinstance(item, MediaWithBytes):
+        return
+    media = item.media
+    if getattr(type(media), "_is_vllm_nvimagecodec_pinned_lease", False) is True:
+        media.release()
+
+
+def _release_borrowed_image_task(
+    task: asyncio.Future[tuple[object, str | None]],
+) -> None:
+    if task.cancelled():
+        return
+    try:
+        result = task.result()
+    except BaseException:
+        return
+    _release_borrowed_image_result(result)
+
+
 # Backward compatibility for single item input
 class _BatchedSingleItemField(MultiModalSharedField):
     pass
@@ -634,6 +659,21 @@ class BaseMultiModalItemTracker(ABC, Generic[_T]):
             allowed_local_media_path=self.allowed_local_media_path,
             allowed_media_domains=self.allowed_media_domains,
         )
+
+    def _supports_borrowed_pinned_image(
+        self,
+        mm_processor_kwargs: dict[str, Any] | None,
+    ) -> bool:
+        image_kwargs = (self.media_io_kwargs or {}).get("image", {})
+        if (
+            image_kwargs.get("backend") != "nvimagecodec"
+            or self.use_unified_vision_chunk_modality
+        ):
+            return False
+        kwargs = mm_processor_kwargs or {}
+        if mm_config := self.model_config.multimodal_config:
+            kwargs = mm_config.merge_mm_processor_kwargs(kwargs)
+        return self.mm_processor.supports_borrowed_pinned_image_inputs(kwargs)
 
     @property
     def video_processor_name(self) -> str | None:
@@ -903,15 +943,25 @@ class AsyncMultiModalItemTracker(BaseMultiModalItemTracker[_AsyncMultiModalItem]
         # Keep the original group and item order when rebuilding the result.
         item_groups = list(self._items_by_modality.items())
         items = [item for _, group in item_groups for item in group]
-        results = await asyncio.gather(
-            *(item() for item in items), return_exceptions=True
-        )
+        tasks = [asyncio.ensure_future(item()) for item in items]
+        try:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+        except BaseException:
+            for task in tasks:
+                if task.done():
+                    _release_borrowed_image_task(task)
+                else:
+                    task.add_done_callback(_release_borrowed_image_task)
+            raise
         for result in results:
             if isinstance(result, BaseException):
                 # Gathering with return_exceptions=True lets every task finish
                 # (or itself fail) before we raise, instead of abandoning
                 # still-in-flight fetches (real network/thread-pool work) the
                 # moment the first one fails.
+                for completed in results:
+                    if not isinstance(completed, BaseException):
+                        _release_borrowed_image_result(completed)
                 raise result
 
         resolved_items_by_modality: dict[str, list[Any]] = {}
@@ -1240,9 +1290,25 @@ class AsyncMultiModalContentParser(BaseMultiModalContentParser):
         return tensor, None
 
     async def _image_with_uuid_async(self, image_url: str | None, uuid: str | None):
-        image = (
-            await self._connector.fetch_image_async(image_url) if image_url else None
-        )
+        if image_url:
+            fetch_image_async = self._connector.fetch_image_async
+            if (
+                getattr(fetch_image_async, "__func__", None)
+                is MediaConnector.fetch_image_async
+            ):
+                image = await fetch_image_async(
+                    image_url,
+                    _borrow_output=(
+                        len(self._tracker._items_by_modality.get("image", ())) == 1
+                        and self._tracker._supports_borrowed_pinned_image(
+                            self._mm_processor_kwargs
+                        )
+                    ),
+                )
+            else:
+                image = await fetch_image_async(image_url)
+        else:
+            image = None
         return image, uuid
 
     def parse_image(self, image_url: str | None, uuid: str | None = None) -> None:

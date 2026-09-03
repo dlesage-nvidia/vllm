@@ -1332,6 +1332,16 @@ class Qwen3VLMultiModalProcessor(BaseMultiModalProcessor[Qwen3VLProcessingInfo])
                 return "pil"
         return "channels_first"
 
+    def supports_borrowed_pinned_image_inputs(
+        self,
+        mm_processor_kwargs: Mapping[str, object],
+    ) -> bool:
+        return (
+            self.info.get_hf_config().model_type == "qwen3_vl"
+            and self.get_image_processor_input_format(mm_processor_kwargs)
+            == "channels_first"
+        )
+
     @staticmethod
     def _expands_only_video_token(hf_processor: ProcessorMixin) -> bool:
         """Transformers>=5.10 processors override `replace_video_token`

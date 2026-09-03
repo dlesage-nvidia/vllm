@@ -5,6 +5,7 @@ import pytest
 import torch
 from PIL import Image
 
+from vllm.multimodal.image_decoders.nvimagecodec import _PinnedImageLease
 from vllm.multimodal.media import MediaWithBytes
 from vllm.multimodal.parse import (
     ImageProcessorItems,
@@ -49,6 +50,23 @@ def test_tagged_chw_image_preserves_layout_through_size_and_reparse(width):
     assert items.get_image_size(0) == (width, H)
     assert items.get_processor_data()["images"][0] is chw
     assert items.get_item_for_reparse(0) is wrapped
+
+
+def test_pinned_chw_image_expires_after_processor_release() -> None:
+    host = torch.zeros((3, H, W), dtype=torch.uint8)
+    lease = _PinnedImageLease(host, width=W, height=H)
+    wrapped = MediaWithBytes(
+        lease,
+        b"encoded",
+        {"backend": "nvimagecodec", "output_layout": "CHW"},
+    )
+    items = ImageProcessorItems([wrapped])
+
+    assert items.get_image_size(0) == (W, H)
+    assert items.get_processor_data()["images"] == [host]
+    items.release_processor_resources()
+    with pytest.raises(RuntimeError, match="expired"):
+        items.get_processor_data()
 
 
 @pytest.mark.parametrize(

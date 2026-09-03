@@ -105,6 +105,9 @@ class ModalityDataItems(ABC, Generic[_T, _I]):
     def get_all_items_for_hash(self) -> list[object]:
         return [self.get_item_for_hash(idx) for idx in range(self.get_count())]
 
+    def release_processor_resources(self) -> None:
+        """Release internal resources retained for processor application."""
+
     @abstractmethod
     def get_processor_data(self) -> Mapping[str, object]:
         """Get the data to pass to the HF processor."""
@@ -371,9 +374,28 @@ class ImageSize(NamedTuple):
     height: int
 
 
+def _is_pinned_image_lease(item: object) -> TypeGuard[Any]:
+    return getattr(type(item), "_is_vllm_nvimagecodec_pinned_lease", False) is True
+
+
 class ImageProcessorItems(ProcessorBatchItems[HfImageItem | None]):
     def __init__(self, data: Sequence[HfImageItem | None]) -> None:
         super().__init__(data, "image")
+
+    def get_processor_data(self) -> Mapping[str, object]:
+        images = []
+        for item in self.data:
+            image = self._unwrap(item)
+            if _is_pinned_image_lease(image):
+                image = image.borrow_tensor()
+            images.append(image)
+        return {"images": images}
+
+    def release_processor_resources(self) -> None:
+        for item in self.data:
+            image = self._unwrap(item)
+            if _is_pinned_image_lease(image):
+                image.release()
 
     def get_image_size(self, item_idx: int) -> ImageSize:
         raw = self.data[item_idx]
@@ -383,7 +405,11 @@ class ImageProcessorItems(ProcessorBatchItems[HfImageItem | None]):
             and (raw.io_config or {}).get("output_layout") == "CHW"
         )
 
-        image = self.get(item_idx)
+        raw_image = self._unwrap(raw)
+        if _is_pinned_image_lease(raw_image):
+            return ImageSize(raw_image.width, raw_image.height)
+
+        image = raw_image
         if image is None:
             raise ValueError(f"Cannot get size of cached image at {item_idx}")
 
@@ -523,6 +549,10 @@ class MultiModalDataItems(UserDict[str, ModalityDataItems[Any, Any]]):
     def get_all_counts(self) -> Mapping[str, int]:
         """Get the number of items belonging to each modality."""
         return {m: items.get_count() for m, items in self.items()}
+
+    def release_processor_resources(self) -> None:
+        for items in self.values():
+            items.release_processor_resources()
 
     def get_items(
         self,

@@ -7,8 +7,8 @@ import contextlib
 import os
 import threading
 from collections.abc import Callable
-from concurrent.futures import Executor
-from dataclasses import dataclass
+from concurrent.futures import Executor, Future
+from dataclasses import dataclass, replace
 from io import BytesIO
 from pathlib import Path
 from typing import Any, TypeAlias
@@ -25,6 +25,8 @@ from vllm.multimodal.image_decoders.nvimagecodec import (
     PILLOW_IMAGE_BACKEND,
     NvImageCodecInput,
     NvImageCodecOutputLayout,
+    NvImageCodecResult,
+    _PinnedImageLease,
     create_nvimagecodec_decode_service,
     preflight_image_nvimagecodec,
     validate_image_backend,
@@ -40,8 +42,21 @@ from .base import MediaIO, MediaWithBytes
 
 MAGIC_NUMPY_PREFIX = b"\x93NUMPY"  # https://numpy.org/devdocs/reference/generated/numpy.lib.format.html#format-version-1-0
 
-DecodedImage: TypeAlias = Image.Image | npt.NDArray[np.uint8]
+DecodedImage: TypeAlias = Image.Image | npt.NDArray[np.uint8] | _PinnedImageLease
 LoadedImage: TypeAlias = MediaWithBytes[DecodedImage]
+
+
+def _release_abandoned_nvimagecodec_result(
+    future: Future[NvImageCodecResult],
+) -> None:
+    if future.cancelled():
+        return
+    try:
+        result = future.result()
+    except BaseException:
+        return
+    if isinstance(result, _PinnedImageLease):
+        result.release()
 
 
 @dataclass
@@ -206,6 +221,7 @@ class ImageMediaIO(MediaIO[LoadedImage]):
         merged = super().merge_kwargs(default_kwargs, runtime_kwargs)
         # Output layout is selected from a processor capability, not user input.
         merged.pop("output_layout", None)
+        merged.pop("_borrow_output", None)
         return merged
 
     def __init__(
@@ -214,6 +230,7 @@ class ImageMediaIO(MediaIO[LoadedImage]):
         *,
         backend: str = PILLOW_IMAGE_BACKEND,
         output_layout: NvImageCodecOutputLayout | None = None,
+        _borrow_output: bool = False,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -225,6 +242,7 @@ class ImageMediaIO(MediaIO[LoadedImage]):
         if output_layout not in (None, "hwc_rgb", "chw_rgb"):
             raise ValueError(f"Unknown image output layout: {output_layout!r}")
         self.output_layout = output_layout
+        self._borrow_output = _borrow_output
         # `kwargs` contains custom arguments from
         # --media-io-kwargs for this modality, merged with
         # per-request runtime media_io_kwargs via merge_kwargs().
@@ -303,7 +321,7 @@ class ImageMediaIO(MediaIO[LoadedImage]):
 
     def _wrap_native(
         self,
-        array: npt.NDArray[np.uint8],
+        array: NvImageCodecResult,
         data: bytes,
     ) -> LoadedImage:
         layout = "CHW" if self.output_layout == "chw_rgb" else "HWC"
@@ -313,6 +331,16 @@ class ImageMediaIO(MediaIO[LoadedImage]):
             data,
             {"backend": NVIMAGECODEC_IMAGE_BACKEND, "output_layout": layout},
         )
+
+    def _select_async_delivery(self, item: NvImageCodecInput) -> NvImageCodecInput:
+        if (
+            self._borrow_output
+            and item.output_layout == "chw_rgb"
+            and item.orientation == 1
+            and item.data.startswith(b"\xff\xd8")
+        ):
+            return replace(item, delivery="borrowed")
+        return item
 
     def load_bytes(self, data: bytes) -> LoadedImage:
         prepared = self._prepare_bytes(data)
@@ -333,8 +361,13 @@ class ImageMediaIO(MediaIO[LoadedImage]):
         if isinstance(prepared, MediaWithBytes):
             return prepared
 
+        prepared = self._select_async_delivery(prepared)
         future = _get_nvimagecodec_decode_service().submit(prepared)
-        array = await asyncio.wrap_future(future)
+        try:
+            array = await asyncio.wrap_future(future)
+        except BaseException:
+            future.add_done_callback(_release_abandoned_nvimagecodec_result)
+            raise
         return self._wrap_native(array, data)
 
     async def load_base64_async(

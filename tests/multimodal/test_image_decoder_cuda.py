@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import struct
+from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from tests.multimodal.test_image_decoder import (
 )
 from vllm.multimodal.image_decoders.nvimagecodec import (
     NvImageCodecInput,
+    _PinnedImageLease,
     create_nvimagecodec_decode_service,
 )
 from vllm.multimodal.media import ImageMediaIO
@@ -146,6 +148,28 @@ def test_real_core_codec_matrix_is_owned_after_close_and_matches_pillow(
 
     _assert_pillow_batch(hwc, hwc_cases)
     _assert_pillow_batch(chw, chw_cases, "chw_rgb")
+
+
+def test_real_borrowed_chw_tensor_is_pinned_and_explicitly_expires(
+    nvimagecodec_service,
+) -> None:
+    data = _encode(_gradient(193, 97), "JPEG", quality=95)
+    image_io = ImageMediaIO(backend="nvimagecodec", output_layout="chw_rgb")
+    prepared = image_io._prepare_bytes(data)
+    assert isinstance(prepared, NvImageCodecInput)
+
+    result = nvimagecodec_service.submit(
+        replace(prepared, delivery="borrowed")
+    ).result()
+
+    assert isinstance(result, _PinnedImageLease)
+    host = result.borrow_tensor()
+    assert host.is_pinned() and tuple(host.shape) == (3, 97, 193)
+    expected = np.moveaxis(_pillow_pixels(data), -1, 0)
+    np.testing.assert_allclose(host.numpy(), expected, rtol=0, atol=6)
+    result.release()
+    with pytest.raises(RuntimeError, match="expired"):
+        result.borrow_tensor()
 
 
 def test_real_jpeg2000_and_htj2k_codestreams_match_references(

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+import asyncio
 import os
 import threading
 from concurrent.futures import Future
@@ -14,7 +15,11 @@ import pytest
 from PIL import Image
 
 import vllm.multimodal.media.image as im
-from vllm.multimodal.image_decoders.nvimagecodec import NvImageCodecInput
+from vllm.multimodal.image_decoders.nvimagecodec import (
+    NvImageCodecInput,
+    NvImageCodecResult,
+    _PinnedImageLease,
+)
 from vllm.multimodal.media import ImageMediaIO, MediaWithBytes, VideoMediaIO
 
 pytestmark = pytest.mark.cpu_test
@@ -85,6 +90,55 @@ async def test_native_output_ownership_and_async_failure(
         np.testing.assert_array_equal(result.media, np.full_like(array, 7))
     else:
         assert result.media is array
+
+
+@pytest.mark.asyncio
+async def test_async_qwen_path_selects_borrowed_jpeg_delivery(monkeypatch) -> None:
+    data = b"\xff\xd8native-jpeg"
+    admitted = NvImageCodecInput(data, object(), 3, 2, 1, output_layout="chw_rgb")
+    lease = _PinnedImageLease(object(), width=3, height=2)
+    service = _service(lease)
+    monkeypatch.setattr(im, "preflight_image_nvimagecodec", lambda *_a, **_k: admitted)
+    monkeypatch.setattr(im, "_get_nvimagecodec_decode_service", lambda: service)
+
+    result = await ImageMediaIO(
+        backend="nvimagecodec",
+        output_layout="chw_rgb",
+        _borrow_output=True,
+    ).load_bytes_async(data)
+
+    assert result.media is lease
+    [submitted] = service.submit.call_args.args
+    assert submitted.delivery == "borrowed"
+
+
+@pytest.mark.asyncio
+async def test_cancelled_async_load_releases_late_borrowed_result(monkeypatch) -> None:
+    data = b"\xff\xd8native-jpeg"
+    admitted = NvImageCodecInput(data, object(), 3, 2, 1, output_layout="chw_rgb")
+    future: Future[NvImageCodecResult] = Future()
+    assert future.set_running_or_notify_cancel()
+    service = Mock()
+    service.submit.return_value = future
+    monkeypatch.setattr(im, "preflight_image_nvimagecodec", lambda *_a, **_k: admitted)
+    monkeypatch.setattr(im, "_get_nvimagecodec_decode_service", lambda: service)
+    image_io = ImageMediaIO(
+        backend="nvimagecodec",
+        output_layout="chw_rgb",
+        _borrow_output=True,
+    )
+
+    task = asyncio.create_task(image_io.load_bytes_async(data))
+    while not service.submit.called:
+        await asyncio.sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    lease = _PinnedImageLease(object(), width=3, height=2)
+    future.set_result(lease)
+
+    with pytest.raises(RuntimeError, match="expired"):
+        lease.borrow_tensor()
 
 
 def test_semantic_decline_uses_pillow_without_service(monkeypatch):

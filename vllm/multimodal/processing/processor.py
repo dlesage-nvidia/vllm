@@ -1166,6 +1166,13 @@ class BaseMultiModalProcessor(ABC, Generic[_I]):
         """Return the preferred input representation for decoded images."""
         return "pil"
 
+    def supports_borrowed_pinned_image_inputs(
+        self,
+        mm_processor_kwargs: Mapping[str, object],
+    ) -> bool:
+        """Return whether image preprocessing synchronously copies CHW tensors."""
+        return False
+
     def _get_hf_processor_text(self, mm_counts: Mapping[str, int]) -> str | None:
         """
         Get the text to pass to the HF processor alongside the multi-modal
@@ -1712,6 +1719,16 @@ class BaseMultiModalProcessor(ABC, Generic[_I]):
         return prompt_ids, mm_placeholders
 
     def apply(
+        self,
+        inputs: ProcessorInputs,
+        timing_ctx: TimingContext,
+    ) -> MultiModalInput:
+        try:
+            return self._apply(inputs, timing_ctx)
+        finally:
+            inputs.mm_data_items.release_processor_resources()
+
+    def _apply(
         self,
         inputs: ProcessorInputs,
         timing_ctx: TimingContext,

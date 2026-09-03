@@ -6,15 +6,18 @@ Covers the fix for num_frames-based timestamp calculation
 (issue vllm-project/vllm#35909).
 """
 
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
 import pytest
+import torch
 from PIL import Image
 
 from vllm.config import ModelConfig
 from vllm.multimodal import MULTIMODAL_REGISTRY
 from vllm.multimodal.cache import MultiModalProcessorOnlyCache
+from vllm.multimodal.image_decoders.nvimagecodec import _PinnedImageLease
 from vllm.multimodal.media import MediaWithBytes as Wrapped
 
 from ...registry import HF_EXAMPLE_MODELS
@@ -39,9 +42,19 @@ def test_native_chw_processor_matches_pillow_and_hwc_with_cache(monkeypatch) -> 
     assert get({"common_kwargs": last}) == "channels_last"
     assert get({"images_kwargs": first, "common_kwargs": last}) == "channels_first"
     assert get({**last, "images_kwargs": first}) == "channels_last"
+    supports_borrow = processor.supports_borrowed_pinned_image_inputs
+    assert supports_borrow({})
+    assert not supports_borrow(last)
     hwc = (np.arange(56 * 84 * 3).reshape(56, 84, 3) % 251).astype(np.uint8)
     chw = np.ascontiguousarray(np.moveaxis(hwc, -1, 0))
     wrapped = Wrapped(chw, b"x", {"backend": "nvimagecodec", "output_layout": "CHW"})
+    pinned_host = torch.from_numpy(chw.copy())
+    lease = _PinnedImageLease(pinned_host, width=84, height=56)
+    pinned = Wrapped(
+        lease,
+        b"pinned",
+        {"backend": "nvimagecodec", "output_layout": "CHW"},
+    )
 
     prompt = "<|vision_start|><|image_pad|><|vision_end|>"
 
@@ -52,13 +65,25 @@ def test_native_chw_processor_matches_pillow_and_hwc_with_cache(monkeypatch) -> 
     pillow_result, hwc_result = map(process, (Image.fromarray(hwc, "RGB"), hwc))
     monkeypatch.setattr(Image, "fromarray", lambda _: pytest.fail("CHW converted"))
     cache.make_stats(delta=True)
-    native = [process(wrapped), process(wrapped)]
-    assert ((stats := cache.make_stats(delta=True)).hits, stats.total) == (1, 2)
+    native = [process(wrapped), process(wrapped), process(pinned)]
+    assert ((stats := cache.make_stats(delta=True)).hits, stats.total) == (1, 3)
 
     for output in (hwc_result, *native):
         for result_key in ("mm_kwargs", "prompt_token_ids", "mm_placeholders"):
             assert output[result_key] == pillow_result[result_key]
     assert native[0]["mm_hashes"] == native[1]["mm_hashes"]
+    with pytest.raises(RuntimeError, match="expired"):
+        lease.borrow_tensor()
+    pixel_values = native[-1]["mm_kwargs"]["image"][0]["pixel_values"].data
+    assert pixel_values.untyped_storage().data_ptr() != (
+        pinned_host.untyped_storage().data_ptr()
+    )
+    monkeypatch.setattr(
+        processor.info,
+        "get_hf_config",
+        lambda: SimpleNamespace(model_type="qwen3_vl_moe"),
+    )
+    assert not supports_borrow({})
 
 
 def _build_video_mm_data(

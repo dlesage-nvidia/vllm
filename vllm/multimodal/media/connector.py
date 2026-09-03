@@ -54,10 +54,13 @@ def _create_image_io(
     media_io_kwargs: dict[str, dict[str, Any]],
     *,
     output_layout: Literal["hwc_rgb", "chw_rgb"] | None = None,
+    borrow_output: bool = False,
 ) -> ImageMediaIO:
     image_io_kwargs = {"image_mode": image_mode} | media_io_kwargs.get("image", {})
+    image_io_kwargs.pop("_borrow_output", None)
     if output_layout is not None:
         image_io_kwargs["output_layout"] = output_layout
+    image_io_kwargs["_borrow_output"] = borrow_output
     return ImageMediaIO(**image_io_kwargs)
 
 
@@ -554,6 +557,7 @@ class MediaConnector:
         image_url: str,
         *,
         image_mode: str | None = "RGB",
+        _borrow_output: bool = False,
     ) -> LoadedImage:
         """
         Asynchronously load a PIL image from an HTTP or base64 data URL.
@@ -562,7 +566,11 @@ class MediaConnector:
         `media_io_kwargs={"image": {"image_mode": None}}` to keep the
         original image mode (e.g. preserving the alpha channel).
         """
-        image_io = _create_image_io(image_mode, self.media_io_kwargs)
+        image_io = _create_image_io(
+            image_mode,
+            self.media_io_kwargs,
+            borrow_output=_borrow_output,
+        )
 
         try:
             return await self.load_from_url_async(
