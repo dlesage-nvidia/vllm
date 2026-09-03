@@ -38,6 +38,7 @@ from vllm.multimodal.inputs import (
     MultiModalSharedField,
     PlaceholderRange,
 )
+from vllm.multimodal.parse import release_borrowed_image_resources
 from vllm.multimodal.processing.processor import (
     PromptReplacement,
     apply_token_matches,
@@ -1096,6 +1097,29 @@ class HfRenderer(BaseRenderer[HfTokenizer]):
             media_io_kwargs=params.media_io_kwargs,
             mm_processor_kwargs=params.mm_processor_kwargs,
         )
+
+        try:
+            return await self._render_messages_async_after_parse(
+                conversation,
+                mm_data,
+                mm_uuids,
+                params,
+                prompt_embeds_placeholder_token_id,
+            )
+        except BaseException:
+            release_borrowed_image_resources(mm_data)
+            raise
+
+    async def _render_messages_async_after_parse(
+        self,
+        conversation: list[ConversationMessage],
+        mm_data: MultiModalDataDict | None,
+        mm_uuids: MultiModalUUIDDict | None,
+        params: ChatParams,
+        prompt_embeds_placeholder_token_id: int | None,
+    ) -> tuple[list[ConversationMessage], DictPrompt]:
+        model_config = self.model_config
+        tokenizer = self.get_tokenizer()
 
         prompt_embeds_tensors: list[torch.Tensor] | None = None
         if mm_data is not None and "prompt_embeds" in mm_data:

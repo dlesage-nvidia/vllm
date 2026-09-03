@@ -36,6 +36,7 @@ from vllm.multimodal.parse import (
     MultiModalDataItems,
     MultiModalUUIDItems,
     parse_mm_uuids,
+    release_borrowed_image_resources,
 )
 from vllm.multimodal.processing import BaseMultiModalProcessor
 from vllm.multimodal.processing import ProcessorInputs as MMProcessorInputs
@@ -1123,29 +1124,57 @@ class BaseRenderer(ABC, Generic[_T]):
             tok_params = self.default_chat_tok_params
 
         rendered = [
-            self.render_messages_async(conversation, chat_params)
+            asyncio.ensure_future(self.render_messages_async(conversation, chat_params))
             for conversation in conversations
         ]
 
         out_conversations = list[list["ConversationMessage"]]()
         dict_prompts = list[DictPrompt]()
-        for conv, prompt in await asyncio.gather(*rendered):
+        try:
+            rendered_results = await asyncio.gather(*rendered)
+        except BaseException:
+            for task in rendered:
+                if task.done() and not task.cancelled() and task.exception() is None:
+                    _, prompt = task.result()
+                    release_borrowed_image_resources(prompt.get("multi_modal_data"))
+                elif not task.done():
+                    task.add_done_callback(self._release_failed_render_resources)
+            raise
+
+        for conv, prompt in rendered_results:
             out_conversations.append(conv)
             dict_prompts.append(prompt)
 
-        tok_prompts = await self.tokenize_prompts_async(dict_prompts, tok_params)
+        try:
+            tok_prompts = await self.tokenize_prompts_async(dict_prompts, tok_params)
 
-        prompt_extras = dict(prompt_extras or {})
-        prompt_extras["media_io_kwargs"] = chat_params.media_io_kwargs or {}
-        self._apply_prompt_extras(tok_prompts, prompt_extras)
+            prompt_extras = dict(prompt_extras or {})
+            prompt_extras["media_io_kwargs"] = chat_params.media_io_kwargs or {}
+            self._apply_prompt_extras(tok_prompts, prompt_extras)
 
-        eng_prompts = await asyncio.gather(
-            *(
-                self.process_for_engine_async(
-                    p, arrival_time, skip_mm_cache=skip_mm_cache
+            eng_prompts = await asyncio.gather(
+                *(
+                    self.process_for_engine_async(
+                        p, arrival_time, skip_mm_cache=skip_mm_cache
+                    )
+                    for p in tok_prompts
                 )
-                for p in tok_prompts
             )
-        )
+        except BaseException:
+            for prompt in dict_prompts:
+                release_borrowed_image_resources(prompt.get("multi_modal_data"))
+            raise
 
         return out_conversations, eng_prompts
+
+    @staticmethod
+    def _release_failed_render_resources(
+        task: asyncio.Future[tuple[list["ConversationMessage"], DictPrompt]],
+    ) -> None:
+        if task.cancelled():
+            return
+        try:
+            _, prompt = task.result()
+        except BaseException:
+            return
+        release_borrowed_image_resources(prompt.get("multi_modal_data"))

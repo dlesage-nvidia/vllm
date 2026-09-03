@@ -25,7 +25,8 @@ from vllm.entrypoints.chat_utils import (
 )
 from vllm.exceptions import VLLMValidationError
 from vllm.inputs import MultiModalDataDict, MultiModalUUIDDict
-from vllm.multimodal.media import MediaConnector
+from vllm.multimodal.image_decoders.nvimagecodec import _PinnedImageLease
+from vllm.multimodal.media import MediaConnector, MediaWithBytes
 from vllm.multimodal.utils import (
     encode_audio_url,
     encode_image_url,
@@ -3086,6 +3087,33 @@ async def test_async_qwen_single_image_enables_borrowed_delivery(
         None,
     )
     assert captured is expected
+
+
+@pytest.mark.asyncio
+async def test_async_item_validation_releases_borrowed_image() -> None:
+    config = MagicMock(is_multimodal_model=True)
+    tracker = AsyncMultiModalItemTracker(config)
+    tracker.__dict__["mm_processor"] = MagicMock()
+    lease = _PinnedImageLease(torch.zeros((3, 8, 8)), width=8, height=8)
+    image = MediaWithBytes(
+        lease,
+        b"encoded",
+        {"backend": "nvimagecodec", "output_layout": "CHW"},
+    )
+
+    async def load_image():
+        return image, None
+
+    async def load_image_embeds():
+        return torch.zeros((1, 8)), None
+
+    tracker._items_by_modality["image"] = [load_image]
+    tracker._items_by_modality["image_embeds"] = [load_image_embeds]
+
+    with pytest.raises(VLLMValidationError, match="Mixing raw image"):
+        await tracker.resolve_items()
+    with pytest.raises(RuntimeError, match="expired"):
+        lease.borrow_tensor()
 
 
 def _assistant_tool_call(arguments, name="write"):

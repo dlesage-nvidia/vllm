@@ -974,11 +974,17 @@ class AsyncMultiModalItemTracker(BaseMultiModalItemTracker[_AsyncMultiModalItem]
         mm_processor = (
             self.mm_processor if self._model_config.is_multimodal_model else None
         )
-        return _resolve_items(
-            resolved_items_by_modality,
-            mm_processor,
-            self._modality_order,
-        )
+        try:
+            return _resolve_items(
+                resolved_items_by_modality,
+                mm_processor,
+                self._modality_order,
+            )
+        except BaseException:
+            for result in results:
+                if not isinstance(result, BaseException):
+                    _release_borrowed_image_result(result)
+            raise
 
     def create_parser(
         self, mm_processor_kwargs: dict[str, Any] | None = None

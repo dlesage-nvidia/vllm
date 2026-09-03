@@ -13,7 +13,12 @@ import torch
 from vllm.config import ModelConfig
 from vllm.exceptions import VLLMValidationError
 from vllm.inputs import SingletonPrompt
-from vllm.renderers import TokenizeParams
+from vllm.multimodal.image_decoders.nvimagecodec import (
+    _PinnedImageLease,
+    _PinnedOutputBudget,
+)
+from vllm.multimodal.media import MediaWithBytes
+from vllm.renderers import ChatParams, TokenizeParams
 from vllm.renderers.hf import HfRenderer
 from vllm.renderers.inputs.preprocess import parse_model_prompt, prompt_to_seq
 
@@ -124,6 +129,73 @@ def _preprocess_prompt(
         )
         for prompt in prompt_to_seq(prompt_or_prompts)
     ]
+
+
+def _make_budgeted_image():
+    budget = _PinnedOutputBudget()
+    budget.configure(1)
+    (permit,) = budget.try_acquire(1)
+    host = torch.zeros((3, 8, 8), dtype=torch.uint8)
+    permit.attach(host)
+    lease = _PinnedImageLease(host, width=8, height=8)
+    image = MediaWithBytes(
+        lease,
+        b"encoded",
+        {"backend": "nvimagecodec", "output_layout": "CHW"},
+    )
+    return budget, lease, image
+
+
+@pytest.mark.asyncio
+async def test_async_template_error_releases_borrowed_image(monkeypatch) -> None:
+    renderer = _build_renderer(MockModelConfig(enable_prompt_embeds=False))
+    budget, lease, image = _make_budgeted_image()
+
+    async def parse(*_args, **_kwargs):
+        return [], {"image": [image]}, {"image": [None]}
+
+    async def fail_template(*_args, **_kwargs):
+        raise RuntimeError("template failed")
+
+    monkeypatch.setattr("vllm.renderers.hf.parse_chat_messages_async", parse)
+    monkeypatch.setattr(
+        "vllm.renderers.hf.resolve_chat_template_content_format",
+        lambda **_kwargs: "string",
+    )
+    renderer._apply_chat_template_async = fail_template
+
+    with pytest.raises(RuntimeError, match="template failed"):
+        await renderer.render_messages_async([], ChatParams())
+    assert budget.snapshot()["pinned_outputs_in_use"] == 0
+    with pytest.raises(RuntimeError, match="expired"):
+        lease.borrow_tensor()
+    renderer._resources.close()
+
+
+@pytest.mark.asyncio
+async def test_async_tokenization_error_releases_borrowed_image(monkeypatch) -> None:
+    renderer = _build_renderer(MockModelConfig(enable_prompt_embeds=False))
+    budget, lease, image = _make_budgeted_image()
+
+    async def render(*_args, **_kwargs):
+        return [], {"prompt": "", "multi_modal_data": {"image": [image]}}
+
+    async def fail_tokenize(*_args, **_kwargs):
+        raise RuntimeError("tokenization failed")
+
+    monkeypatch.setattr(renderer, "render_messages_async", render)
+    monkeypatch.setattr(renderer, "tokenize_prompts_async", fail_tokenize)
+
+    with pytest.raises(RuntimeError, match="tokenization failed"):
+        await renderer.render_chat_async(
+            [[]],
+            ChatParams(),
+            TokenizeParams(max_total_tokens=16),
+        )
+    assert budget.snapshot()["pinned_outputs_in_use"] == 0
+    with pytest.raises(RuntimeError, match="expired"):
+        lease.borrow_tensor()
+    renderer._resources.close()
 
 
 class TestValidatePrompt:

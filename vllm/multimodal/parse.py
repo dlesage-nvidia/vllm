@@ -378,6 +378,23 @@ def _is_pinned_image_lease(item: object) -> TypeGuard[Any]:
     return getattr(type(item), "_is_vllm_nvimagecodec_pinned_lease", False) is True
 
 
+def release_borrowed_image_resources(
+    mm_data: object,
+) -> None:
+    """Release processor-scoped image borrows retained by raw MM data."""
+    if not isinstance(mm_data, Mapping):
+        return
+
+    images = mm_data.get("image")
+    if not isinstance(images, (list, tuple)):
+        images = (images,)
+    for item in images:
+        if isinstance(item, MediaWithBytes):
+            item = item.media
+        if _is_pinned_image_lease(item):
+            item.release()
+
+
 class ImageProcessorItems(ProcessorBatchItems[HfImageItem | None]):
     def __init__(self, data: Sequence[HfImageItem | None]) -> None:
         super().__init__(data, "image")
