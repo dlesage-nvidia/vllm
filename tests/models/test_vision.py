@@ -257,36 +257,44 @@ class SimpleMRopeVisionModel(torch.nn.Module):
             )
 
 
-def test_run_dp_sharded_mrope_empty_rank_uses_model_dtype(monkeypatch) -> None:
-    class Uint8InputVisionModel(torch.nn.Module):
-        spatial_merge_size = 2
-        out_hidden_size = 8
-        dtype = torch.bfloat16
-
-        def forward(self, *args, **kwargs):
-            raise AssertionError("The empty rank must not run the vision model")
-
+@pytest.mark.parametrize(
+    ("input_dtype", "model_dtype", "expected_dtype"),
+    [
+        (torch.float32, None, torch.float32),
+        (torch.uint8, torch.bfloat16, torch.bfloat16),
+    ],
+)
+def test_run_dp_sharded_mrope_empty_rank_output_dtype(
+    monkeypatch,
+    input_dtype: torch.dtype,
+    model_dtype: torch.dtype | None,
+    expected_dtype: torch.dtype,
+) -> None:
     monkeypatch.setattr(vision_utils, "get_tensor_model_parallel_world_size", lambda: 2)
     monkeypatch.setattr(vision_utils, "get_tensor_model_parallel_rank", lambda: 1)
 
     def fake_all_gather(tensor: torch.Tensor, dim: int) -> torch.Tensor:
         assert dim == 0
-        assert tensor.dtype == torch.bfloat16
+        assert tensor.dtype == expected_dtype
         return torch.cat((tensor, tensor), dim=dim)
 
     monkeypatch.setattr(
         vision_utils, "tensor_model_parallel_all_gather", fake_all_gather
     )
 
+    vision_model = SimpleMRopeVisionModel(out_hidden_size=8)
+    if model_dtype is not None:
+        vision_model.dtype = model_dtype
+
     output = run_dp_sharded_mrope_vision_model(
-        Uint8InputVisionModel(),
-        torch.zeros((4, 768), dtype=torch.uint8),
+        vision_model,
+        torch.zeros((4, 768), dtype=input_dtype),
         [[1, 2, 2]],
         rope_type="rope_3d",
     )
 
     assert len(output) == 1
-    assert output[0].dtype == torch.bfloat16
+    assert output[0].dtype == expected_dtype
 
 
 @multi_gpu_test(num_gpus=2)

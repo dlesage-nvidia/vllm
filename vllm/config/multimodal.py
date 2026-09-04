@@ -511,11 +511,11 @@ class MultiModalConfig:
         Get the keyword arguments to pass to the multi-modal processor
         according to the extra arguments passed during inference.
         """
-        kwargs = self.mm_processor_kwargs or {}
+        kwargs = (self.mm_processor_kwargs or {}) | dict(inference_kwargs)
         if self.mm_device_do_normalize:
             kwargs["do_normalize"] = False
             kwargs["do_rescale"] = False
-        return kwargs | dict(inference_kwargs)
+        return kwargs
 
     def use_gpu_video_backend(self) -> bool:
         """Return whether the configured video loader or codec uses the GPU."""

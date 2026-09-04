@@ -82,15 +82,12 @@ def _pynvvc_frame_for_layout(frame, use_rgbp: bool):
         raise ValueError(
             f"PyNvVideoCodec returned frame shape {shape}; expected a 3D frame"
         )
-    if use_rgbp:
-        if shape[0] == 3:
-            return frame
-        raise ValueError(f"PyNvVideoCodec returned frame shape {shape}; expected CHW")
-    if shape[-1] == 3:
-        return frame
-    if shape[0] == 3:
-        return frame.permute(1, 2, 0)
-    raise ValueError(f"PyNvVideoCodec returned frame shape {shape}; expected HWC")
+    layout = "CHW" if use_rgbp else "HWC"
+    if shape[0 if use_rgbp else -1] != 3:
+        raise ValueError(
+            f"PyNvVideoCodec returned frame shape {shape}; expected {layout}"
+        )
+    return frame
 
 
 def _pynvvc_frames_to_pinned_host(

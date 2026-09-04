@@ -10,6 +10,7 @@ from .ppl_utils import vqa_ppl_test
 MODELS = [
     GenerateModelInfo("Qwen/Qwen2-VL-2B-Instruct", hf_ppl=41081356.0),
     GenerateModelInfo("Qwen/Qwen2.5-VL-3B-Instruct", hf_ppl=18330016.0),
+    GenerateModelInfo("Qwen/Qwen3-VL-2B-Instruct", hf_ppl=3892648192.0),
 ]
 
 

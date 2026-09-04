@@ -1832,6 +1832,12 @@ class Qwen3VLForConditionalGeneration(
 
     supported_video_pruning_methods = ("evs", "vidcom2")
 
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        """Require subclasses to opt in after wiring their vision tower."""
+        super().__init_subclass__(**kwargs)
+        if "supports_mm_device_do_normalize" not in cls.__dict__:
+            cls.supports_mm_device_do_normalize = False
+
     # To ensure correct weight loading and mapping.
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_prefix={

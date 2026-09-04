@@ -659,22 +659,15 @@ def test_pynvvideocodec_rejects_invalid_hw_decoders(hw_decoders: object):
         )
 
 
-@pytest.mark.parametrize(
-    ("use_rgbp", "source_layout"),
-    [(False, "hwc"), (False, "chw"), (True, "chw")],
-)
+@pytest.mark.parametrize("use_rgbp", [False, True])
 def test_pynvvideocodec_copies_frames_directly_to_pinned_host(
     monkeypatch: pytest.MonkeyPatch,
     use_rgbp: bool,
-    source_layout: str,
 ):
     hwc = torch.arange(4 * 10 * 3, dtype=torch.uint8).reshape(4, 10, 3)[:, ::2]
-    source = hwc if source_layout == "hwc" else hwc.permute(2, 0, 1)
+    source = hwc.permute(2, 0, 1) if use_rgbp else hwc
     frames = [source, source + 1]
-    expected_frames = frames
-    if not use_rgbp and source_layout == "chw":
-        expected_frames = [frame.permute(1, 2, 0) for frame in frames]
-    expected = np.stack([frame.numpy() for frame in expected_frames])
+    expected = np.stack([frame.numpy() for frame in frames])
 
     allocations = []
     wrapper_refs = []
@@ -719,7 +712,7 @@ def test_pynvvideocodec_copies_frames_directly_to_pinned_host(
     ("use_rgbp", "shapes", "expected_error"),
     [
         (True, [(4, 5, 3)], "expected CHW"),
-        (False, [(4, 5, 1)], "expected HWC"),
+        (False, [(3, 4, 5)], "expected HWC"),
         (True, [(4, 5)], "3D frame"),
         (True, [(3, 4, 5), (3, 1, 5)], "inconsistent shapes"),
     ],
@@ -782,10 +775,9 @@ def test_pynvvideocodec_synchronizes_after_partial_copy_failure(
 
     stream = FakeStream()
     frames = [torch.zeros((4, 5, 3), dtype=torch.uint8) for _ in range(2)]
-    with pytest.raises(RuntimeError, match="host copy failed") as exc_info:
+    with pytest.raises(RuntimeError, match="host copy failed"):
         _pynvvc_frames_to_pinned_host(frames, False, stream)
 
-    assert exc_info.type is RuntimeError
     assert all(ref() is None for ref in wrapper_refs)
     assert copy_count == 2
     assert stream.synchronize_count == 1

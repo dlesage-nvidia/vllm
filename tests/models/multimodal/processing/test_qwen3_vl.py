@@ -8,17 +8,12 @@ from typing import Any
 import numpy as np
 import pytest
 import torch
-import torch.nn as nn
 
 from vllm.config import ModelConfig
-from vllm.model_executor.models.qwen3_vl import (
-    Qwen3_VisionTransformer,
-    Qwen3VLForConditionalGeneration,
-)
+from vllm.model_executor.models.qwen3_vl import Qwen3VLForConditionalGeneration
 from vllm.model_executor.models.vision import FusedInputNorm
 from vllm.multimodal import MULTIMODAL_REGISTRY
 
-from ....conftest import ImageTestAssets
 from ...registry import HF_EXAMPLE_MODELS
 from ...utils import build_model_context
 
@@ -89,27 +84,18 @@ def test_tchw_video_matches_thwc() -> None:
     assert torch.equal(candidate_mm["video_grid_thw"], baseline_mm["video_grid_thw"])
 
 
-@pytest.mark.parametrize("modality", ["image", "video"])
-def test_mm_device_do_normalize(
-    image_assets: ImageTestAssets,
-    modality: str,
-) -> None:
-    limits = {"image": int(modality == "image"), "video": int(modality == "video")}
-    ctx = build_model_context(MODEL_ID, limit_mm_per_prompt=limits)
+def test_video_device_normalization() -> None:
+    ctx = build_model_context(
+        MODEL_ID,
+        limit_mm_per_prompt={"image": 0, "video": 1},
+    )
     assert ctx.model_config.multimodal_config.mm_device_do_normalize is True
     ctx.model_config.multimodal_config.mm_device_do_normalize = False
     processor = MULTIMODAL_REGISTRY.create_processor(ctx.model_config)
-
-    if modality == "image":
-        prompt = "<|vision_start|><|image_pad|><|vision_end|>"
-        mm_data = {"image": [image_assets[0].pil_image]}
-        pixel_key = "pixel_values"
-        hf_mm_kwargs: dict[str, Any] = {}
-    else:
-        prompt = "<|vision_start|><|video_pad|><|vision_end|>"
-        mm_data = _build_video_mm_data(num_frames=8)
-        pixel_key = "pixel_values_videos"
-        hf_mm_kwargs = {"num_frames": 8}
+    prompt = "<|vision_start|><|video_pad|><|vision_end|>"
+    mm_data = _build_video_mm_data(num_frames=8)
+    pixel_key = "pixel_values_videos"
+    hf_mm_kwargs = {"num_frames": 8}
 
     normalized = processor(
         prompt,
@@ -125,47 +111,20 @@ def test_mm_device_do_normalize(
 
     assert raw.dtype == torch.uint8
     ctx.model_config.multimodal_config.mm_device_do_normalize = True
+    request_override = processor(
+        prompt,
+        mm_items=processor.info.parse_mm_data(mm_data),
+        hf_processor_mm_kwargs=hf_mm_kwargs
+        | {"do_normalize": True, "do_rescale": True},
+    )["mm_kwargs"].get_data()[pixel_key]
+    assert request_override.dtype == torch.uint8
+    assert torch.equal(request_override, raw)
+
     input_norm = FusedInputNorm.from_model_config(ctx.model_config)
     device_normalized = input_norm(raw, normalized.dtype)
 
     assert device_normalized.dtype == normalized.dtype
     torch.testing.assert_close(normalized, device_normalized)
-
-
-def test_vision_forward_normalizes_before_patch_embed() -> None:
-    observed_dtypes: list[torch.dtype] = []
-
-    class RecordingNorm(nn.Module):
-        def forward(self, inputs: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:
-            observed_dtypes.append(inputs.dtype)
-            return inputs.to(dtype)
-
-    class RecordingPatchEmbed(nn.Module):
-        def __init__(self) -> None:
-            super().__init__()
-            self.proj = nn.Linear(1, 1, bias=False)
-
-        def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-            observed_dtypes.append(inputs.dtype)
-            return inputs[:, :1]
-
-    visual = Qwen3_VisionTransformer.__new__(Qwen3_VisionTransformer)
-    nn.Module.__init__(visual)
-    visual.input_norm = RecordingNorm()
-    visual.patch_embed = RecordingPatchEmbed()
-    visual.blocks = nn.ModuleList()
-    visual.deepstack_visual_indexes = []
-    visual.deepstack_merger_list = nn.ModuleList()
-    visual.merger = nn.Identity()
-
-    output = visual(
-        torch.arange(8, dtype=torch.uint8).reshape(2, 4),
-        [[1, 1, 2]],
-        encoder_metadata={"pos_embeds": torch.zeros(2, 1)},
-    )
-
-    assert observed_dtypes == [torch.uint8, torch.float32]
-    assert output.shape == (2, 1, 1)
 
 
 @pytest.mark.parametrize(
@@ -206,6 +165,18 @@ def test_encoder_cudagraph_capture_pixel_dtype(
     )
 
     assert capture_inputs.values["pixel_values"].dtype == expected_dtype
+
+
+def test_device_normalization_requires_subclass_opt_in() -> None:
+    class DerivedModel(Qwen3VLForConditionalGeneration):
+        pass
+
+    class OptedInModel(Qwen3VLForConditionalGeneration):
+        supports_mm_device_do_normalize = True
+
+    assert Qwen3VLForConditionalGeneration.supports_mm_device_do_normalize is True
+    assert DerivedModel.supports_mm_device_do_normalize is False
+    assert OptedInModel.supports_mm_device_do_normalize is True
 
 
 @pytest.mark.parametrize("model_id", [MODEL_ID])

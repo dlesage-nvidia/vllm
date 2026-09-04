@@ -312,8 +312,8 @@ class PyNvVideoCodecVideoBackend(VideoBackend):
     sampled frame indices. It then acquires the raw decoded RGB byte count from
     the process-local multimodal GPU memory pool before decoding the selected
     frames into VRAM. Decoded frames are copied into pinned host memory before
-    the lease is released, so downstream preprocessing receives a CPU RGB
-    ``np.ndarray``.
+    the lease is released, so downstream preprocessing continues to receive a
+    CPU ``np.ndarray`` in NHWC RGB format.
     """
 
     @classmethod

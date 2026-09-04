@@ -8,8 +8,6 @@ from vllm.model_executor.models.utils import WeightsMapper
 
 
 class Cosmos3ForConditionalGeneration(Qwen3VLForConditionalGeneration):
-    supports_mm_device_do_normalize = False
-
     # Cosmos3 unified checkpoints store a Qwen3-VL understanding tower
     # alongside a generation tower in a flat key layout. This mapper drops
     # the generation tower weights and rewrites the understanding tower keys

@@ -471,7 +471,6 @@ class Qwen3_5MoeForCausalLM(Qwen3_5ForCausalLMBase, QwenNextMixtureOfExperts):
     dummy_inputs=Qwen3VLDummyInputsBuilder,
 )
 class Qwen3_5ForConditionalGeneration(Qwen3VLForConditionalGeneration, IsHybrid):
-    supports_mm_device_do_normalize = False
     supports_multimodal_pruning = True
 
     hf_to_vllm_mapper = (
