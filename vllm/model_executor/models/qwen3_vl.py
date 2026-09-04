@@ -154,6 +154,7 @@ from .utils import (
     maybe_prefix,
 )
 from .vision import (
+    FusedInputNorm,
     get_fp8_padded_hidden_size,
     get_vit_attn_backend,
     is_vit_use_data_parallel,
@@ -567,6 +568,8 @@ class Qwen3_VisionTransformer(nn.Module):
         norm_eps: float = 1e-6,
         quant_config: QuantizationConfig | None = None,
         prefix: str = "",
+        *,
+        input_norm: nn.Module | None = None,
     ) -> None:
         super().__init__()
         self.hidden_size = vision_config.hidden_size
@@ -583,6 +586,7 @@ class Qwen3_VisionTransformer(nn.Module):
         )
         self.num_grid_per_side = int(self.num_position_embeddings**0.5)
         self._rot_pos_ids_cache = LRUCache(capacity=1024)
+        self.input_norm = input_norm
 
         use_data_parallel = is_vit_use_data_parallel()
         self.tp_size = (
@@ -853,7 +857,13 @@ class Qwen3_VisionTransformer(nn.Module):
         *,
         encoder_metadata: dict[str, torch.Tensor] | None = None,
     ) -> torch.Tensor:
-        hidden_states = x.to(device=self.device, dtype=self.dtype, non_blocking=True)
+        if self.input_norm is None:
+            hidden_states = x.to(
+                device=self.device, dtype=self.dtype, non_blocking=True
+            )
+        else:
+            hidden_states = x.to(device=self.device, non_blocking=True)
+            hidden_states = self.input_norm(hidden_states, self.dtype)
         hidden_states = self.patch_embed(hidden_states)
 
         if encoder_metadata is None:
@@ -1472,7 +1482,11 @@ class Qwen3VLMultiModalProcessor(BaseMultiModalProcessor[Qwen3VLProcessingInfo])
                 video_grid_thw_lst.append(video_outputs["video_grid_thw"])
                 pixel_values_videos_lst.append(video_outputs["pixel_values_videos"])
             video_outputs = dict(
-                pixel_values_videos=torch.cat(pixel_values_videos_lst),
+                pixel_values_videos=(
+                    pixel_values_videos_lst[0]
+                    if len(pixel_values_videos_lst) == 1
+                    else torch.cat(pixel_values_videos_lst)
+                ),
                 video_grid_thw=torch.cat(video_grid_thw_lst),
                 timestamps=timestamps_per_video,
             )
@@ -1813,9 +1827,16 @@ class Qwen3VLForConditionalGeneration(
     }
 
     supports_encoder_tp_data = True
+    supports_mm_device_do_normalize = True
     supports_tower_connector_lora = True
 
     supported_video_pruning_methods = ("evs", "vidcom2")
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        """Require subclasses to opt in after wiring their vision tower."""
+        super().__init_subclass__(**kwargs)
+        if "supports_mm_device_do_normalize" not in cls.__dict__:
+            cls.supports_mm_device_do_normalize = False
 
     # To ensure correct weight loading and mapping.
     hf_to_vllm_mapper = WeightsMapper(
@@ -1865,6 +1886,11 @@ class Qwen3VLForConditionalGeneration(
                 norm_eps=getattr(config, "rms_norm_eps", 1e-6),
                 quant_config=quant_config,
                 prefix=maybe_prefix(prefix, "visual"),
+                input_norm=(
+                    FusedInputNorm.from_model_config(self.model_config)
+                    if self.multimodal_config.mm_device_do_normalize
+                    else None
+                ),
             )
 
         self.use_deepstack = hasattr(
@@ -2168,9 +2194,17 @@ class Qwen3VLForConditionalGeneration(
         flattened_patch_size = (
             in_channels * temporal_patch_size * patch_size * patch_size
         )
-        dummy_pixel_values = torch.randn(
-            total_patches, flattened_patch_size, device=device, dtype=dtype
-        )
+        if self.multimodal_config.mm_device_do_normalize:
+            dummy_pixel_values = torch.zeros(
+                total_patches,
+                flattened_patch_size,
+                device=device,
+                dtype=torch.uint8,
+            )
+        else:
+            dummy_pixel_values = torch.randn(
+                total_patches, flattened_patch_size, device=device, dtype=dtype
+            )
 
         # Override max_seqlen with a safe upper bound for capture.
         # max_seqlen.item() gets baked into the CUDA graph (not replayed),
@@ -2303,7 +2337,7 @@ class Qwen3VLForConditionalGeneration(
         if image_input["type"] == "image_embeds":
             image_embeds = image_input["image_embeds"].type(self.visual.dtype)
         else:
-            pixel_values = image_input["pixel_values"].type(self.visual.dtype)
+            pixel_values = image_input["pixel_values"]
             if self.use_data_parallel:
                 return run_dp_sharded_mrope_vision_model(
                     self.visual, pixel_values, grid_thw.tolist(), rope_type="rope_3d"
@@ -2325,9 +2359,7 @@ class Qwen3VLForConditionalGeneration(
         if video_input["type"] == "video_embeds":
             video_embeds = video_input["video_embeds"].type(self.visual.dtype)
         else:
-            pixel_values_videos = video_input["pixel_values_videos"].type(
-                self.visual.dtype
-            )
+            pixel_values_videos = video_input["pixel_values_videos"]
             if self.use_data_parallel:
                 grid_thw_list = grid_thw.tolist()
                 return run_dp_sharded_mrope_vision_model(

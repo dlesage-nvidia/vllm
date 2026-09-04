@@ -295,7 +295,11 @@ class Cosmos3EdgeVideoProcessor(Qwen3VLVideoProcessor):
             processed_videos_grouped, grouped_videos_index
         )
         processed_grids = reorder_videos(processed_grids, grouped_videos_index)
-        pixel_values_videos = torch.cat(processed_videos, dim=0)
+        pixel_values_videos = (
+            processed_videos[0]
+            if len(processed_videos) == 1
+            else torch.cat(processed_videos, dim=0)
+        )
         video_grid_thw = torch.tensor(processed_grids)
         data = {
             "pixel_values_videos": pixel_values_videos,

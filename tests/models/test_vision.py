@@ -6,6 +6,7 @@ import pytest
 import torch
 import torch.multiprocessing as mp
 
+import vllm.model_executor.models.vision as vision_utils
 from tests.utils import ensure_current_vllm_config, multi_gpu_test
 from vllm.distributed import get_tensor_model_parallel_world_size
 from vllm.distributed.parallel_state import (
@@ -254,6 +255,46 @@ class SimpleMRopeVisionModel(torch.nn.Module):
                 device=pixel_values.device,
                 dtype=pixel_values.dtype,
             )
+
+
+@pytest.mark.parametrize(
+    ("input_dtype", "model_dtype", "expected_dtype"),
+    [
+        (torch.float32, None, torch.float32),
+        (torch.uint8, torch.bfloat16, torch.bfloat16),
+    ],
+)
+def test_run_dp_sharded_mrope_empty_rank_output_dtype(
+    monkeypatch,
+    input_dtype: torch.dtype,
+    model_dtype: torch.dtype | None,
+    expected_dtype: torch.dtype,
+) -> None:
+    monkeypatch.setattr(vision_utils, "get_tensor_model_parallel_world_size", lambda: 2)
+    monkeypatch.setattr(vision_utils, "get_tensor_model_parallel_rank", lambda: 1)
+
+    def fake_all_gather(tensor: torch.Tensor, dim: int) -> torch.Tensor:
+        assert dim == 0
+        assert tensor.dtype == expected_dtype
+        return torch.cat((tensor, tensor), dim=dim)
+
+    monkeypatch.setattr(
+        vision_utils, "tensor_model_parallel_all_gather", fake_all_gather
+    )
+
+    vision_model = SimpleMRopeVisionModel(out_hidden_size=8)
+    if model_dtype is not None:
+        vision_model.dtype = model_dtype
+
+    output = run_dp_sharded_mrope_vision_model(
+        vision_model,
+        torch.zeros((4, 768), dtype=input_dtype),
+        [[1, 2, 2]],
+        rope_type="rope_3d",
+    )
+
+    assert len(output) == 1
+    assert output[0].dtype == expected_dtype
 
 
 @multi_gpu_test(num_gpus=2)

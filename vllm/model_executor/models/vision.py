@@ -506,11 +506,12 @@ def run_dp_sharded_mrope_vision_model(
         if pixel_values_local.shape[0] > 0:
             image_embeds_local = vision_model(pixel_values_local, local_grid_thw_list)
         else:
-            # Handle empty case
+            # Empty ranks must match the vision output dtype for the all-gather.
+            output_dtype = getattr(vision_model, "dtype", pixel_values.dtype)
             image_embeds_local = torch.empty(
                 (0, vision_model.out_hidden_size),
                 device=pixel_values.device,
-                dtype=pixel_values.dtype,
+                dtype=output_dtype,
             )
 
     # Pad the output based on max_len_per_rank
