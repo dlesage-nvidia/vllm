@@ -1657,6 +1657,7 @@ class VllmConfig:
         self._resolve_allow_missing_mm_embeddings()
         self._resolve_mm_processor_device()
         self._validate_mm_processor_device()
+        self._validate_gpu_image_backend()
 
         if self.use_v2_model_runner:
             self._validate_v2_model_runner()
@@ -2543,6 +2544,43 @@ class VllmConfig:
             return
 
         mm_config.validate_mm_processor_device(self.ec_transfer_config)
+
+    def _validate_gpu_image_backend(self) -> None:
+        model_config = self.model_config
+        if model_config is None or model_config.multimodal_config is None:
+            return
+        mm_config = model_config.multimodal_config
+        backend = mm_config.media_io_kwargs.get("image", {}).get(
+            "image_backend", "pillow"
+        )
+        if backend not in ("pillow", "nvimagecodec"):
+            raise ValueError(
+                f"Unknown image backend {backend!r}; expected 'pillow' or "
+                "'nvimagecodec'."
+            )
+        if backend == "pillow":
+            return
+
+        from vllm.platforms import current_platform
+
+        if not current_platform.is_cuda():
+            raise ValueError("nvImageCodec requires an NVIDIA CUDA platform.")
+        if self.parallel_config.use_ray:
+            raise ValueError(
+                "nvImageCodec does not support the Ray distributed executor "
+                "because the frontend GPU is not placed by Ray."
+            )
+        if envs.VLLM_USE_RUST_FRONTEND:
+            raise ValueError(
+                "nvImageCodec does not support the Rust frontend, which has a "
+                "separate image-loading path."
+            )
+
+        from vllm.multimodal.image_decoders.nvimagecodec import (
+            ensure_nvimagecodec_available,
+        )
+
+        ensure_nvimagecodec_available()
 
     def _get_v2_model_runner_unsupported_features(self) -> list[str]:
         """Collect features not yet supported by the V2 model runner."""

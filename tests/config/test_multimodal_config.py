@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+from contextlib import nullcontext
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -64,6 +65,42 @@ def test_use_gpu_video_backend_from_media_io_kwargs(backend_arg: str):
     )
 
     assert config.use_gpu_video_backend()
+
+
+@pytest.mark.parametrize(
+    ("is_cuda", "use_ray", "use_rust", "error"),
+    [
+        (True, False, False, None),
+        (False, False, False, "NVIDIA CUDA"),
+        (True, True, False, "Ray"),
+        (True, False, True, "Rust frontend"),
+    ],
+)
+def test_gpu_image_backend_startup_validation(
+    monkeypatch: pytest.MonkeyPatch,
+    is_cuda: bool,
+    use_ray: bool,
+    use_rust: bool,
+    error: str | None,
+):
+    model_config = MagicMock(spec=ModelConfig)
+    model_config.multimodal_config = MultiModalConfig(
+        media_io_kwargs={"image": {"image_backend": "nvimagecodec"}}
+    )
+    vllm_config = MagicMock(spec=VllmConfig)
+    vllm_config.model_config = model_config
+    vllm_config.parallel_config.use_ray = use_ray
+    monkeypatch.setattr("vllm.platforms.current_platform.is_cuda", lambda: is_cuda)
+    monkeypatch.setattr("vllm.envs.VLLM_USE_RUST_FRONTEND", use_rust)
+
+    with patch(
+        "vllm.multimodal.image_decoders.nvimagecodec.ensure_nvimagecodec_available"
+    ) as check:
+        ctx = nullcontext() if error is None else pytest.raises(ValueError, match=error)
+        with ctx:
+            VllmConfig._validate_gpu_image_backend(vllm_config)
+
+    assert check.call_count == (error is None)
 
 
 def test_mm_encoder_fp8_scale_path_requires_fp8():
