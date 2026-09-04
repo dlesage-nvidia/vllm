@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+from io import BytesIO
 from pathlib import Path
 
 import numpy as np
@@ -12,6 +13,69 @@ pytestmark = pytest.mark.cpu_test
 
 ASSETS_DIR = Path(__file__).parent.parent / "assets"
 assert ASSETS_DIR.exists()
+
+
+def _jpeg_bytes(width: int = 8, height: int = 6) -> bytes:
+    buffer = BytesIO()
+    Image.new("RGB", (width, height), (10, 20, 30)).save(buffer, "JPEG")
+    return buffer.getvalue()
+
+
+def test_nvimagecodec_failure_does_not_fall_back(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from vllm.multimodal.image_decoders import nvimagecodec
+
+    outcomes = iter(
+        (RuntimeError("decode failed"), Image.new("RGB", (8, 6), (200, 100, 50)))
+    )
+
+    def decode(*_args, **_kwargs):
+        result = next(outcomes)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    monkeypatch.setattr(
+        nvimagecodec,
+        "decode_image_nvimagecodec",
+        decode,
+    )
+
+    image_io = ImageMediaIO(image_backend="nvimagecodec")
+    data = _jpeg_bytes()
+    with pytest.raises(RuntimeError, match="decode failed"):
+        image_io.load_bytes(data)
+    result = image_io.load_bytes(data)
+
+    assert result.io_config == {"image_backend": "nvimagecodec"}
+    assert result.media.getpixel((0, 0)) == (200, 100, 50)
+
+
+def test_nvimagecodec_rejects_truncated_jpeg_like_pillow(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from vllm.multimodal.image_decoders import nvimagecodec
+
+    monkeypatch.setattr(
+        nvimagecodec,
+        "decode_image_nvimagecodec",
+        lambda *_args, **_kwargs: pytest.fail("native decoder called"),
+    )
+    with pytest.raises(ValueError, match="complete"):
+        ImageMediaIO(image_backend="nvimagecodec").load_bytes(_jpeg_bytes()[:-2])
+
+
+def test_image_backend_is_fixed_at_startup():
+    with pytest.raises(ValueError, match="server startup"):
+        ImageMediaIO.merge_kwargs(
+            {"image_backend": "nvimagecodec"}, {"image_backend": "pillow"}
+        )
+
+
+def test_unknown_image_backend_is_rejected():
+    with pytest.raises(ValueError, match="Unknown image backend"):
+        ImageMediaIO(image_backend="unknown")
 
 
 def test_image_media_io_rgba_custom_background(tmp_path):

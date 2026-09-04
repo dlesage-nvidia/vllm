@@ -531,6 +531,11 @@ class MultiModalConfig:
             and VIDEO_LOADER_REGISTRY.backend_requires_gpu(codec_backend)
         )
 
+    def use_gpu_image_backend(self) -> bool:
+        """Return whether image inputs use nvImageCodec."""
+        image_kwargs = self.media_io_kwargs.get("image", {})
+        return image_kwargs.get("image_backend") == "nvimagecodec"
+
     def is_multimodal_pruning_enabled(self):
         return self.get_video_pruning_spec() is not None
 

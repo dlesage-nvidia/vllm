@@ -3,6 +3,7 @@
 
 from io import BytesIO
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pybase64
@@ -10,6 +11,11 @@ import torch
 from PIL import Image
 
 import vllm.envs as envs
+from vllm.multimodal.image_decoders import (
+    NVIMAGECODEC_IMAGE_BACKEND,
+    NVIMAGECODEC_MAX_PIXELS,
+    PILLOW_IMAGE_BACKEND,
+)
 from vllm.utils.serial_utils import tensor2base64
 from vllm.utils.sparse_utils import (
     check_sparse_tensor_invariants_threadsafe,
@@ -28,12 +34,34 @@ class ImageMediaIO(MediaIO[Image.Image]):
     error handling.
     """
 
-    def __init__(self, image_mode: str | None = "RGB", **kwargs) -> None:
+    @classmethod
+    def merge_kwargs(
+        cls,
+        default_kwargs: dict[str, Any] | None,
+        runtime_kwargs: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        if runtime_kwargs and "image_backend" in runtime_kwargs:
+            raise ValueError("image_backend can only be configured at server startup")
+        return super().merge_kwargs(default_kwargs, runtime_kwargs)
+
+    def __init__(
+        self,
+        image_mode: str | None = "RGB",
+        *,
+        image_backend: str = PILLOW_IMAGE_BACKEND,
+        **kwargs,
+    ) -> None:
         super().__init__()
 
         # Target mode for loaded images; `None` keeps the original mode
         # (i.e. no conversion, alpha channel is preserved as-is).
         self.image_mode = image_mode
+        if image_backend not in (PILLOW_IMAGE_BACKEND, NVIMAGECODEC_IMAGE_BACKEND):
+            raise ValueError(
+                f"Unknown image backend {image_backend!r}; expected "
+                f"{PILLOW_IMAGE_BACKEND!r} or {NVIMAGECODEC_IMAGE_BACKEND!r}."
+            )
+        self.image_backend = image_backend
         # `kwargs` contains custom arguments from
         # --media-io-kwargs for this modality, merged with
         # per-request runtime media_io_kwargs via merge_kwargs().
@@ -87,8 +115,34 @@ class ImageMediaIO(MediaIO[Image.Image]):
                     f"the maximum of {max_pixels} pixels. Set "
                     f"VLLM_MAX_IMAGE_PIXELS to increase this limit."
                 )
-            image = normalize_image(image)
-            image.load()
+
+            if self.image_backend == NVIMAGECODEC_IMAGE_BACKEND:
+                if not (
+                    self.image_mode == "RGB"
+                    and image.format == "JPEG"
+                    and image.mode == "RGB"
+                    and not image.info.get("exif")
+                    and data.endswith(b"\xff\xd9")
+                    and w * h <= NVIMAGECODEC_MAX_PIXELS
+                ):
+                    image.close()
+                    raise ValueError(
+                        "nvImageCodec supports only complete, EXIF-free RGB JPEGs "
+                        "up to 8,294,400 pixels with image_mode='RGB'."
+                    )
+                from vllm.multimodal.image_decoders.nvimagecodec import (
+                    decode_image_nvimagecodec,
+                )
+
+                try:
+                    decoded = decode_image_nvimagecodec(data, width=w, height=h)
+                    decoded.info.update(image.info)
+                finally:
+                    image.close()
+                image = decoded
+            else:
+                image = normalize_image(image)
+                image.load()
             converted = self._convert_image_mode(image)
         except (OSError, Image.UnidentifiedImageError) as e:
             raise ValueError(f"Failed to load image: {e}") from e
@@ -98,6 +152,11 @@ class ImageMediaIO(MediaIO[Image.Image]):
             io_config = {
                 "image_mode": self.image_mode,
                 "rgba_background_color": self.rgba_background_color,
+            }
+        if self.image_backend == NVIMAGECODEC_IMAGE_BACKEND:
+            io_config = {
+                **(io_config or {}),
+                "image_backend": NVIMAGECODEC_IMAGE_BACKEND,
             }
         return MediaWithBytes(converted, data, io_config)
 

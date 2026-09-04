@@ -276,6 +276,26 @@ async def test_fetch_image_error_conversion():
         connector.fetch_image(broken_img)
 
 
+def test_gpu_image_backend_decodes_jpeg_video(monkeypatch: pytest.MonkeyPatch):
+    from vllm.multimodal.image_decoders import nvimagecodec
+
+    monkeypatch.setattr(
+        nvimagecodec,
+        "decode_image_nvimagecodec",
+        lambda *_args, **_kwargs: Image.new("RGB", (8, 6), (200, 100, 50)),
+    )
+    buffer = BytesIO()
+    Image.new("RGB", (8, 6)).save(buffer, "JPEG")
+    data = base64.b64encode(buffer.getvalue()).decode()
+
+    frames, _ = MediaConnector(
+        media_io_kwargs={"image": {"image_backend": "nvimagecodec"}}
+    ).fetch_video(f"data:video/jpeg;base64,{data}")
+
+    assert frames.shape == (1, 6, 8, 3)
+    np.testing.assert_array_equal(frames[0, 0, 0], (200, 100, 50))
+
+
 @pytest.mark.flaky(reruns=3, reruns_delay=5)
 @pytest.mark.asyncio
 @pytest.mark.parametrize("video_url", TEST_VIDEO_URLS)

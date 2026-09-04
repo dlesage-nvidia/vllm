@@ -25,6 +25,7 @@ from vllm.utils.mem_constants import GiB_bytes
 def _mm_config(
     *,
     mm_ipc_gpu_memory_gb: float = 0,
+    image_backend: str | None = None,
     video_backend: str | None = None,
     hw_decoders: int | None = None,
 ) -> MultiModalConfig:
@@ -34,9 +35,12 @@ def _mm_config(
     if hw_decoders is not None:
         video_kwargs["hw_decoders"] = hw_decoders
 
+    media_io_kwargs = {"video": video_kwargs} if video_kwargs else {}
+    if image_backend is not None:
+        media_io_kwargs["image"] = {"image_backend": image_backend}
     return MultiModalConfig(
         mm_ipc_gpu_memory_gb=mm_ipc_gpu_memory_gb,
-        media_io_kwargs={"video": video_kwargs} if video_kwargs else {},
+        media_io_kwargs=media_io_kwargs,
     )
 
 
@@ -206,6 +210,16 @@ def test_reserve_mm_ipc_gpu_memory_includes_pynvvideocodec_decoder_budget(
 
     assert reserve_mm_ipc_gpu_memory(available_bytes, mm_config) == (
         available_bytes - int(0.25 * GiB_bytes) - _pynvvideocodec_decoder_budget()
+    )
+
+
+def test_reserve_mm_ipc_gpu_memory_includes_nvimagecodec_per_process():
+    available_bytes = 4 * GiB_bytes
+    mm_config = _mm_config(image_backend="nvimagecodec")
+
+    assert (
+        reserve_mm_ipc_gpu_memory(available_bytes, mm_config, api_process_count=2)
+        == available_bytes - 2 * GiB_bytes
     )
 
 

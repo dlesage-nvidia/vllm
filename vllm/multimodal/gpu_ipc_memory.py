@@ -164,11 +164,9 @@ def reserve_mm_ipc_gpu_memory(
     * The total ``mm_ipc_gpu_memory_gb`` budget for transient decoded-frame
       buffers. This budget is divided among API processes, so it is not
       multiplied by ``api_process_count``.
-    * For GPU video backends, a fixed upper bound for each API process's
-      retained decoder surfaces and CUDA context. The PyNvVideoCodec surface
-      reservation scales with its configured ``hw_decoders`` value, and the
-      entire decoder reservation scales with ``api_process_count`` because
-      these resources are not shared between processes.
+    * For GPU media backends, a fixed upper bound for each API process's
+      decoder and CUDA context. These resources scale with
+      ``api_process_count`` because they are not shared between processes.
 
     Args:
         available_kv_cache_memory_bytes: KV-cache capacity before reserving
@@ -219,15 +217,25 @@ def reserve_mm_ipc_gpu_memory(
         if uses_pynvvideocodec
         else 1
     )
-    per_server_decoder_bytes = (
+    per_server_video_decoder_bytes = (
         PYNVVIDEOCODEC_DECODER_GPU_MEMORY_BYTES * hw_decoders
         + PYNVVIDEOCODEC_CUDA_CONTEXT_BYTES
     )
-    decoder_reserved_bytes = (
-        num_api_servers * per_server_decoder_bytes
-        if mm_config.use_gpu_video_backend()
-        else 0
+    if not mm_config.use_gpu_video_backend():
+        per_server_video_decoder_bytes = 0
+
+    per_server_image_decoder_bytes = 0
+    if mm_config.use_gpu_image_backend():
+        from vllm.multimodal.image_decoders import (
+            NVIMAGECODEC_GPU_MEMORY_BYTES,
+        )
+
+        per_server_image_decoder_bytes = NVIMAGECODEC_GPU_MEMORY_BYTES
+
+    per_server_decoder_bytes = (
+        per_server_video_decoder_bytes + per_server_image_decoder_bytes
     )
+    decoder_reserved_bytes = num_api_servers * per_server_decoder_bytes
     reserved_bytes = raw_frame_reserved_bytes + decoder_reserved_bytes
     if reserved_bytes <= 0:
         return available_kv_cache_memory_bytes
@@ -241,7 +249,7 @@ def reserve_mm_ipc_gpu_memory(
             f"{format_gib(decoder_reserved_bytes)} GiB decoder cache budget), "
             f"but only {format_gib(available_kv_cache_memory_bytes)} GiB is "
             "available for the KV cache. Reduce mm_ipc_gpu_memory_gb or "
-            "hw_decoders, use a different video backend, or increase "
+            "hw_decoders, disable a GPU media backend, or increase "
             "gpu_memory_utilization."
         )
     logger.info_once(
