@@ -19,13 +19,15 @@ def _input(value: int) -> NvImageCodecInput:
 class _FakeDecoder:
     instance: "_FakeDecoder"
     failure: str | None = None
+    behavior: str | None = None
     gate = [threading.Event(), threading.Event()]
 
-    def __init__(self, _batch_cap: int, device_index: int) -> None:
+    def __init__(self, _batch_cap: int, _device_index: int) -> None:
         self.widths: list[int] = []
-        self.device_index = device_index
-        self.closed = False
         type(self).instance = self
+        if self.behavior == "block_init":
+            self.gate[0].set()
+            assert self.gate[1].wait(timeout=_TIMEOUT)
 
     def submit(self, items):
         self.widths.append(len(items))
@@ -43,12 +45,13 @@ class _FakeDecoder:
         ]
 
     def close(self) -> None:
-        self.closed = True
+        pass
 
 
 @pytest.fixture(autouse=True)
 def _install_fake(monkeypatch: pytest.MonkeyPatch) -> None:
     _FakeDecoder.failure = None
+    _FakeDecoder.behavior = None
     _FakeDecoder.gate = [threading.Event(), threading.Event()]
     monkeypatch.setattr(
         nvimagecodec, "_owned_output_budget", nvimagecodec._OwnedOutputBudget(0)
@@ -64,22 +67,15 @@ class _Result:
         return self.value == other
 
 
-def _service(values=(), *, batch_cap=5, failure=None, device_index=0):
+def _service(values=(), *, batch_cap=5, failure=None):
     _FakeDecoder.failure = failure
-    service = nvimagecodec._NvImageCodecService(batch_cap, device_index)
+    service = nvimagecodec._NvImageCodecService(batch_cap)
     service.wait_until_ready()
     decoder = _FakeDecoder.instance
     futures = [service.submit(_input(value)) for value in values]
     if futures:
         assert decoder.gate[0].wait(timeout=_TIMEOUT)
     return service, decoder, futures
-
-
-def _assert_fails(futures, message: str) -> None:
-    errors = [future.exception(timeout=_TIMEOUT) for future in futures]
-    assert all(
-        isinstance(error, RuntimeError) and message in str(error) for error in errors
-    )
 
 
 def test_batches_fifo_jobs_and_skips_cancellation() -> None:
@@ -116,40 +112,25 @@ def test_system_failure_is_sticky_and_releases_budget() -> None:
 
     with pytest.raises(RuntimeError, match="collect failed"):
         futures[0].result(_TIMEOUT)
-    _assert_fails(futures[1:], "collect failed")
+    errors = [future.exception(timeout=_TIMEOUT) for future in futures[1:]]
+    assert all(
+        isinstance(error, RuntimeError) and "collect failed" in str(error)
+        for error in errors
+    )
     with pytest.raises(RuntimeError, match="decoder failed"):
         service.submit(_input(2))
     service.close()
     assert service._budget._in_use == 0
 
 
-def test_service_waits_until_a_complete_wave_fits(monkeypatch) -> None:
-    construct = threading.Event()
-    widths = []
-
-    class Owner:
-        pass
-
-    class OwnedDecoder:
-        def __init__(self, _batch_cap: int, _device_index: int) -> None:
-            assert construct.wait(timeout=_TIMEOUT)
-
-        def submit(self, items):
-            widths.append(len(items))
-            return items
-
-        def collect(self, items):
-            return [Owner() for _ in items]
-
-        def close(self) -> None:
-            pass
-
-    monkeypatch.setattr(nvimagecodec, "_NvImageCodecDecoder", OwnedDecoder)
+def test_service_waits_until_a_complete_wave_fits() -> None:
+    _FakeDecoder.behavior = "block_init"
     service = nvimagecodec._NvImageCodecService(2)
+    assert _FakeDecoder.gate[0].wait(timeout=_TIMEOUT)
     futures = [service.submit(_input(value)) for value in range(6)]
     first_futures, last_futures = futures[:4], futures[4:]
     del futures
-    construct.set()
+    _FakeDecoder.gate[1].set()
     service.wait_until_ready()
 
     first = [future.result(timeout=_TIMEOUT) for future in first_futures]
@@ -157,6 +138,6 @@ def test_service_waits_until_a_complete_wave_fits(monkeypatch) -> None:
     del first_futures[:2]
     last = [future.result(timeout=_TIMEOUT) for future in last_futures]
 
-    assert widths == [2, 2, 2]
+    assert _FakeDecoder.instance.widths == [2, 2, 2]
     del first, last
     service.close()
