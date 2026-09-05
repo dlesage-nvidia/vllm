@@ -6,6 +6,7 @@ import time
 
 import pytest
 
+import vllm.multimodal.image_decoders.nvimagecodec as nvcodec
 from vllm.config.multimodal import MultiModalConfig
 from vllm.multimodal.gpu_ipc_memory import (
     MultiModalGPUMemoryPool,
@@ -30,6 +31,7 @@ def _mm_config(
     hw_decoders: int | None = None,
     max_width: int | None = None,
     max_height: int | None = None,
+    image_backend: str | None = None,
 ) -> MultiModalConfig:
     video_kwargs: dict[str, object] = (
         {} if video_backend is None else {"video_backend": video_backend}
@@ -41,9 +43,15 @@ def _mm_config(
     if max_height is not None:
         video_kwargs["max_height"] = max_height
 
+    media_io_kwargs: dict[str, dict[str, object]] = {}
+    if video_kwargs:
+        media_io_kwargs["video"] = video_kwargs
+    if image_backend is not None:
+        media_io_kwargs["image"] = {"backend": image_backend}
+
     return MultiModalConfig(
         mm_ipc_gpu_memory_gb=mm_ipc_gpu_memory_gb,
-        media_io_kwargs={"video": video_kwargs} if video_kwargs else {},
+        media_io_kwargs=media_io_kwargs,
     )
 
 
@@ -281,3 +289,22 @@ def test_reserve_mm_ipc_gpu_memory_scales_for_configured_decoder_dimensions(
         get_pynvvideocodec_decoder_gpu_memory_bytes(max_width, max_height)
         > PYNVVIDEOCODEC_DECODER_GPU_MEMORY_BYTES
     )
+
+
+def test_nvimagecodec_memory_reservations(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(
+        "vllm.multimodal.image_decoders.nvimagecodec.ensure_nvimagecodec_available",
+        lambda: None,
+    )
+    monkeypatch.setenv("VLLM_VIDEO_LOADER_BACKEND", "opencv")
+    available_bytes = 16 * GiB_bytes
+    api_process_count = 2
+    reserved = api_process_count * (
+        nvcodec.get_nvimagecodec_non_context_bytes(api_process_count)
+        + nvcodec.NVIMAGECODEC_CUDA_CONTEXT_BYTES
+    )
+    assert reserve_mm_ipc_gpu_memory(
+        available_bytes,
+        _mm_config(image_backend="nvimagecodec"),
+        api_process_count=api_process_count,
+    ) == (available_bytes - reserved)
