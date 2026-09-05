@@ -10,14 +10,51 @@ from typing import Any
 
 import numpy as np
 import pytest
+import torch
+from PIL import Image
 
 from vllm.config import ModelConfig
 from vllm.multimodal import MULTIMODAL_REGISTRY
+from vllm.multimodal.cache import MultiModalProcessorOnlyCache
+from vllm.multimodal.media import MediaWithBytes
 
 from ...registry import HF_EXAMPLE_MODELS
 from ...utils import build_model_context
 
 MODEL_ID = "Qwen/Qwen3-VL-4B-Instruct"
+
+
+def test_native_chw_processor_matches_pillow() -> None:
+    ctx = build_model_context(
+        MODEL_ID,
+        limit_mm_per_prompt={"image": 1, "video": 0},
+        mm_processor_cache_gb=1,
+    )
+    cache = MultiModalProcessorOnlyCache(ctx.model_config)
+    processor = MULTIMODAL_REGISTRY.create_processor(ctx.model_config, cache=cache)
+    hwc = (np.arange(56 * 8 * 3).reshape(56, 8, 3) % 251).astype(np.uint8)
+    chw = np.ascontiguousarray(np.moveaxis(hwc, -1, 0))
+    tensors = [torch.from_numpy(chw.copy()) for _ in range(2)]
+    native = [
+        MediaWithBytes(tensor, b"same JPEG", {"backend": "nvimagecodec"})
+        for tensor in tensors
+    ]
+
+    prompt = "<|vision_start|><|image_pad|><|vision_end|>"
+
+    def process(item):
+        items = processor.info.parse_mm_data({"image": [item]})
+        return processor(prompt, mm_items=items)
+
+    pillow_result = process(Image.fromarray(hwc, "RGB"))
+    native_results = [process(item) for item in native]
+    input_ptr = tensors[0].untyped_storage().data_ptr()
+    for native_result in native_results:
+        for result_key in ("mm_kwargs", "prompt_token_ids", "mm_placeholders"):
+            assert native_result[result_key] == pillow_result[result_key]
+    assert cache.make_stats().hits == 1
+    pixel_values = native_results[0]["mm_kwargs"]["image"][0]["pixel_values"].data
+    assert pixel_values.untyped_storage().data_ptr() != input_ptr
 
 
 def _build_video_mm_data(

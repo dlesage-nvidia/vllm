@@ -348,6 +348,13 @@ class MultiModalConfig:
                 raise FileNotFoundError(
                     f"Parent directory for FP8 scale save path not found: {save_parent}"
                 )
+
+        if self.use_gpu_image_backend():
+            from vllm.multimodal.image_decoders.nvimagecodec import (
+                ensure_nvimagecodec_available,
+            )
+
+            ensure_nvimagecodec_available()
         return self
 
     @staticmethod
@@ -515,7 +522,28 @@ class MultiModalConfig:
         if self.mm_device_do_normalize:
             kwargs["do_normalize"] = False
             kwargs["do_rescale"] = False
-        return kwargs | dict(inference_kwargs)
+        merged = kwargs | dict(inference_kwargs)
+        if self.use_gpu_image_backend():
+            self._validate_nvimagecodec_processor_kwargs(merged)
+        return merged
+
+    @staticmethod
+    def _validate_nvimagecodec_processor_kwargs(
+        kwargs: Mapping[str, object],
+    ) -> None:
+        for scope in (
+            kwargs.get("images_kwargs"),
+            kwargs.get("common_kwargs"),
+            kwargs,
+        ):
+            if (
+                isinstance(scope, Mapping)
+                and "input_data_format" in scope
+                and scope["input_data_format"] != "channels_first"
+            ):
+                raise ValueError(
+                    "nvImageCodec requires input_data_format='channels_first'."
+                )
 
     def use_gpu_video_backend(self) -> bool:
         """Return whether the configured video loader or codec uses the GPU."""
@@ -530,6 +558,11 @@ class MultiModalConfig:
             codec_backend is not None
             and VIDEO_LOADER_REGISTRY.backend_requires_gpu(codec_backend)
         )
+
+    def use_gpu_image_backend(self) -> bool:
+        """Return whether nvImageCodec is enabled for image inputs."""
+        backend = self.media_io_kwargs.get("image", {}).get("backend")
+        return backend == "nvimagecodec"
 
     def is_multimodal_pruning_enabled(self):
         return self.get_video_pruning_spec() is not None

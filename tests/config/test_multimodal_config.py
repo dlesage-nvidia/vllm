@@ -7,10 +7,12 @@ import pytest
 import torch
 from transformers import PretrainedConfig
 
+import vllm.envs as envs
 from vllm.config.ec_transfer import ECRole, ECTransferConfig
 from vllm.config.model import ModelConfig
 from vllm.config.multimodal import MultiModalConfig
 from vllm.config.vllm import VllmConfig
+from vllm.platforms import current_platform
 from vllm.transformers_utils.model_arch_config_convertor import (
     ModelArchConfigConvertorBase,
 )
@@ -64,6 +66,17 @@ def test_use_gpu_video_backend_from_media_io_kwargs(backend_arg: str):
     )
 
     assert config.use_gpu_video_backend()
+
+
+def test_nvimagecodec_backend_checks_package_availability():
+    with patch(
+        "vllm.multimodal.image_decoders.nvimagecodec.ensure_nvimagecodec_available",
+    ) as check:
+        MultiModalConfig(media_io_kwargs={"image": {"backend": "nvimagecodec"}})
+    check.assert_called_once_with()
+    assert not MultiModalConfig(
+        media_io_kwargs={"image": {"backend": "custom"}}
+    ).use_gpu_image_backend()
 
 
 def test_mm_encoder_fp8_scale_path_requires_fp8():
@@ -375,3 +388,57 @@ def test_vllm_config_runs_the_mm_processor_device_check():
         pytest.raises(ValueError, match="also runs the language model"),
     ):
         VllmConfig._validate_mm_processor_device(vllm_config)
+
+
+def _nvimagecodec_config(image_count: int = 1) -> MultiModalConfig:
+    with patch(
+        "vllm.multimodal.image_decoders.nvimagecodec.ensure_nvimagecodec_available"
+    ):
+        return MultiModalConfig(
+            limit_per_prompt={"image": image_count, "video": 0},  # type: ignore[dict-item]
+            media_io_kwargs={"image": {"backend": "nvimagecodec"}},
+        )
+
+
+@pytest.mark.parametrize(
+    ("is_cuda", "model_type", "use_ray", "ray_dp", "rust_frontend", "error"),
+    [
+        (False, "qwen3_vl", False, False, False, "requires an NVIDIA CUDA"),
+        (True, "gemma3", False, False, False, "supports only Qwen3-VL"),
+        (True, "qwen3_vl", True, False, False, "does not support the Ray"),
+        (True, "qwen3_vl", False, True, False, "does not support the Ray"),
+        (True, "qwen3_vl", False, False, True, "does not support the Rust"),
+    ],
+)
+def test_nvimagecodec_requires_accounted_python_frontend(
+    monkeypatch, is_cuda, model_type, use_ray, ray_dp, rust_frontend, error
+):
+    model_config = MagicMock()
+    model_config.hf_config.model_type = model_type
+    model_config.multimodal_config = _nvimagecodec_config()
+    vllm_config = MagicMock(spec=VllmConfig)
+    vllm_config.model_config = model_config
+    vllm_config.parallel_config.use_ray = use_ray
+    vllm_config.parallel_config.data_parallel_backend = "ray" if ray_dp else "mp"
+    monkeypatch.setattr(current_platform, "is_cuda", lambda: is_cuda)
+    monkeypatch.setattr(envs, "VLLM_USE_RUST_FRONTEND", rust_frontend)
+
+    with pytest.raises(ValueError, match=error):
+        VllmConfig._validate_nvimagecodec_frontend(vllm_config)
+
+
+def test_nvimagecodec_requires_one_image_and_channels_first(monkeypatch):
+    model_config = MagicMock()
+    model_config.hf_config.model_type = "qwen3_vl"
+    model_config.multimodal_config = _nvimagecodec_config(image_count=2)
+    vllm_config = MagicMock(spec=VllmConfig)
+    vllm_config.model_config = model_config
+    monkeypatch.setattr(current_platform, "is_cuda", lambda: True)
+
+    with pytest.raises(ValueError, match="limit-mm-per-prompt"):
+        VllmConfig._validate_nvimagecodec_frontend(vllm_config)
+    mm_config = _nvimagecodec_config()
+    with pytest.raises(ValueError, match="channels_first"):
+        mm_config.merge_mm_processor_kwargs(
+            {"images_kwargs": {"input_data_format": "channels_last"}}
+        )
