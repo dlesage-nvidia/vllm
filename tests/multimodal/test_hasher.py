@@ -212,3 +212,19 @@ def test_hash_media_io_noop_config_preserves_hash():
     assert hasher.hash_kwargs("blake3", image=loaded) == hasher.hash_kwargs(
         "blake3", image=plain
     )
+
+
+def test_hash_borrowed_image_uses_encoded_bytes():
+    from vllm.multimodal.image_decoders.nvimagecodec import _PinnedImageLease
+
+    images = [
+        MediaWithBytes(
+            _PinnedImageLease(np.full((3, 2, 3), value), width=3, height=2),
+            data,
+            {"backend": "nvimagecodec"},
+        )
+        for value, data in ((0, b"same"), (1, b"same"), (0, b"different"))
+    ]
+    hashes = [MultiModalHasher.hash_kwargs("blake3", image=item) for item in images]
+    assert hashes[0] == hashes[1]
+    assert hashes[0] != hashes[2]

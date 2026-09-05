@@ -2544,6 +2544,47 @@ class VllmConfig:
 
         mm_config.validate_mm_processor_device(self.ec_transfer_config)
 
+    def _validate_nvimagecodec_frontend(self) -> None:
+        model_config = self.model_config
+        if model_config is None:
+            return
+        mm_config = model_config.multimodal_config
+        if mm_config is None or not mm_config.use_gpu_image_backend():
+            return
+        from vllm.platforms import current_platform
+
+        if not current_platform.is_cuda():
+            raise ValueError(
+                "The nvimagecodec image backend requires an NVIDIA CUDA platform."
+            )
+        if model_config.hf_config.model_type != "qwen3_vl":
+            raise ValueError(
+                "The nvimagecodec image backend currently supports only Qwen3-VL."
+            )
+        if getattr(model_config.hf_config, "use_unified_vision_chunk", False) is True:
+            raise ValueError(
+                "The nvimagecodec image backend does not support unified vision chunks."
+            )
+        if envs.VLLM_MEDIA_CONNECTOR != "http":
+            raise ValueError(
+                "The nvimagecodec image backend requires the built-in HTTP "
+                "media connector."
+            )
+        if (
+            self.parallel_config.use_ray
+            or self.parallel_config.data_parallel_backend == "ray"
+        ):
+            raise ValueError(
+                "The nvimagecodec image backend does not support the Ray "
+                "distributed executor because the frontend GPU is not placed "
+                "or memory-accounted by Ray."
+            )
+        if envs.VLLM_USE_RUST_FRONTEND:
+            raise ValueError(
+                "The nvimagecodec image backend does not support the Rust "
+                "frontend, which has a separate image-loading path."
+            )
+
     def _get_v2_model_runner_unsupported_features(self) -> list[str]:
         """Collect features not yet supported by the V2 model runner."""
         unsupported: list[str] = []

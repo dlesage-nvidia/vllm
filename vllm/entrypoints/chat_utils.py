@@ -65,7 +65,11 @@ from vllm.multimodal.inputs import (
     VisionChunkImage,
     VisionChunkVideo,
 )
-from vllm.multimodal.media import MEDIA_CONNECTOR_REGISTRY, MediaConnector
+from vllm.multimodal.media import (
+    MEDIA_CONNECTOR_REGISTRY,
+    MediaConnector,
+)
+from vllm.multimodal.parse import release_borrowed_image_resources
 from vllm.multimodal.processing import BaseMultiModalProcessor
 from vllm.renderers.embed_utils import (
     safe_load_prompt_embeds,
@@ -440,6 +444,18 @@ _T = TypeVar("_T")
 _AsyncMultiModalItem: TypeAlias = Callable[[], Awaitable[tuple[object, str | None]]]
 
 
+def _release_borrowed_image_task(
+    task: asyncio.Future[tuple[object, str | None]],
+) -> None:
+    if task.cancelled():
+        return
+    try:
+        result = task.result()
+    except BaseException:
+        return
+    release_borrowed_image_resources(result[0])
+
+
 # Backward compatibility for single item input
 class _BatchedSingleItemField(MultiModalSharedField):
     pass
@@ -609,6 +625,25 @@ class BaseMultiModalItemTracker(ABC, Generic[_T]):
     @cached_property
     def mm_processor(self):
         return self.mm_registry.create_processor(self.model_config)
+
+    def _validate_nvimagecodec_processor_kwargs(
+        self,
+        mm_processor_kwargs: dict[str, Any] | None,
+    ) -> None:
+        image_kwargs = (self.media_io_kwargs or {}).get("image", {})
+        if image_kwargs.get("backend") != "nvimagecodec":
+            return
+        kwargs = mm_processor_kwargs or {}
+        if mm_config := self.model_config.multimodal_config:
+            kwargs = mm_config.merge_mm_processor_kwargs(kwargs)
+        for scope in (kwargs.get("images_kwargs"), kwargs.get("common_kwargs"), kwargs):
+            if isinstance(scope, dict) and "input_data_format" in scope:
+                if scope["input_data_format"] != "channels_first":
+                    raise ValueError(
+                        "The nvimagecodec backend requires channels-first "
+                        "processor input."
+                    )
+                return
 
     @property
     def video_processor_name(self) -> str | None:
@@ -870,6 +905,15 @@ class AsyncMultiModalItemTracker(BaseMultiModalItemTracker[_AsyncMultiModalItem]
     ) -> tuple[MultiModalDataDict | None, MultiModalUUIDDict | None]:
         if not self._items_by_modality:
             return None, None
+        image_kwargs = (self.media_io_kwargs or {}).get("image", {})
+        if image_kwargs.get("backend") == "nvimagecodec":
+            image_count = len(self._items_by_modality.get("image", ()))
+            item_count = sum(map(len, self._items_by_modality.values()))
+            if image_count != 1 or item_count != 1:
+                raise ValueError(
+                    "The nvimagecodec backend requires exactly one image and "
+                    "no other multimodal items per request."
+                )
 
         # Fetch all modalities together. Each tracked item is already an
         # independent awaitable, and the async connector offloads blocking
@@ -878,15 +922,25 @@ class AsyncMultiModalItemTracker(BaseMultiModalItemTracker[_AsyncMultiModalItem]
         # Keep the original group and item order when rebuilding the result.
         item_groups = list(self._items_by_modality.items())
         items = [item for _, group in item_groups for item in group]
-        results = await asyncio.gather(
-            *(item() for item in items), return_exceptions=True
-        )
+        tasks = [asyncio.ensure_future(item()) for item in items]
+        try:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+        except BaseException:
+            for task in tasks:
+                if task.done():
+                    _release_borrowed_image_task(task)
+                else:
+                    task.add_done_callback(_release_borrowed_image_task)
+            raise
         for result in results:
             if isinstance(result, BaseException):
                 # Gathering with return_exceptions=True lets every task finish
                 # (or itself fail) before we raise, instead of abandoning
                 # still-in-flight fetches (real network/thread-pool work) the
                 # moment the first one fails.
+                for completed in results:
+                    if not isinstance(completed, BaseException):
+                        release_borrowed_image_resources(completed[0])
                 raise result
 
         resolved_items_by_modality: dict[str, list[Any]] = {}
@@ -899,15 +953,22 @@ class AsyncMultiModalItemTracker(BaseMultiModalItemTracker[_AsyncMultiModalItem]
         mm_processor = (
             self.mm_processor if self._model_config.is_multimodal_model else None
         )
-        return _resolve_items(
-            resolved_items_by_modality,
-            mm_processor,
-            self._modality_order,
-        )
+        try:
+            return _resolve_items(
+                resolved_items_by_modality,
+                mm_processor,
+                self._modality_order,
+            )
+        except BaseException:
+            for result in results:
+                if not isinstance(result, BaseException):
+                    release_borrowed_image_resources(result[0])
+            raise
 
     def create_parser(
         self, mm_processor_kwargs: dict[str, Any] | None = None
     ) -> "BaseMultiModalContentParser":
+        self._validate_nvimagecodec_processor_kwargs(mm_processor_kwargs)
         return AsyncMultiModalContentParser(
             self, mm_processor_kwargs=mm_processor_kwargs
         )
@@ -1229,9 +1290,10 @@ class AsyncMultiModalContentParser(BaseMultiModalContentParser):
         return tensor, None
 
     async def _image_with_uuid_async(self, image_url: str | None, uuid: str | None):
-        image = (
-            await self._connector.fetch_image_async(image_url) if image_url else None
-        )
+        if image_url:
+            image = await self._connector.fetch_image_async(image_url)
+        else:
+            image = None
         return image, uuid
 
     def parse_image(self, image_url: str | None, uuid: str | None = None) -> None:

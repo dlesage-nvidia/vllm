@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+import asyncio
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Iterator
+from concurrent.futures import Executor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Generic, TypeVar, cast
@@ -98,3 +100,25 @@ class MediaIO(ABC, Generic[_T]):
     @abstractmethod
     def load_file(self, filepath: Path) -> _T:
         raise NotImplementedError
+
+    async def load_bytes_async(
+        self, data: bytes, *, executor: Executor | None = None
+    ) -> _T:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(executor, self.load_bytes, data)
+
+    async def load_base64_async(
+        self,
+        media_type: str,
+        data: str,
+        *,
+        executor: Executor | None = None,
+    ) -> _T:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(executor, self.load_base64, media_type, data)
+
+    async def load_file_async(
+        self, filepath: Path, *, executor: Executor | None = None
+    ) -> _T:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(executor, self.load_file, filepath)

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+import asyncio
 import io
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -13,7 +14,9 @@ import torch
 from vllm.config import ModelConfig
 from vllm.exceptions import VLLMValidationError
 from vllm.inputs import SingletonPrompt
-from vllm.renderers import TokenizeParams
+from vllm.multimodal.image_decoders.nvimagecodec import _PinnedImageLease
+from vllm.multimodal.media import MediaWithBytes
+from vllm.renderers import ChatParams, TokenizeParams
 from vllm.renderers.hf import HfRenderer
 from vllm.renderers.inputs.preprocess import parse_model_prompt, prompt_to_seq
 
@@ -124,6 +127,87 @@ def _preprocess_prompt(
         )
         for prompt in prompt_to_seq(prompt_or_prompts)
     ]
+
+
+def _make_borrowed_image():
+    host = torch.zeros((3, 8, 8), dtype=torch.uint8)
+    lease = _PinnedImageLease(host, width=8, height=8)
+    image = MediaWithBytes(lease, b"encoded", {"backend": "nvimagecodec"})
+    return lease, image
+
+
+@pytest.mark.asyncio
+async def test_async_template_error_releases_borrowed_image(monkeypatch) -> None:
+    renderer = _build_renderer(MockModelConfig(enable_prompt_embeds=False))
+    lease, image = _make_borrowed_image()
+
+    async def parse(*_args, **_kwargs):
+        return [], {"image": [image]}, {"image": [None]}
+
+    async def fail_template(*_args, **_kwargs):
+        raise RuntimeError("template failed")
+
+    monkeypatch.setattr("vllm.renderers.hf.parse_chat_messages_async", parse)
+    monkeypatch.setattr(
+        "vllm.renderers.hf.resolve_chat_template_content_format",
+        lambda **_kwargs: "string",
+    )
+    renderer._apply_chat_template_async = fail_template
+
+    with pytest.raises(RuntimeError, match="template failed"):
+        await renderer.render_messages_async([], ChatParams())
+    with pytest.raises(RuntimeError, match="expired"):
+        lease.borrow_tensor()
+    renderer._resources.close()
+
+
+@pytest.mark.asyncio
+async def test_async_chat_pipelines_processing_and_releases_borrows(
+    monkeypatch,
+) -> None:
+    renderer = _build_renderer(MockModelConfig(enable_prompt_embeds=False))
+    borrowed = [_make_borrowed_image(), _make_borrowed_image()]
+    processing_started = asyncio.Event()
+
+    async def render(conversation, *_args, **_kwargs):
+        index = int(conversation[0]["content"])
+        if index:
+            await processing_started.wait()
+        return [], {
+            "prompt": str(index),
+            "multi_modal_data": {"image": [borrowed[index][1]]},
+        }
+
+    async def tokenize(prompts, *_args, **_kwargs):
+        prompt = prompts[0]
+        if prompt["prompt"] == "1":
+            raise RuntimeError("tokenization failed")
+        return [{"prompt_token_ids": [], **prompt}]
+
+    async def process(*_args, **_kwargs):
+        processing_started.set()
+        return {}
+
+    monkeypatch.setattr(renderer, "render_messages_async", render)
+    monkeypatch.setattr(renderer, "tokenize_prompts_async", tokenize)
+    monkeypatch.setattr(renderer, "process_for_engine_async", process)
+
+    with pytest.raises(RuntimeError, match="tokenization failed"):
+        await asyncio.wait_for(
+            renderer.render_chat_async(
+                [
+                    [{"role": "user", "content": "0"}],
+                    [{"role": "user", "content": "1"}],
+                ],
+                ChatParams(),
+                TokenizeParams(max_total_tokens=16),
+            ),
+            timeout=1,
+        )
+    for lease, _ in borrowed:
+        with pytest.raises(RuntimeError, match="expired"):
+            lease.borrow_tensor()
+    renderer._resources.close()
 
 
 class TestValidatePrompt:
