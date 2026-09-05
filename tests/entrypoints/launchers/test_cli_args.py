@@ -148,6 +148,15 @@ def test_multiple_valid_inputs(serve_parser):
 
 
 ### Tests for serve argument validation that run prior to loading
+def test_nvimagecodec_requires_gpu_api_process(serve_parser):
+    for flag, value in (("headless", True), ("launch_component", "render")):
+        args = serve_parser.parse_args([])
+        args.media_io_kwargs = {"image": {"backend": "nvimagecodec"}}
+        setattr(args, flag, value)
+        with pytest.raises(ValueError, match="requires a GPU-capable API process"):
+            validate_parsed_serve_args(args)
+
+
 def test_enable_auto_choice_passes_without_tool_call_parser(serve_parser):
     """Ensure validation fails if tool choice is enabled with no call parser"""
     # If we enable-auto-tool-choice, explode with no tool-call-parser

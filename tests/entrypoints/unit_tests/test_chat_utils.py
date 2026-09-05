@@ -24,6 +24,8 @@ from vllm.entrypoints.chat_utils import (
 )
 from vllm.exceptions import VLLMValidationError
 from vllm.inputs import MultiModalDataDict, MultiModalUUIDDict
+from vllm.multimodal.image_decoders.nvimagecodec import _PinnedImageLease
+from vllm.multimodal.media import MediaWithBytes
 from vllm.multimodal.utils import (
     encode_audio_url,
     encode_image_url,
@@ -2986,6 +2988,18 @@ async def test_resolve_items_runs_modalities_concurrently_and_preserves_order():
 
 
 @pytest.mark.asyncio
+async def test_nvimagecodec_rejects_companion_video():
+    tracker = AsyncMultiModalItemTracker(
+        MagicMock(), media_io_kwargs={"image": {"backend": "nvimagecodec"}}
+    )
+    tracker._items_by_modality["image"] = [MagicMock()]
+    tracker._items_by_modality["video"] = [MagicMock()]
+
+    with pytest.raises(ValueError, match="exactly one image"):
+        await tracker.resolve_items()
+
+
+@pytest.mark.asyncio
 async def test_resolve_items_does_not_leak_tasks_on_partial_failure():
     """Regression test: one failing media fetch must not abandon the other
     still-in-flight fetches across modality batches.
@@ -2996,17 +3010,20 @@ async def test_resolve_items_does_not_leak_tasks_on_partial_failure():
     running detached, with nothing left to await or cancel them.
     """
 
-    async def _fetch(should_fail: bool, delay: float):
+    lease = _PinnedImageLease(torch.zeros(1), width=1, height=1)
+    borrowed = MediaWithBytes(lease, b"jpeg", {"backend": "nvimagecodec"})
+
+    async def _fetch(should_fail: bool, delay: float, value="decoded"):
         if should_fail:
             await asyncio.sleep(0.01)
             raise ValueError("simulated fetch failure")
         await asyncio.sleep(delay)
-        return ("decoded", None)
+        return (value, None)
 
     tracker = AsyncMultiModalItemTracker(MagicMock())
     tracker._items_by_modality["image"] = [
         lambda: _fetch(True, 0),
-        lambda: _fetch(False, 0.2),
+        lambda: _fetch(False, 0.2, borrowed),
         lambda: _fetch(False, 0.2),
     ]
     tracker._items_by_modality["audio"] = [lambda: _fetch(False, 0.2)]
@@ -3021,6 +3038,8 @@ async def test_resolve_items_does_not_leak_tasks_on_partial_failure():
         f"resolve_items left {len(leaked_tasks)} task(s) running after "
         f"raising: {leaked_tasks}"
     )
+    with pytest.raises(RuntimeError, match="expired"):
+        lease.borrow_tensor()
 
 
 def _assistant_tool_call(arguments, name="write"):

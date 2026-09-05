@@ -7,10 +7,12 @@ import pytest
 import torch
 from transformers import PretrainedConfig
 
+import vllm.envs as envs
 from vllm.config.ec_transfer import ECRole, ECTransferConfig
 from vllm.config.model import ModelConfig
 from vllm.config.multimodal import MultiModalConfig
 from vllm.config.vllm import VllmConfig
+from vllm.platforms import current_platform
 from vllm.transformers_utils.model_arch_config_convertor import (
     ModelArchConfigConvertorBase,
 )
@@ -64,6 +66,13 @@ def test_use_gpu_video_backend_from_media_io_kwargs(backend_arg: str):
     )
 
     assert config.use_gpu_video_backend()
+
+
+def test_image_backend_is_validated_at_startup():
+    config = MultiModalConfig(media_io_kwargs={"image": {"backend": "nvimagecodec"}})
+    assert config.use_gpu_image_backend()
+    with pytest.raises(ValueError, match="Unknown image backend"):
+        MultiModalConfig(media_io_kwargs={"image": {"backend": "unknown"}})
 
 
 def test_mm_encoder_fp8_scale_path_requires_fp8():
@@ -375,3 +384,44 @@ def test_vllm_config_runs_the_mm_processor_device_check():
         pytest.raises(ValueError, match="also runs the language model"),
     ):
         VllmConfig._validate_mm_processor_device(vllm_config)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "error"),
+    [
+        ({"is_cuda": False}, "requires an NVIDIA CUDA"),
+        ({"model_type": "gemma3"}, "supports only Qwen3-VL"),
+        ({"unified_vision": True}, "unified vision chunks"),
+        ({"use_ray": True}, "does not support the Ray"),
+        ({"ray_dp": True}, "does not support the Ray"),
+        ({"rust_frontend": True}, "does not support the Rust"),
+        ({"media_connector": "custom"}, "built-in HTTP media connector"),
+    ],
+)
+def test_nvimagecodec_requires_accounted_python_frontend(monkeypatch, overrides, error):
+    model_config = MagicMock()
+    model_config.hf_config.model_type = overrides.get("model_type", "qwen3_vl")
+    model_config.hf_config.use_unified_vision_chunk = overrides.get(
+        "unified_vision", False
+    )
+    model_config.multimodal_config = MultiModalConfig(
+        media_io_kwargs={"image": {"backend": "nvimagecodec"}}
+    )
+    vllm_config = MagicMock(spec=VllmConfig)
+    vllm_config.model_config = model_config
+    vllm_config.parallel_config.use_ray = overrides.get("use_ray", False)
+    vllm_config.parallel_config.data_parallel_backend = (
+        "ray" if overrides.get("ray_dp") else "mp"
+    )
+    monkeypatch.setattr(
+        current_platform, "is_cuda", lambda: overrides.get("is_cuda", True)
+    )
+    monkeypatch.setattr(
+        envs, "VLLM_USE_RUST_FRONTEND", overrides.get("rust_frontend", False)
+    )
+    monkeypatch.setattr(
+        envs, "VLLM_MEDIA_CONNECTOR", overrides.get("media_connector", "http")
+    )
+
+    with pytest.raises(ValueError, match=error):
+        VllmConfig._validate_nvimagecodec_frontend(vllm_config)

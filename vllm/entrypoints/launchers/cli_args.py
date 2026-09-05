@@ -424,6 +424,14 @@ def validate_parsed_serve_args(args: argparse.Namespace):
     if hasattr(args, "subparser") and args.subparser not in ("serve", "launch"):
         return
 
+    image_io_kwargs = (getattr(args, "media_io_kwargs", None) or {}).get("image", {})
+    if image_io_kwargs.get("backend") == "nvimagecodec" and (
+        getattr(args, "headless", False)
+        or getattr(args, "launch_component", None) == "render"
+    ):
+        raise ValueError(
+            "The nvimagecodec image backend requires a GPU-capable API process."
+        )
     # Ensure that the chat template is valid; raises if it likely isn't
     validate_chat_template(args.chat_template)
 

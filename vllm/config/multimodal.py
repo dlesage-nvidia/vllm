@@ -348,6 +348,15 @@ class MultiModalConfig:
                 raise FileNotFoundError(
                     f"Parent directory for FP8 scale save path not found: {save_parent}"
                 )
+
+        image_backend = self.media_io_kwargs.get("image", {}).get("backend")
+        if image_backend is not None:
+            from vllm.multimodal.image_decoders.nvimagecodec import (
+                validate_image_backend,
+            )
+
+            validate_image_backend(image_backend)
+
         return self
 
     @staticmethod
@@ -530,6 +539,11 @@ class MultiModalConfig:
             codec_backend is not None
             and VIDEO_LOADER_REGISTRY.backend_requires_gpu(codec_backend)
         )
+
+    def use_gpu_image_backend(self) -> bool:
+        """Return whether nvImageCodec is enabled for image inputs."""
+        backend = self.media_io_kwargs.get("image", {}).get("backend")
+        return backend == "nvimagecodec"
 
     def is_multimodal_pruning_enabled(self):
         return self.get_video_pruning_spec() is not None

@@ -95,6 +95,19 @@ class MultiModalHasher:
                 return cls.iter_item_to_bytes("video", frames)
             return cls.iter_item_to_bytes("video", obj.original_bytes)
 
+        if (
+            isinstance(obj, MediaWithBytes)
+            and getattr(type(obj.media), "_is_vllm_nvimagecodec_pinned_lease", False)
+            is True
+        ):
+            return cls.iter_item_to_bytes(
+                "image",
+                {
+                    "io_config": obj.io_config or {},
+                    "data": obj.original_bytes,
+                },
+            )
+
         if isinstance(obj, torch.Tensor):
             tensor_obj: torch.Tensor = obj.cpu()
             tensor_dtype = tensor_obj.dtype
