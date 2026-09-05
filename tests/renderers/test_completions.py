@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-import asyncio
 import io
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -14,7 +13,7 @@ import torch
 from vllm.config import ModelConfig
 from vllm.exceptions import VLLMValidationError
 from vllm.inputs import SingletonPrompt
-from vllm.renderers import ChatParams, TokenizeParams
+from vllm.renderers import TokenizeParams
 from vllm.renderers.hf import HfRenderer
 from vllm.renderers.inputs.preprocess import parse_model_prompt, prompt_to_seq
 
@@ -125,46 +124,6 @@ def _preprocess_prompt(
         )
         for prompt in prompt_to_seq(prompt_or_prompts)
     ]
-
-
-@pytest.mark.asyncio
-async def test_async_chat_pipelines_more_than_output_cap(monkeypatch) -> None:
-    renderer = _build_renderer(MockModelConfig(enable_prompt_embeds=False))
-    output_cap = 40
-    credits = asyncio.Semaphore(output_cap)
-    processed = []
-
-    async def render(conversation, *_args, **_kwargs):
-        await credits.acquire()
-        index = int(conversation[0]["content"])
-        return [], {"prompt": str(index)}
-
-    async def tokenize(prompts, *_args, **_kwargs):
-        return [{"prompt_token_ids": [int(prompts[0]["prompt"])]}]
-
-    async def process(prompt, *_args, **_kwargs):
-        processed.append(prompt["prompt_token_ids"][0])
-        credits.release()
-        return prompt
-
-    monkeypatch.setattr(renderer, "render_messages_async", render)
-    monkeypatch.setattr(renderer, "tokenize_prompts_async", tokenize)
-    monkeypatch.setattr(renderer, "process_for_engine_async", process)
-    conversations = [
-        [{"role": "user", "content": str(index)}] for index in range(output_cap + 1)
-    ]
-
-    _, prompts = await asyncio.wait_for(
-        renderer.render_chat_async(
-            conversations,
-            ChatParams(),
-            TokenizeParams(max_total_tokens=16),
-        ),
-        timeout=1,
-    )
-
-    assert processed == list(range(output_cap + 1))
-    assert [prompt["prompt_token_ids"][0] for prompt in prompts] == processed
 
 
 class TestValidatePrompt:

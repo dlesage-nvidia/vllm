@@ -440,6 +440,17 @@ class _NvImageCodecService:
 
     def _run(self, decoder: _NvImageCodecDecoder) -> None:
         pending: deque[tuple[tuple[_DecodeJob, ...], _DeviceArena]] = deque()
+        try:
+            self._run_pending(decoder, pending)
+        except BaseException:
+            self._budget.release(sum(len(jobs) for jobs, _ in pending))
+            raise
+
+    def _run_pending(
+        self,
+        decoder: _NvImageCodecDecoder,
+        pending: deque[tuple[tuple[_DecodeJob, ...], _DeviceArena]],
+    ) -> None:
         held: tuple[_DecodeJob, ...] = ()
         stopping = False
         while pending or held or not stopping:
@@ -470,10 +481,10 @@ class _NvImageCodecService:
 
                 try:
                     token = decoder.submit(tuple(job[0] for job in held))
+                    pending.append((held, token))
                 except BaseException:
                     self._budget.release(len(held))
                     raise
-                pending.append((held, token))
                 held = ()
 
             if not pending:
@@ -551,61 +562,63 @@ def create_nvimagecodec_decode_service(
     )
 
 
-def jpeg_has_complete_scan_and_eoi(data: bytes) -> bool:
-    """Return whether a JPEG has a structurally complete frame and scan."""
+def _inspect_jpeg(data: bytes) -> tuple[bool, bool]:
     if not data.startswith(b"\xff\xd8"):
-        return False
+        return False, False
 
     position = 2
     in_scan = False
     saw_sof = False
     saw_scan = False
+    has_exif = False
     while position < len(data):
         from_scan = in_scan
         if from_scan:
             match = _JPEG_SCAN_MARKER.search(data, position)
             if match is None:
-                return False
+                return False, has_exif
             marker = data[match.start() + 1]
             position = match.end()
             in_scan = False
         else:
             if data[position] != 0xFF:
-                return False
+                return False, has_exif
             while position < len(data) and data[position] == 0xFF:
                 position += 1
             if position >= len(data):
-                return False
+                return False, has_exif
             marker = data[position]
             position += 1
 
         if marker == 0xD9:
-            return saw_sof and saw_scan
+            return saw_sof and saw_scan, has_exif
         if marker == 0x01:
             in_scan = from_scan
             continue
         if marker < 0xC0 or 0xD0 <= marker <= 0xD8:
-            return False
+            return False, has_exif
         if marker == 0xDC and not from_scan:
-            return False
+            return False, has_exif
         if position + 2 > len(data):
-            return False
+            return False, has_exif
         segment_length = int.from_bytes(data[position : position + 2], "big")
         if segment_length < 2 or position + segment_length > len(data):
-            return False
+            return False, has_exif
+        if marker == 0xE1 and data[position + 2 : position + 8] == _JPEG_EXIF_SIGNATURE:
+            has_exif = True
         if marker in _JPEG_SOF_MARKERS:
             if saw_sof:
-                return False
+                return False, has_exif
             saw_sof = True
         if marker == 0xDA:
             if not saw_sof:
-                return False
+                return False, has_exif
             saw_scan = True
             in_scan = True
         elif marker == 0xDC:
             in_scan = True
         position += segment_length
-    return False
+    return False, has_exif
 
 
 def preflight_image_nvimagecodec(
@@ -618,9 +631,10 @@ def preflight_image_nvimagecodec(
         raise ValueError("nvImageCodec requires image_mode='RGB'.")
     if not data.startswith(b"\xff\xd8"):
         raise ValueError("nvImageCodec currently supports only JPEG images.")
-    if not jpeg_has_complete_scan_and_eoi(data):
+    complete, has_exif = _inspect_jpeg(data)
+    if not complete:
         raise ValueError("nvImageCodec requires a structurally complete JPEG.")
-    if _JPEG_EXIF_SIGNATURE in data:
+    if has_exif:
         raise ValueError("nvImageCodec does not support JPEG EXIF metadata.")
 
     nvimgcodec = _load_nvimgcodec()

@@ -93,6 +93,22 @@ def test_exif_and_native_parser_failure_fail(monkeypatch):
         nvcodec.preflight_image_nvimagecodec(_jpeg())
 
 
+def test_exif_signature_outside_app1_is_allowed(monkeypatch):
+    _install_codec(monkeypatch)
+    data = _jpeg()
+    comment = b"not metadata: Exif\x00\x00"
+    data = (
+        data[:2]
+        + b"\xff\xfe"
+        + (len(comment) + 2).to_bytes(2, "big")
+        + comment
+        + data[2:]
+    )
+
+    result = nvcodec.preflight_image_nvimagecodec(data)
+    assert (result.width, result.height) == (8, 4)
+
+
 def test_incomplete_jpeg_fails_before_native_parser(monkeypatch):
     monkeypatch.setattr(nvcodec, "_load_nvimgcodec", lambda: pytest.fail("loaded"))
     for progressive in (False, True):
