@@ -107,7 +107,7 @@ def test_one_decode_failure_does_not_poison_service() -> None:
     service.close()
 
 
-def test_system_failure_is_sticky() -> None:
+def test_system_failure_is_sticky_and_releases_budget() -> None:
     _FakeDecoder.failure = "collect"
     service = nvimagecodec._NvImageCodecService(2)
     futures = [service.submit(_input(value)) for value in range(3)]
@@ -120,6 +120,7 @@ def test_system_failure_is_sticky() -> None:
     with pytest.raises(RuntimeError, match="decoder failed"):
         service.submit(_input(2))
     service.close()
+    assert service._budget._in_use == 0
 
 
 def test_service_waits_until_a_complete_wave_fits(monkeypatch) -> None:
