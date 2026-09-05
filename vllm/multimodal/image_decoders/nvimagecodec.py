@@ -257,36 +257,28 @@ class _NvImageCodecDecoder:
             for stream in (self._decode_stream, self._copy_stream):
                 with contextlib.suppress(BaseException):
                     stream.synchronize()
-            arena.reset()
-            self._available.appendleft(arena)
             raise
         return arena
 
     def collect(self, arena: _DeviceArena) -> list[NvImageCodecResult]:
         self._check_owner()
-        try:
-            arena.copy_done.synchronize()
-            results: list[NvImageCodecResult] = [None] * len(arena.items)
-            for index, _, host in arena.copies:
-                item = arena.items[index]
-                if (
-                    tuple(int(value) for value in host.shape)
-                    != (3, item.height, item.width)
-                    or host.device.type != "cpu"
-                    or not host.is_pinned()
-                ):
-                    raise RuntimeError(
-                        "nvImageCodec violated the pinned RGB/CHW host contract"
-                    )
-                results[index] = host
-            return results
-        except BaseException:
-            with contextlib.suppress(BaseException):
-                self._copy_stream.synchronize()
-            raise
-        finally:
-            arena.reset()
-            self._available.append(arena)
+        arena.copy_done.synchronize()
+        results: list[NvImageCodecResult] = [None] * len(arena.items)
+        for index, _, host in arena.copies:
+            item = arena.items[index]
+            if (
+                tuple(int(value) for value in host.shape)
+                != (3, item.height, item.width)
+                or host.device.type != "cpu"
+                or not host.is_pinned()
+            ):
+                raise RuntimeError(
+                    "nvImageCodec violated the pinned RGB/CHW host contract"
+                )
+            results[index] = host
+        arena.reset()
+        self._available.append(arena)
+        return results
 
     def close(self) -> None:
         self._check_owner()

@@ -181,16 +181,14 @@ class ImageMediaIO(MediaIO[LoadedImage]):
         runtime_kwargs: dict[str, Any] | None,
     ) -> dict[str, Any]:
         if runtime_kwargs and "backend" in runtime_kwargs:
-            runtime_kwargs = dict(runtime_kwargs)
-            requested = runtime_kwargs.pop("backend")
+            requested = runtime_kwargs["backend"]
             configured = (default_kwargs or {}).get("backend", PILLOW_IMAGE_BACKEND)
             if requested != configured:
                 raise ValueError(
                     f"Image backend is fixed at startup as {configured!r}, "
                     f"not {requested!r}."
                 )
-        merged = super().merge_kwargs(default_kwargs, runtime_kwargs)
-        return merged
+        return super().merge_kwargs(default_kwargs, runtime_kwargs)
 
     def __init__(
         self,

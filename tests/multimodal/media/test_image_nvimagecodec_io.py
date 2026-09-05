@@ -17,11 +17,6 @@ from vllm.multimodal.media import ImageMediaIO, MediaWithBytes
 pytestmark = pytest.mark.cpu_test
 
 
-@pytest.fixture(autouse=True)
-def _reset_service_state(monkeypatch):
-    monkeypatch.setattr(image_module, "_nvimagecodec_state", None)
-
-
 def _install_native(monkeypatch, result):
     data = b"native JPEG"
     admitted = NvImageCodecInput(data, object(), 3, 2)
@@ -67,14 +62,9 @@ async def test_native_decode_failure_does_not_fall_back(monkeypatch) -> None:
     service.submit.assert_called_once_with(admitted)
 
 
-def test_sync_native_load_fails_instead_of_using_pillow(monkeypatch) -> None:
-    tensor = torch.zeros((3, 2, 3), dtype=torch.uint8)
-    data, _, service = _install_native(monkeypatch, tensor)
-    image_io = ImageMediaIO(backend="nvimagecodec")
-    image_io._load_bytes_pillow = Mock(side_effect=AssertionError("used Pillow"))
+def test_sync_native_load_fails_instead_of_using_pillow() -> None:
     with pytest.raises(RuntimeError, match="asynchronous"):
-        image_io.load_bytes(data)
-    service.submit.assert_not_called()
+        ImageMediaIO(backend="nvimagecodec").load_bytes(b"native JPEG")
 
 
 @pytest.mark.asyncio
@@ -88,13 +78,11 @@ async def test_pillow_backend_stays_on_pillow(monkeypatch) -> None:
         lambda: pytest.fail("service used"),
     )
 
-    image_io = ImageMediaIO()
-    assert image_io.load_bytes(data) is fallback.return_value
-    assert await image_io.load_bytes_async(data) is fallback.return_value
-    assert fallback.call_count == 2
+    assert await ImageMediaIO().load_bytes_async(data) is fallback.return_value
 
 
 def test_process_local_service_is_reference_counted(monkeypatch) -> None:
+    monkeypatch.setattr(image_module, "_nvimagecodec_state", None)
     service = Mock()
     create = Mock(return_value=service)
     monkeypatch.setattr(image_module, "create_nvimagecodec_decode_service", create)

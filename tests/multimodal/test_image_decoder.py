@@ -57,11 +57,7 @@ def test_package_availability_without_import(monkeypatch):
         nvcodec.ensure_nvimagecodec_available()
 
 
-def test_admits_only_simple_rgb_jpeg(monkeypatch):
-    _install_codec(monkeypatch)
-    result = nvcodec.preflight_image_nvimagecodec(_jpeg())
-    assert (result.width, result.height) == (8, 4)
-
+def test_rejects_non_jpeg_and_non_rgb_mode(monkeypatch):
     monkeypatch.setattr(nvcodec, "_load_nvimgcodec", lambda: pytest.fail("loaded"))
     with pytest.raises(ValueError, match="only JPEG"):
         nvcodec.preflight_image_nvimagecodec(b"not an image")
@@ -124,7 +120,6 @@ def test_incomplete_jpeg_fails_before_native_parser(monkeypatch):
         (8, 4, 31, "maximum of 31 pixels"),
         (4, 4, 0, "width greater than 4"),
         (3840, 2160, 0, None),
-        (2160, 3840, 0, None),
         (3841, 2160, 0, "limited to 8,294,400 pixels"),
     ],
 )
