@@ -299,6 +299,14 @@ class BaseRenderer(ABC, Generic[_T]):
     def shutdown(self) -> None:
         self._resources.close()
 
+    def initialize_image_decode_backend(self) -> None:
+        """Initialize the post-fork image decoder for this renderer."""
+        from vllm.multimodal.media.image import initialize_image_decode_backend
+
+        release = initialize_image_decode_backend(self.config)
+        if release is not None:
+            self._resources.callback(release)
+
     def get_bos_token_id(self) -> int | None:
         if self.tokenizer is None:
             logger.warning_once(
@@ -1113,31 +1121,25 @@ class BaseRenderer(ABC, Generic[_T]):
 
         if tok_params is None:
             tok_params = self.default_chat_tok_params
+        effective_prompt_extras = dict(prompt_extras or {})
+        effective_prompt_extras["media_io_kwargs"] = chat_params.media_io_kwargs or {}
 
-        rendered = [
-            self.render_messages_async(conversation, chat_params)
-            for conversation in conversations
-        ]
-
-        out_conversations = list[list["ConversationMessage"]]()
-        dict_prompts = list[DictPrompt]()
-        for conv, prompt in await asyncio.gather(*rendered):
-            out_conversations.append(conv)
-            dict_prompts.append(prompt)
-
-        tok_prompts = await self.tokenize_prompts_async(dict_prompts, tok_params)
-
-        prompt_extras = dict(prompt_extras or {})
-        prompt_extras["media_io_kwargs"] = chat_params.media_io_kwargs or {}
-        self._apply_prompt_extras(tok_prompts, prompt_extras)
-
-        eng_prompts = await asyncio.gather(
-            *(
-                self.process_for_engine_async(
-                    p, arrival_time, skip_mm_cache=skip_mm_cache
-                )
-                for p in tok_prompts
+        async def render_one(conversation):
+            out_conversation, dict_prompt = await self.render_messages_async(
+                conversation, chat_params
             )
-        )
+            tok_prompt = (await self.tokenize_prompts_async([dict_prompt], tok_params))[
+                0
+            ]
+            self._apply_prompt_extras([tok_prompt], effective_prompt_extras)
+            engine_prompt = await self.process_for_engine_async(
+                tok_prompt, arrival_time, skip_mm_cache=skip_mm_cache
+            )
+            return out_conversation, engine_prompt
 
+        rendered = await asyncio.gather(
+            *(render_one(conversation) for conversation in conversations)
+        )
+        out_conversations = [result[0] for result in rendered]
+        eng_prompts = [result[1] for result in rendered]
         return out_conversations, eng_prompts

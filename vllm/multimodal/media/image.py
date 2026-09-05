@@ -1,8 +1,16 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+import asyncio
+import contextlib
+import os
+import threading
+from collections.abc import Callable
+from concurrent.futures import Executor
+from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
+from typing import Any, TypeAlias
 
 import numpy as np
 import pybase64
@@ -10,6 +18,15 @@ import torch
 from PIL import Image
 
 import vllm.envs as envs
+from vllm.multimodal.image_decoders.nvimagecodec import (
+    NVIMAGECODEC_IMAGE_BACKEND,
+    PILLOW_IMAGE_BACKEND,
+    NvImageCodecInput,
+    NvImageCodecResult,
+    create_nvimagecodec_decode_service,
+    preflight_image_nvimagecodec,
+    validate_image_backend,
+)
 from vllm.utils.serial_utils import tensor2base64
 from vllm.utils.sparse_utils import (
     check_sparse_tensor_invariants_threadsafe,
@@ -21,19 +38,173 @@ from .base import MediaIO, MediaWithBytes
 
 MAGIC_NUMPY_PREFIX = b"\x93NUMPY"  # https://numpy.org/devdocs/reference/generated/numpy.lib.format.html#format-version-1-0
 
+DecodedImage: TypeAlias = Image.Image | torch.Tensor
+LoadedImage: TypeAlias = MediaWithBytes[DecodedImage]
 
-class ImageMediaIO(MediaIO[Image.Image]):
+
+@dataclass
+class _NvImageCodecState:
+    api_process_count: int
+    device_index: int
+    service: Any
+    users: int = 1
+
+
+_nvimagecodec_state: _NvImageCodecState | None = None
+_nvimagecodec_service_lock = threading.Lock()
+
+
+def _get_nvimagecodec_decode_service():
+    """Return the service created during post-fork server initialization."""
+    state = _nvimagecodec_state
+    if state is None:
+        raise RuntimeError(
+            "The nvImageCodec image backend was not initialized in this process."
+        )
+    return state.service
+
+
+def initialize_nvimagecodec_decode_service(
+    api_process_count: int = 1,
+    device_index: int = 0,
+) -> Callable[[], None]:
+    """Acquire the process-local decoder and return an idempotent release."""
+    global _nvimagecodec_state
+
+    with _nvimagecodec_service_lock:
+        if _nvimagecodec_state is not None:
+            if (
+                _nvimagecodec_state.api_process_count != api_process_count
+                or _nvimagecodec_state.device_index != device_index
+            ):
+                raise RuntimeError(
+                    "The nvImageCodec image backend was already initialized "
+                    "with different process topology."
+                )
+            _nvimagecodec_state.users += 1
+        else:
+            service = create_nvimagecodec_decode_service(
+                api_process_count, device_index=device_index
+            )
+            try:
+                service.wait_until_ready()
+            except BaseException:
+                with contextlib.suppress(BaseException):
+                    service.close()
+                raise
+            _nvimagecodec_state = _NvImageCodecState(
+                api_process_count, device_index, service
+            )
+        acquired_state = _nvimagecodec_state
+
+    released = False
+
+    def release() -> None:
+        nonlocal released
+        global _nvimagecodec_state
+
+        with _nvimagecodec_service_lock:
+            if released:
+                return
+            released = True
+            state = _nvimagecodec_state
+            if state is not acquired_state:
+                return
+            state.users -= 1
+            if state.users == 0:
+                _nvimagecodec_state = None
+                state.service.close()
+
+    return release
+
+
+def initialize_image_decode_backend(
+    vllm_config: Any,
+) -> Callable[[], None] | None:
+    """Acquire a configured GPU image backend after process creation."""
+    mm_config = vllm_config.model_config.multimodal_config
+    if mm_config is not None and mm_config.use_gpu_image_backend():
+        parallel_config = vllm_config.parallel_config
+        return initialize_nvimagecodec_decode_service(
+            parallel_config._api_process_count,
+            device_index=_nvimagecodec_device_index(
+                parallel_config.assigned_physical_gpu_ids
+            ),
+        )
+    return None
+
+
+def _nvimagecodec_device_index(assigned_physical_gpu_ids: list[int] | None) -> int:
+    if not assigned_physical_gpu_ids:
+        return 0
+
+    from vllm.platforms import current_platform
+
+    physical_id = assigned_physical_gpu_ids[0]
+    visible = os.environ.get(current_platform.device_control_env_var, "")
+    if not visible:
+        return physical_id
+    visible_physical_ids = [
+        current_platform.device_control_id_to_physical_device_id(item)
+        for item in visible.split(",")
+    ]
+    if physical_id not in visible_physical_ids:
+        raise RuntimeError(
+            f"Assigned physical GPU {physical_id} is not visible in "
+            f"{current_platform.device_control_env_var}={visible}."
+        )
+    return visible_physical_ids.index(physical_id)
+
+
+def _reset_nvimagecodec_decode_service_after_fork() -> None:
+    global _nvimagecodec_state, _nvimagecodec_service_lock
+
+    # Only the thread that called fork survives in the child. Never inherit a
+    # service owner thread or a lock that another parent thread may have held.
+    _nvimagecodec_state = None
+    _nvimagecodec_service_lock = threading.Lock()
+
+
+os.register_at_fork(after_in_child=_reset_nvimagecodec_decode_service_after_fork)
+
+
+class ImageMediaIO(MediaIO[LoadedImage]):
     """Configuration values can be user-provided either by --media-io-kwargs or
     by the runtime API field "media_io_kwargs". Ensure proper validation and
     error handling.
     """
 
-    def __init__(self, image_mode: str | None = "RGB", **kwargs) -> None:
+    @classmethod
+    def merge_kwargs(
+        cls,
+        default_kwargs: dict[str, Any] | None,
+        runtime_kwargs: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        if runtime_kwargs and "backend" in runtime_kwargs:
+            runtime_kwargs = dict(runtime_kwargs)
+            requested = runtime_kwargs.pop("backend")
+            configured = (default_kwargs or {}).get("backend", PILLOW_IMAGE_BACKEND)
+            if requested != configured:
+                raise ValueError(
+                    f"Image backend is fixed at startup as {configured!r}, "
+                    f"not {requested!r}."
+                )
+        merged = super().merge_kwargs(default_kwargs, runtime_kwargs)
+        return merged
+
+    def __init__(
+        self,
+        image_mode: str | None = "RGB",
+        *,
+        backend: str = PILLOW_IMAGE_BACKEND,
+        **kwargs,
+    ) -> None:
         super().__init__()
 
         # Target mode for loaded images; `None` keeps the original mode
         # (i.e. no conversion, alpha channel is preserved as-is).
         self.image_mode = image_mode
+        self.backend = validate_image_backend(backend)
         # `kwargs` contains custom arguments from
         # --media-io-kwargs for this modality, merged with
         # per-request runtime media_io_kwargs via merge_kwargs().
@@ -76,7 +247,7 @@ class ImageMediaIO(MediaIO[Image.Image]):
                 image, self.image_mode, self.rgba_background_color
             )
 
-    def load_bytes(self, data: bytes) -> MediaWithBytes[Image.Image]:
+    def _load_bytes_pillow(self, data: bytes) -> LoadedImage:
         try:
             image = Image.open(BytesIO(data))
             w, h = image.size
@@ -101,10 +272,76 @@ class ImageMediaIO(MediaIO[Image.Image]):
             }
         return MediaWithBytes(converted, data, io_config)
 
-    def load_base64(self, media_type: str, data: str) -> MediaWithBytes[Image.Image]:
+    def _prepare_bytes(self, data: bytes) -> LoadedImage | NvImageCodecInput:
+        if self.backend == PILLOW_IMAGE_BACKEND:
+            return self._load_bytes_pillow(data)
+        return preflight_image_nvimagecodec(
+            data,
+            image_mode=self.image_mode,
+        )
+
+    def load_bytes(self, data: bytes) -> LoadedImage:
+        if self.backend == NVIMAGECODEC_IMAGE_BACKEND:
+            raise RuntimeError("nvImageCodec requires asynchronous image loading.")
+        return self._load_bytes_pillow(data)
+
+    @staticmethod
+    def _wrap_nvimagecodec_result(
+        data: bytes,
+        result: NvImageCodecResult,
+    ) -> LoadedImage:
+        if not isinstance(result, torch.Tensor):
+            raise RuntimeError("nvImageCodec failed to decode the JPEG.")
+        return MediaWithBytes(
+            result,
+            data,
+            {"backend": NVIMAGECODEC_IMAGE_BACKEND},
+        )
+
+    async def load_bytes_async(
+        self,
+        data: bytes,
+        *,
+        executor: Executor | None = None,
+    ) -> LoadedImage:
+        loop = asyncio.get_running_loop()
+        prepared = await loop.run_in_executor(executor, self._prepare_bytes, data)
+        if isinstance(prepared, MediaWithBytes):
+            return prepared
+
+        result = await asyncio.wrap_future(
+            _get_nvimagecodec_decode_service().submit(prepared)
+        )
+        return self._wrap_nvimagecodec_result(data, result)
+
+    async def load_base64_async(
+        self,
+        media_type: str,
+        data: str,
+        *,
+        executor: Executor | None = None,
+    ) -> LoadedImage:
+        loop = asyncio.get_running_loop()
+        encoded = await loop.run_in_executor(
+            executor,
+            lambda: pybase64.b64decode(data, validate=True),
+        )
+        return await self.load_bytes_async(encoded, executor=executor)
+
+    async def load_file_async(
+        self,
+        filepath: Path,
+        *,
+        executor: Executor | None = None,
+    ) -> LoadedImage:
+        loop = asyncio.get_running_loop()
+        data = await loop.run_in_executor(executor, filepath.read_bytes)
+        return await self.load_bytes_async(data, executor=executor)
+
+    def load_base64(self, media_type: str, data: str) -> LoadedImage:
         return self.load_bytes(pybase64.b64decode(data, validate=True))
 
-    def load_file(self, filepath: Path) -> MediaWithBytes[Image.Image]:
+    def load_file(self, filepath: Path) -> LoadedImage:
         return self.load_bytes(filepath.read_bytes())
 
     def encode_base64(
