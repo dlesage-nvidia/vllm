@@ -68,13 +68,12 @@ def test_use_gpu_video_backend_from_media_io_kwargs(backend_arg: str):
     assert config.use_gpu_video_backend()
 
 
-def test_nvimagecodec_package_validation_does_not_reject_custom_backends():
+def test_nvimagecodec_backend_checks_package_availability():
     with patch(
         "vllm.multimodal.image_decoders.nvimagecodec.ensure_nvimagecodec_available",
     ) as check:
-        kwargs = {"image": {"backend": "nvimagecodec"}}
-        assert MultiModalConfig(media_io_kwargs=kwargs).use_gpu_image_backend()
-        check.assert_called_once()
+        MultiModalConfig(media_io_kwargs={"image": {"backend": "nvimagecodec"}})
+    check.assert_called_once_with()
     assert not MultiModalConfig(
         media_io_kwargs={"image": {"backend": "custom"}}
     ).use_gpu_image_backend()

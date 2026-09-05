@@ -349,8 +349,7 @@ class MultiModalConfig:
                     f"Parent directory for FP8 scale save path not found: {save_parent}"
                 )
 
-        image_backend = self.media_io_kwargs.get("image", {}).get("backend")
-        if image_backend == "nvimagecodec":
+        if self.use_gpu_image_backend():
             from vllm.multimodal.image_decoders.nvimagecodec import (
                 ensure_nvimagecodec_available,
             )
