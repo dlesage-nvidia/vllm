@@ -134,6 +134,8 @@ class MediaIO(ABC, Generic[_T]):
     error handling.
     """
 
+    requires_async_loading = False
+
     @classmethod
     def merge_kwargs(
         cls,
