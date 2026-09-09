@@ -203,6 +203,7 @@ class ImageMediaIO(MediaIO[LoadedImage]):
         # (i.e. no conversion, alpha channel is preserved as-is).
         self.image_mode = image_mode
         self.backend = validate_image_backend(backend)
+        self.requires_async_loading = self.backend == NVIMAGECODEC_IMAGE_BACKEND
         # `kwargs` contains custom arguments from
         # --media-io-kwargs for this modality, merged with
         # per-request runtime media_io_kwargs via merge_kwargs().
@@ -302,15 +303,25 @@ class ImageMediaIO(MediaIO[LoadedImage]):
         *,
         executor: Executor | None = None,
     ) -> LoadedImage:
+        return await self._load_async(lambda: data, executor=executor)
+
+    async def _load_async(
+        self,
+        read_bytes: Callable[[], bytes],
+        *,
+        executor: Executor | None,
+    ) -> LoadedImage:
         loop = asyncio.get_running_loop()
-        prepared = await loop.run_in_executor(executor, self._prepare_bytes, data)
+        prepared = await loop.run_in_executor(
+            executor, lambda: self._prepare_bytes(read_bytes())
+        )
         if isinstance(prepared, MediaWithBytes):
             return prepared
 
         result = await asyncio.wrap_future(
             _get_nvimagecodec_decode_service().submit(prepared)
         )
-        return self._wrap_nvimagecodec_result(data, result)
+        return self._wrap_nvimagecodec_result(prepared.data, result)
 
     async def load_base64_async(
         self,
@@ -319,12 +330,10 @@ class ImageMediaIO(MediaIO[LoadedImage]):
         *,
         executor: Executor | None = None,
     ) -> LoadedImage:
-        loop = asyncio.get_running_loop()
-        encoded = await loop.run_in_executor(
-            executor,
+        return await self._load_async(
             lambda: pybase64.b64decode(data, validate=True),
+            executor=executor,
         )
-        return await self.load_bytes_async(encoded, executor=executor)
 
     async def load_file_async(
         self,
@@ -332,9 +341,7 @@ class ImageMediaIO(MediaIO[LoadedImage]):
         *,
         executor: Executor | None = None,
     ) -> LoadedImage:
-        loop = asyncio.get_running_loop()
-        data = await loop.run_in_executor(executor, filepath.read_bytes)
-        return await self.load_bytes_async(data, executor=executor)
+        return await self._load_async(filepath.read_bytes, executor=executor)
 
     def load_base64(self, media_type: str, data: str) -> LoadedImage:
         return self.load_bytes(pybase64.b64decode(data, validate=True))

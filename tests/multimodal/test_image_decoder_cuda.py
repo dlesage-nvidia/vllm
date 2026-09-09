@@ -8,6 +8,10 @@ import pytest
 import torch
 from PIL import Image
 
+from vllm.multimodal.image_decoders.nvimagecodec import (
+    _NvImageCodecDecoder,
+    preflight_image_nvimagecodec,
+)
 from vllm.multimodal.media import ImageMediaIO
 from vllm.multimodal.media.image import initialize_nvimagecodec_decode_service
 
@@ -42,3 +46,28 @@ async def test_selected_backend_returns_owned_pinned_chw() -> None:
         assert torch.equal(host, snapshot)
     finally:
         release()
+
+
+def test_device_images_resize_without_invalidating_owned_outputs() -> None:
+    pytest.importorskip("nvidia.nvimgcodec")
+    decoder = _NvImageCodecDecoder(batch_cap=1)
+    images = []
+    retained = []
+    try:
+        for index, (width, height) in enumerate(
+            ((193, 97), (385, 193), (97, 49), (513, 257))
+        ):
+            item = preflight_image_nvimagecodec(_jpeg(width, height, index))
+            arena = decoder.submit((item,))
+            if index < 2:
+                images.append(arena.images[0])
+            else:
+                assert arena.images[0] is images[index % 2]
+            (host,) = decoder.collect(arena)
+            assert host is not None
+            assert host.is_pinned() and tuple(host.shape) == (3, height, width)
+            retained.append((host, host.clone()))
+        for host, snapshot in retained:
+            assert torch.equal(host, snapshot)
+    finally:
+        decoder.close()

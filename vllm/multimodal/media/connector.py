@@ -434,6 +434,10 @@ class MediaConnector:
         loop = asyncio.get_running_loop()
 
         if url[:5].lower() == "data:":
+            if not media_io.requires_async_loading:
+                return await loop.run_in_executor(
+                    global_thread_pool, self._load_data_url, url, media_io
+                )
             media_type, base64_data = await loop.run_in_executor(
                 global_thread_pool, self._parse_data_url, url
             )
@@ -475,6 +479,10 @@ class MediaConnector:
             return await media_io.load_bytes_async(data, executor=global_thread_pool)
 
         if url_spec.scheme == "file":
+            if not media_io.requires_async_loading:
+                return await loop.run_in_executor(
+                    global_thread_pool, self._load_file_url, url_spec, media_io
+                )
             filepath = await loop.run_in_executor(
                 global_thread_pool, self._resolve_file_url, url_spec
             )

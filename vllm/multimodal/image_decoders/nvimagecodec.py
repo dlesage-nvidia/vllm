@@ -303,10 +303,7 @@ class _NvImageCodecDecoder:
         items = arena.items
         reusable = arena.images[: len(items)]
         reuse_images = len(reusable) == len(items) and all(
-            image is not None
-            and tuple(int(value) for value in image.shape)
-            == (3, item.height, item.width)
-            for item, image in zip(items, reusable, strict=True)
+            image is not None for image in reusable
         )
         if not reuse_images:
             arena.images.clear()
@@ -455,6 +452,7 @@ class _NvImageCodecService:
                     if not jobs:
                         break
                     held = jobs
+                    del jobs
 
                 if self._stop_event.is_set():
                     self._reject_claimed(held)
@@ -482,22 +480,30 @@ class _NvImageCodecService:
             if not pending:
                 continue
 
-            jobs, token = pending.popleft()
-            try:
-                results = decoder.collect(token)
-            except BaseException:
-                self._budget.release(len(jobs))
-                raise
-            self._budget.track(results)
-            for (_, future), result in zip(jobs, results, strict=True):
-                if result is None:
-                    future.set_exception(
-                        ValueError("nvImageCodec failed to decode the JPEG.")
-                    )
-                else:
-                    future.set_result(result)
-            with self._condition:
-                self._outstanding.difference_update(job[1] for job in jobs)
+            self._complete(decoder, *pending.popleft())
+
+    def _complete(
+        self,
+        decoder: _NvImageCodecDecoder,
+        jobs: tuple[_DecodeJob, ...],
+        token: _DeviceArena,
+    ) -> None:
+        # Drop completed futures and tensors before reserving the next wave.
+        try:
+            results = decoder.collect(token)
+        except BaseException:
+            self._budget.release(len(jobs))
+            raise
+        self._budget.track(results)
+        for (_, future), result in zip(jobs, results, strict=True):
+            if result is None:
+                future.set_exception(
+                    ValueError("nvImageCodec failed to decode the JPEG.")
+                )
+            else:
+                future.set_result(result)
+        with self._condition:
+            self._outstanding.difference_update(job[1] for job in jobs)
 
     def _claim(
         self,

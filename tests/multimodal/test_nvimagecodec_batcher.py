@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import threading
+import weakref
 
 import pytest
 
@@ -101,6 +102,23 @@ def test_one_decode_failure_does_not_poison_service() -> None:
         futures[1].result(timeout=_TIMEOUT)
     assert service.submit(_input(3)).result(timeout=_TIMEOUT) == 3
     service.close()
+
+
+def test_completed_output_is_released_while_service_is_idle() -> None:
+    service, decoder, _ = _service()
+    released = threading.Event()
+    try:
+        future = service.submit(_input(1))
+        assert decoder.gate[0].wait(timeout=_TIMEOUT)
+        future.add_done_callback(
+            lambda done: weakref.finalize(done.result(), released.set)
+        )
+        del future
+        decoder.gate[1].set()
+        assert released.wait(timeout=_TIMEOUT)
+    finally:
+        decoder.gate[1].set()
+        service.close()
 
 
 def test_system_failure_is_sticky_and_releases_budget() -> None:

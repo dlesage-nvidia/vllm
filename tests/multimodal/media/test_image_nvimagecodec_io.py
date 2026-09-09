@@ -1,18 +1,21 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
-from concurrent.futures import Future
+import asyncio
+from concurrent.futures import Future, ThreadPoolExecutor
 from unittest.mock import Mock
 
+import pybase64
 import pytest
 import torch
 
+import vllm.multimodal.media.connector as connector_module
 import vllm.multimodal.media.image as image_module
 from vllm.multimodal.image_decoders.nvimagecodec import (
     NvImageCodecInput,
     NvImageCodecResult,
 )
-from vllm.multimodal.media import ImageMediaIO, MediaWithBytes
+from vllm.multimodal.media import ImageMediaIO, MediaConnector, MediaWithBytes
 
 pytestmark = pytest.mark.cpu_test
 
@@ -60,6 +63,53 @@ async def test_native_decode_failure_does_not_fall_back(monkeypatch) -> None:
     with pytest.raises(RuntimeError, match="failed to decode"):
         await image_io.load_bytes_async(data)
     service.submit.assert_called_once_with(admitted)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("source", ["bytes", "data", "file"])
+async def test_pending_native_decode_does_not_occupy_media_worker(
+    monkeypatch, tmp_path, source
+) -> None:
+    tensor = torch.zeros((3, 2, 3), dtype=torch.uint8)
+    data, _, service = _install_native(monkeypatch, tensor)
+    future: Future[NvImageCodecResult] = Future()
+    submitted = asyncio.Event()
+
+    def submit(item):
+        submitted.set()
+        return future
+
+    service.submit.side_effect = submit
+    path = tmp_path / "image.jpg"
+    path.write_bytes(data)
+    connector = MediaConnector(
+        allowed_local_media_path=str(tmp_path),
+        media_io_kwargs={"image": {"backend": "nvimagecodec"}},
+    )
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        monkeypatch.setattr(connector_module, "global_thread_pool", executor)
+        if source == "bytes":
+            load = ImageMediaIO(backend="nvimagecodec").load_bytes_async(
+                data, executor=executor
+            )
+        else:
+            url = (
+                "data:image/jpeg;base64," + pybase64.b64encode(data).decode()
+                if source == "data"
+                else path.as_uri()
+            )
+            load = connector.fetch_image_async(url)
+        task = asyncio.create_task(load)
+        try:
+            await asyncio.wait_for(submitted.wait(), timeout=5)
+            await asyncio.wait_for(
+                asyncio.get_running_loop().run_in_executor(executor, lambda: None),
+                timeout=5,
+            )
+        finally:
+            future.set_result(tensor)
+        result = await task
+    assert result.media is tensor and result.original_bytes == data
 
 
 def test_sync_native_load_fails_instead_of_using_pillow() -> None:
