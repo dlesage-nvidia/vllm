@@ -8,8 +8,8 @@ import pytest
 import torch
 from transformers import PreTrainedConfig
 
-from tests.models.utils import build_model_context
 import vllm.envs as envs
+from tests.models.utils import build_model_context
 from vllm.config.ec_transfer import ECRole, ECTransferConfig
 from vllm.config.model import ModelConfig
 from vllm.config.multimodal import MultiModalConfig

@@ -59,7 +59,7 @@ def test_native_chw_processor_matches_pillow() -> None:
         mm_processor_cache_gb=1,
     )
     cache = MultiModalProcessorOnlyCache(ctx.model_config)
-    processor = MULTIMODAL_REGISTRY.create_processor(ctx.model_config, cache=cache)
+    processor = MULTIMODAL_REGISTRY.create_processor(ctx.model_config)
     hwc = (np.arange(56 * 8 * 3).reshape(56, 8, 3) % 251).astype(np.uint8)
     chw = np.ascontiguousarray(np.moveaxis(hwc, -1, 0))
     tensors = [torch.from_numpy(chw.copy()) for _ in range(2)]
@@ -72,7 +72,7 @@ def test_native_chw_processor_matches_pillow() -> None:
 
     def process(item):
         items = processor.info.parse_mm_data({"image": [item]})
-        return processor(prompt, mm_items=items)
+        return processor(prompt, mm_items=items, cache=cache)
 
     pillow_result = process(Image.fromarray(hwc, "RGB"))
     native_results = [process(item) for item in native]
