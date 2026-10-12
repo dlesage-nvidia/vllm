@@ -45,7 +45,9 @@ async def test_async_jpeg_uses_native_service(monkeypatch) -> None:
     data, admitted, service = _install_native(monkeypatch, tensor)
 
     image_io = ImageMediaIO(backend="nvimagecodec")
-    image_io._load_bytes_pillow = Mock(side_effect=AssertionError("used Pillow"))
+    monkeypatch.setattr(
+        image_io, "_load_bytes_pillow", Mock(side_effect=AssertionError("used Pillow"))
+    )
     result = await image_io.load_bytes_async(data)
 
     assert result.media is tensor
@@ -58,7 +60,9 @@ async def test_async_jpeg_uses_native_service(monkeypatch) -> None:
 async def test_native_decode_failure_does_not_fall_back(monkeypatch) -> None:
     data, admitted, service = _install_native(monkeypatch, None)
     image_io = ImageMediaIO(backend="nvimagecodec")
-    image_io._load_bytes_pillow = Mock(side_effect=AssertionError("used Pillow"))
+    monkeypatch.setattr(
+        image_io, "_load_bytes_pillow", Mock(side_effect=AssertionError("used Pillow"))
+    )
 
     with pytest.raises(RuntimeError, match="failed to decode"):
         await image_io.load_bytes_async(data)
