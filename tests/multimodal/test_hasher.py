@@ -272,6 +272,48 @@ def test_hash_media_io_noop_config_preserves_hash():
     )
 
 
+@pytest.mark.parametrize("encoded_size", [1, 100])
+def test_native_image_hash_uses_original_bytes_and_backend(encoded_size):
+    data = b"x" * encoded_size
+    io_config = {"backend": "nvimagecodec"}
+    image = MediaWithBytes(torch.zeros((3, 2, 3), dtype=torch.uint8), data, io_config)
+    hasher = MultiModalHasher
+
+    image_hash = hasher.hash_kwargs("blake3", image=image)
+
+    assert list(hasher.serialize_item(image)) == list(
+        hasher.iter_item_to_bytes("image", {"io_config": io_config, "data": data})
+    )
+    assert image_hash != hasher.hash_kwargs(
+        "blake3", image=MediaWithBytes(image.media, data)
+    )
+    assert image_hash != hasher.hash_kwargs(
+        "blake3", image=MediaWithBytes(image.media, data + b"y", io_config)
+    )
+    assert image_hash != hasher.hash_kwargs(
+        "blake3", image=MediaWithBytes(image.media, data, io_config | {"setting": 1})
+    )
+    assert image_hash == hasher.hash_kwargs(
+        "blake3", image=MediaWithBytes(torch.ones_like(image.media), data, io_config)
+    )
+
+
+@pytest.mark.parametrize("encoded_size", [1, 100])
+@pytest.mark.parametrize("as_tensor", [False, True])
+def test_video_frame_hash_preserves_encoded_size_selection(encoded_size, as_tensor):
+    frames = np.zeros((2, 2, 3), dtype=np.uint8)
+    if as_tensor:
+        frames = torch.from_numpy(frames)
+    data = b"x" * encoded_size
+    video = MediaWithBytes(frames, data)
+    payload = frames if frames.nbytes < len(data) else data
+    hasher = MultiModalHasher
+
+    assert list(hasher.serialize_item(video)) == list(
+        hasher.iter_item_to_bytes("video", payload)
+    )
+
+
 # The digest input is a concatenation of byte chunks, so it has to be uniquely
 # decodable. Each case below is a pair of distinct processor kwargs that used to
 # serialize to the same bytes, which made two requests share an mm hash -- and

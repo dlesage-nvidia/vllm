@@ -781,8 +781,8 @@ Full example: [examples/generate/multimodal/openai_chat_completion_client_for_mu
 
 #### GPU Image Decoding with nvImageCodec
 
-The optional `nvimagecodec` backend accelerates simple RGB JPEG inputs for
-Qwen3-VL serving. Install the CUDA-matched extra and select it at server startup:
+The optional `nvimagecodec` backend uses GPU decoding for simple RGB JPEG
+inputs in Qwen3-VL serving. Install the CUDA-matched extra and select it at startup:
 
 ```bash
 pip install "vllm[nvimagecodec]"

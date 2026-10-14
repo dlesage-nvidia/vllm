@@ -126,6 +126,19 @@ class MultiModalHasher:
                 )
             return cls.iter_item_to_bytes("image", obj.original_bytes)
 
+        if (
+            isinstance(obj, MediaWithBytes)
+            and isinstance(obj.media, torch.Tensor)
+            and (obj.io_config or {}).get("backend") == "nvimagecodec"
+        ):
+            return cls.iter_item_to_bytes(
+                "image",
+                {
+                    "io_config": obj.io_config or {},
+                    "data": obj.original_bytes,
+                },
+            )
+
         if isinstance(obj, MediaWithBytes) and isinstance(
             obj.media, (np.ndarray, torch.Tensor)
         ):
@@ -134,15 +147,6 @@ class MultiModalHasher:
             if frames.nbytes < len(obj.original_bytes):
                 return cls.iter_item_to_bytes("video", frames)
             return cls.iter_item_to_bytes("video", obj.original_bytes)
-
-        if isinstance(obj, MediaWithBytes) and isinstance(obj.media, torch.Tensor):
-            return cls.iter_item_to_bytes(
-                "image",
-                {
-                    "io_config": obj.io_config or {},
-                    "data": obj.original_bytes,
-                },
-            )
 
         if isinstance(obj, torch.Tensor):
             tensor_obj: torch.Tensor = obj.cpu()

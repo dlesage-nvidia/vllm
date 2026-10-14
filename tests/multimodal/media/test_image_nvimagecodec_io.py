@@ -58,14 +58,16 @@ async def test_async_jpeg_uses_native_service(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_native_decode_failure_does_not_fall_back(monkeypatch) -> None:
-    data, admitted, service = _install_native(monkeypatch, None)
+    error = ValueError("nvImageCodec failed to decode the JPEG.")
+    data, admitted, service = _install_native(monkeypatch, error)
     image_io = ImageMediaIO(backend="nvimagecodec")
     monkeypatch.setattr(
         image_io, "_load_bytes_pillow", Mock(side_effect=AssertionError("used Pillow"))
     )
 
-    with pytest.raises(RuntimeError, match="failed to decode"):
+    with pytest.raises(ValueError, match="failed to decode") as caught:
         await image_io.load_bytes_async(data)
+    assert caught.value is error
     service.submit.assert_called_once_with(admitted)
 
 

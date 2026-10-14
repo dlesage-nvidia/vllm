@@ -153,9 +153,9 @@ class _DeviceArena:
 if TYPE_CHECKING:
     import torch
 
-    NvImageCodecResult: TypeAlias = torch.Tensor | None
+    NvImageCodecResult: TypeAlias = torch.Tensor
 else:
-    NvImageCodecResult: TypeAlias = object | None
+    NvImageCodecResult: TypeAlias = object
 _DecodeJob: TypeAlias = tuple[NvImageCodecInput, Future[NvImageCodecResult]]
 
 logger = init_logger(__name__)
@@ -260,10 +260,10 @@ class _NvImageCodecDecoder:
             raise
         return arena
 
-    def collect(self, arena: _DeviceArena) -> list[NvImageCodecResult]:
+    def collect(self, arena: _DeviceArena) -> list[NvImageCodecResult | None]:
         self._check_owner()
         arena.copy_done.synchronize()
-        results: list[NvImageCodecResult] = [None] * len(arena.items)
+        results: list[NvImageCodecResult | None] = [None] * len(arena.items)
         for index, _, host in arena.copies:
             item = arena.items[index]
             if (

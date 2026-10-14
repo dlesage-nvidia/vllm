@@ -27,7 +27,7 @@
 from collections.abc import Callable, Hashable, Iterable, Iterator, Mapping, Sequence
 from functools import lru_cache, partial
 from itertools import islice
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import numpy as np
 import torch
@@ -91,6 +91,7 @@ from vllm.multimodal.inputs import (
     PlaceholderRange,
     VideoItem,
 )
+from vllm.multimodal.media import MediaWithBytes
 from vllm.multimodal.parse import ImageSize, MultiModalDataItems
 from vllm.multimodal.processing import (
     BaseDummyInputsBuilder,
@@ -112,6 +113,8 @@ from vllm.multimodal.video_prune.vidcom2 import (
 from vllm.multimodal.video_prune.vidcom2 import (
     compute_retention_mask as vidcom2_compute_retention_mask,
 )
+from vllm.platforms import current_platform
+from vllm.platforms.interface import CpuArchEnum
 from vllm.sequence import IntermediateTensors
 from vllm.tokenizers.protocol import TokenizerLike
 from vllm.tokenizers.registry import cached_tokenizer_from_config
@@ -1344,6 +1347,40 @@ def _replace_video_token_placeholders(
 
 
 class Qwen3VLMultiModalProcessor(BaseMultiModalProcessor[Qwen3VLProcessingInfo]):
+    def _prepare_hf_images(
+        self,
+        mm_items: MultiModalDataItems,
+        images: Sequence[object],
+        do_resize: bool,
+    ) -> Sequence[object]:
+        """Use interleaved CPU resize storage for native ARM images up to 1080p.
+
+        The original decoded outputs remain owned by ``mm_items`` throughout
+        processing. Larger images retain planar storage to avoid copy overhead.
+        """
+        if not do_resize or current_platform.get_cpu_architecture() != CpuArchEnum.ARM:
+            return images
+
+        prepared = list(images)
+        for index, image in enumerate(images):
+            item = mm_items["image"].get_item_for_hash(index)
+            if (
+                isinstance(item, MediaWithBytes)
+                and item.io_config == {"backend": "nvimagecodec"}
+                and isinstance(image, torch.Tensor)
+                and image.device.type == "cpu"
+                and image.dtype == torch.uint8
+                and image.ndim == 3
+                and image.shape[0] == 3
+                and image.shape[1] * image.shape[2] <= 1920 * 1080
+            ):
+                prepared[index] = (
+                    image.unsqueeze(0)
+                    .contiguous(memory_format=torch.channels_last)
+                    .squeeze(0)
+                )
+        return prepared
+
     def _get_per_video_kwargs(
         self, kwargs: Mapping[str, object], num_videos: int | None = None
     ) -> dict[str, list[Any]]:
@@ -1612,8 +1649,16 @@ class Qwen3VLMultiModalProcessor(BaseMultiModalProcessor[Qwen3VLProcessingInfo])
             for key in self._get_per_video_kwargs({}):
                 non_video_scoped_kwargs[key] = None
             non_video_mm_kwargs["videos_kwargs"] = non_video_scoped_kwargs
+        hf_processor = self.info.get_hf_processor(**non_video_mm_kwargs)
+        if "images" in hf_data:
+            do_resize = non_video_mm_kwargs.get("images_kwargs", {}).get(
+                "do_resize", hf_processor.image_processor.do_resize
+            )
+            hf_data["images"] = self._prepare_hf_images(
+                mm_items, cast(Sequence[object], hf_data["images"]), do_resize
+            )
         processed_data = self.info.ctx.call_hf_processor(
-            self.info.get_hf_processor(**non_video_mm_kwargs),
+            hf_processor,
             hf_data,
             non_video_mm_kwargs,
         )

@@ -14,11 +14,17 @@ from transformers.models.qwen3_vl import Qwen3VLVideoProcessor
 
 from vllm.config import ModelConfig
 from vllm.config.multimodal import MultiModalDummyOptions
-from vllm.model_executor.models.qwen3_vl import Qwen3VLProcessingInfo
+from vllm.model_executor.models.qwen3_vl import (
+    Qwen3VLMultiModalDataParser,
+    Qwen3VLMultiModalProcessor,
+    Qwen3VLProcessingInfo,
+)
 from vllm.multimodal import MULTIMODAL_REGISTRY
 from vllm.multimodal.cache import MultiModalProcessorOnlyCache
 from vllm.multimodal.media import MediaWithBytes
 from vllm.multimodal.processing.context import BaseProcessingInfo
+from vllm.platforms import current_platform
+from vllm.platforms.interface import CpuArchEnum
 
 from ...registry import HF_EXAMPLE_MODELS
 from ...utils import build_model_context
@@ -52,7 +58,11 @@ def test_qwen3_video_routing_schema_adds_vllm_compatibility_kwargs(
     assert parent_supported["videos_kwargs"] == native_video_kwargs
 
 
-def test_native_chw_processor_matches_pillow() -> None:
+@pytest.mark.parametrize("cpu_arch", [CpuArchEnum.ARM, CpuArchEnum.X86])
+def test_native_chw_processor_matches_pillow(
+    monkeypatch: pytest.MonkeyPatch, cpu_arch: CpuArchEnum
+) -> None:
+    monkeypatch.setattr(current_platform, "get_cpu_architecture", lambda: cpu_arch)
     ctx = build_model_context(
         MODEL_ID,
         limit_mm_per_prompt={"image": 1, "video": 0},
@@ -83,6 +93,52 @@ def test_native_chw_processor_matches_pillow() -> None:
     assert cache.make_stats().hits == 1
     pixel_values = native_results[0]["mm_kwargs"]["image"][0]["pixel_values"].data
     assert pixel_values.untyped_storage().data_ptr() != input_ptr
+
+
+@pytest.mark.parametrize(
+    "cpu_arch,shape,dtype,backend,do_resize,convert",
+    [
+        (CpuArchEnum.ARM, (3, 1080, 1920), torch.uint8, "nvimagecodec", True, True),
+        (CpuArchEnum.ARM, (3, 1920, 1080), torch.uint8, "nvimagecodec", True, True),
+        (CpuArchEnum.ARM, (3, 1081, 1920), torch.uint8, "nvimagecodec", True, False),
+        (CpuArchEnum.ARM, (3, 2160, 3840), torch.uint8, "nvimagecodec", True, False),
+        (CpuArchEnum.X86, (3, 56, 8), torch.uint8, "nvimagecodec", True, False),
+        (CpuArchEnum.ARM, (3, 56, 8), torch.float32, "nvimagecodec", True, False),
+        (CpuArchEnum.ARM, (3, 56, 8), torch.uint8, "pillow", True, False),
+        (CpuArchEnum.ARM, (3, 56, 8), torch.uint8, "nvimagecodec", False, False),
+    ],
+)
+def test_native_resize_layout_preserves_pixels_and_owned_input(
+    monkeypatch: pytest.MonkeyPatch,
+    cpu_arch: CpuArchEnum,
+    shape: tuple[int, int, int],
+    dtype: torch.dtype,
+    backend: str,
+    do_resize: bool,
+    convert: bool,
+) -> None:
+    monkeypatch.setattr(current_platform, "get_cpu_architecture", lambda: cpu_arch)
+    original = torch.randint(0, 256, shape, dtype=torch.uint8).to(dtype)
+    wrapped = MediaWithBytes(original, b"original JPEG", {"backend": backend})
+    mm_items = Qwen3VLMultiModalDataParser(spatial_merge_size=2).parse_mm_data(
+        {"image": [wrapped]}
+    )
+    processor = object.__new__(Qwen3VLMultiModalProcessor)
+
+    (prepared,) = processor._prepare_hf_images(mm_items, [original], do_resize)
+
+    assert torch.equal(prepared, original)
+    assert original.is_contiguous()
+    assert mm_items["image"].get_item_for_hash(0) is wrapped
+    assert wrapped.media is original
+    if convert:
+        assert prepared.stride() == (1, shape[2] * 3, 3)
+        assert (
+            prepared.untyped_storage().data_ptr()
+            != original.untyped_storage().data_ptr()
+        )
+    else:
+        assert prepared is original
 
 
 def _build_video_mm_data(
