@@ -41,6 +41,7 @@ from vllm.multimodal.video_decoders.opencv import OpenCVVideoBackendMixin
 from vllm.multimodal.video_decoders.pynvvideocodec import (
     PYNVVIDEOCODEC_DECODER_CACHE_SIZE,
     PyNvVideoCodecDecoderSlot,
+    PyNvVideoCodecSourceMetadata,
     PyNvVideoCodecVideoBackendMixin,
     _pynv_decoder_pool,
     _pynvvc_frames_to_pinned_host,
@@ -307,6 +308,75 @@ def test_pynvvideocodec_backend_accounts_raw_decoded_frames(
     assert decoder_cache_sizes == [PYNVVIDEOCODEC_DECODER_CACHE_SIZE]
     assert metadata["video_backend"] == PYNVVIDEOCODEC_VIDEO_BACKEND
     assert metadata["frames_indices"] == [0, 3, 6, 9]
+
+
+@pytest.mark.parametrize("has_pool", [False, True])
+@pytest.mark.parametrize("frame_indices", [[], [0, 3, 6, 9]])
+@pytest.mark.parametrize("decode_fails", [False, True])
+def test_pynvvideocodec_reservation_lifetime(
+    monkeypatch: pytest.MonkeyPatch,
+    has_pool: bool,
+    frame_indices: list[int],
+    decode_fails: bool,
+):
+    events = []
+    source = PyNvVideoCodecSourceMetadata(VideoSourceMetadata(10, 5.0, 2.0), 10, 20)
+
+    class RecordingPool:
+        @contextmanager
+        def acquire(self, size: int):
+            events.append(("acquire", size))
+            try:
+                yield
+            finally:
+                events.append(("release", size))
+
+    def fake_decode(cls, file_path, frame_idx, nvc, use_rgbp):
+        assert frame_idx == frame_indices
+        events.append(("decode", len(frame_idx)))
+        if decode_fails:
+            raise RuntimeError("decode failed")
+        return np.zeros((len(frame_idx), 20, 10, 3), dtype=np.uint8)
+
+    monkeypatch.setitem(sys.modules, "PyNvVideoCodec", object())
+    monkeypatch.setattr(
+        "vllm.multimodal.gpu_ipc_memory.get_mm_gpu_ipc_pool",
+        lambda: RecordingPool() if has_pool else None,
+    )
+    monkeypatch.setattr(
+        PyNvVideoCodecVideoBackendMixin,
+        "_read_source_metadata",
+        classmethod(lambda cls, *args: source),
+    )
+    monkeypatch.setattr(
+        PyNvVideoCodecVideoBackendMixin,
+        "_decode_to_pinned_host",
+        classmethod(fake_decode),
+    )
+    monkeypatch.setattr(
+        VideoBackend,
+        "compute_frames_index_to_sample",
+        classmethod(lambda cls, **kwargs: frame_indices),
+    )
+
+    def decode():
+        return PyNvVideoCodecVideoBackendMixin.decode_frames_pynvvideocodec(
+            VideoBackend, b"fake video", VideoTargetMetadata(4, -1, 300)
+        )
+
+    if decode_fails:
+        with pytest.raises(RuntimeError, match="decode failed"):
+            decode()
+    else:
+        frames, _, requested, valid = decode()
+        assert frames.shape == (len(frame_indices), 20, 10, 3)
+        assert requested == valid == frame_indices
+
+    expected = [("decode", len(frame_indices))]
+    if has_pool and frame_indices:
+        size = len(frame_indices) * 20 * 10 * 3
+        expected = [("acquire", size), *expected, ("release", size)]
+    assert events == expected
 
 
 @pytest.mark.skipif(not current_platform.is_cuda(), reason="Requires CUDA")
@@ -820,6 +890,82 @@ def test_pynvvideocodec_synchronizes_after_partial_copy_failure(
     assert all(ref() is None for ref in wrapper_refs)
     assert copy_count == 2
     assert stream.synchronize_count == 1
+
+
+@pytest.mark.parametrize("error_chain", ["none", "cause", "cause_and_context"])
+def test_pynvvideocodec_releases_frames_after_export_failure(
+    monkeypatch: pytest.MonkeyPatch, error_chain: str
+):
+    export_error = RuntimeError("DLPack export failed")
+    wrapper_refs = []
+    original_from_dlpack = torch.from_dlpack
+
+    class BrokenFrame:
+        def __dlpack_device__(self):
+            return (1, 0)
+
+        def fail_export(self):
+            raise ValueError("inner export failed")
+
+        def fail_context(self):
+            raise LookupError("intermediate export failed")
+
+        def __dlpack__(self, **kwargs):
+            if error_chain == "none":
+                raise export_error
+            try:
+                self.fail_export()
+            except ValueError as cause:
+                if error_chain == "cause":
+                    raise export_error from cause
+                try:
+                    self.fail_context()
+                except LookupError:
+                    raise export_error from cause
+
+    def record_wrapper(frame):
+        wrapper = original_from_dlpack(frame)
+        wrapper_refs.append(weakref.ref(wrapper))
+        return wrapper
+
+    monkeypatch.setattr(torch, "from_dlpack", record_wrapper)
+    producer = BrokenFrame()
+    producer_ref = weakref.ref(producer)
+    frames = [torch.zeros((4, 5, 3), dtype=torch.uint8), producer]
+    del producer
+
+    class FakeStream:
+        synchronize_count = 0
+
+        def synchronize(self):
+            assert producer_ref() is not None
+            assert len(wrapper_refs) == 1
+            assert wrapper_refs[0]() is not None
+            self.synchronize_count += 1
+
+    stream = FakeStream()
+    with pytest.raises(RuntimeError, match="DLPack export failed") as exc_info:
+        _pynvvc_frames_to_pinned_host(frames, False, stream)
+    del frames
+
+    assert exc_info.value is export_error
+    assert stream.synchronize_count == 1
+    assert wrapper_refs[0]() is None
+    assert producer_ref() is None
+    traceback = exc_info.value.__traceback__
+    stack_names = []
+    while traceback is not None:
+        stack_names.append(traceback.tb_frame.f_code.co_name)
+        traceback = traceback.tb_next
+    assert "__dlpack__" in stack_names
+    if error_chain != "none":
+        assert str(export_error.__cause__) == "inner export failed"
+        expected_context = (
+            "inner export failed"
+            if error_chain == "cause"
+            else "intermediate export failed"
+        )
+        assert str(export_error.__context__) == expected_context
 
 
 def test_pynvvideocodec_decoder_slot_retains_simple_decoder():

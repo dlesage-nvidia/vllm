@@ -10,6 +10,7 @@ import torch
 from vllm.assets.video import VideoAsset
 from vllm.config import ModelConfig
 from vllm.multimodal import MULTIMODAL_REGISTRY
+from vllm.transformers_utils.processors.cosmos3_edge import Cosmos3EdgeVideoProcessor
 
 from ....conftest import ImageTestAssets
 from ...utils import build_model_context
@@ -129,3 +130,23 @@ def test_process_video(processor) -> None:
         candidate_mm["pixel_values_videos"], baseline_mm["pixel_values_videos"]
     )
     assert torch.equal(candidate_mm["video_grid_thw"], baseline_mm["video_grid_thw"])
+
+
+def test_video_processor_output_does_not_alias_input() -> None:
+    video = torch.arange(16 * 16 * 3, dtype=torch.float32).reshape(1, 16, 16, 3)
+    video = video.permute(0, 3, 1, 2)
+    output = Cosmos3EdgeVideoProcessor()(
+        video,
+        do_resize=False,
+        do_rescale=False,
+        do_normalize=False,
+        do_sample_frames=False,
+        patch_size=16,
+        merge_size=1,
+        return_tensors="pt",
+    )["pixel_values_videos"]
+    expected = output.clone()
+
+    video.zero_()
+
+    assert torch.equal(output, expected)

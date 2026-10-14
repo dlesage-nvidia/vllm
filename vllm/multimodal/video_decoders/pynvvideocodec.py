@@ -4,13 +4,13 @@
 import os
 import tempfile
 import threading
-from contextlib import contextmanager, suppress
+import traceback
+from contextlib import contextmanager, nullcontext, suppress
 from typing import ClassVar, NamedTuple
 
 import numpy as np
 import numpy.typing as npt
 
-from vllm.logger import init_logger
 from vllm.utils.mem_constants import MiB_bytes
 
 from .base import (
@@ -19,8 +19,6 @@ from .base import (
     VideoTargetMetadata,
     check_frame_pixel_limit,
 )
-
-logger = init_logger(__name__)
 
 
 def decode_pynvvideocodec(
@@ -122,9 +120,25 @@ def _pynvvc_frames_to_pinned_host(
 
         stream.synchronize()
         return host_frames.numpy()
-    except BaseException:
-        with suppress(BaseException):
+    except BaseException as exc:
+        try:
             stream.synchronize()
+        except BaseException:
+            pass
+        else:
+            pending = [exc]
+            cleared = set()
+            while pending:
+                error = pending.pop()
+                if id(error) in cleared:
+                    continue
+                cleared.add(id(error))
+                traceback.clear_frames(error.__traceback__)
+                pending.extend(
+                    chained
+                    for chained in (error.__cause__, error.__context__)
+                    if chained is not None
+                )
         # Propagating tracebacks retain locals, so drop DLPack owners here.
         copy_frames.clear()
         decoded_frames = None
@@ -374,12 +388,6 @@ class PyNvVideoCodecVideoBackendMixin:
                     ):
                         raise
                     raise ValueError("Invalid or unsupported video file.") from exc
-                if len(decoded_frames) < len(frame_idx):
-                    logger.warning(
-                        "pynvvideocodec video loading: expected %d frames but got %d.",
-                        len(frame_idx),
-                        len(decoded_frames),
-                    )
                 try:
                     return _pynvvc_frames_to_pinned_host(
                         decoded_frames, use_rgbp, stream
@@ -420,13 +428,13 @@ class PyNvVideoCodecVideoBackendMixin:
             )
             raw_frame_bytes = len(frame_idx) * gpu_source.height * gpu_source.width * 3
             pool = get_mm_gpu_ipc_pool()
-            if pool is None or raw_frame_bytes == 0:
+            reservation = (
+                pool.acquire(raw_frame_bytes)
+                if pool is not None and raw_frame_bytes > 0
+                else nullcontext()
+            )
+            with reservation:
                 frames = cls._decode_to_pinned_host(temp_path, frame_idx, nvc, use_rgbp)
-            else:
-                with pool.acquire(raw_frame_bytes):
-                    frames = cls._decode_to_pinned_host(
-                        temp_path, frame_idx, nvc, use_rgbp
-                    )
         finally:
             with suppress(FileNotFoundError):
                 os.unlink(temp_path)
