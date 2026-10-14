@@ -1,22 +1,54 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import inspect
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
+import pybase64
 import pytest
 from PIL import Image
 
+import vllm.multimodal.media.connector as connector_module
 from vllm.multimodal.image import (
     ALLOWED_IMAGE_FORMATS,
     open_image,
 )
-from vllm.multimodal.media import ImageMediaIO
+from vllm.multimodal.media import ImageMediaIO, MediaConnector
 
 pytestmark = pytest.mark.cpu_test
 
 ASSETS_DIR = Path(__file__).parent.parent / "assets"
 assert ASSETS_DIR.exists()
+
+
+def test_image_backend_is_startup_only():
+    with pytest.raises(ValueError, match="Unknown image backend"):
+        ImageMediaIO(backend="unknown")
+    with pytest.raises(ValueError, match="fixed at startup"):
+        ImageMediaIO.merge_kwargs({"backend": "nvimagecodec"}, {"backend": "pillow"})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("source", ["data", "file"])
+async def test_pillow_url_loading_uses_one_worker_submission(
+    monkeypatch, tmp_path, source
+):
+    path = tmp_path / "image.png"
+    Image.new("RGB", (8, 8), (17, 31, 47)).save(path)
+    url = (
+        "data:image/png;base64," + pybase64.b64encode(path.read_bytes()).decode()
+        if source == "data"
+        else path.as_uri()
+    )
+    connector = MediaConnector(allowed_local_media_path=str(tmp_path))
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        monkeypatch.setattr(connector_module, "global_thread_pool", executor)
+        with patch.object(executor, "submit", wraps=executor.submit) as submit:
+            result = await connector.fetch_image_async(url)
+        assert submit.call_count == 1
+    assert result.media.getpixel((0, 0)) == (17, 31, 47)
 
 
 def test_image_media_io_rgba_custom_background(tmp_path):

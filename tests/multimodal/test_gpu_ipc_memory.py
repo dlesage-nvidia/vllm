@@ -6,6 +6,7 @@ import time
 
 import pytest
 
+import vllm.multimodal.image_decoders.nvimagecodec as nvcodec
 from vllm.config.multimodal import MultiModalConfig
 from vllm.multimodal.gpu_ipc_memory import (
     MultiModalGPUMemoryPool,
@@ -246,3 +247,23 @@ def test_reserve_mm_ipc_gpu_memory_uses_configured_hw_decoders(
     assert reserve_mm_ipc_gpu_memory(available_bytes, mm_config) == (
         available_bytes - _pynvvideocodec_decoder_budget(hw_decoders=3)
     )
+
+
+def test_nvimagecodec_memory_reservations(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(
+        "vllm.multimodal.image_decoders.nvimagecodec.ensure_nvimagecodec_available",
+        lambda: None,
+    )
+    monkeypatch.setenv("VLLM_VIDEO_LOADER_BACKEND", "opencv")
+    available_bytes = 16 * GiB_bytes
+    api_process_count = 2
+    reserved = api_process_count * (
+        nvcodec.get_nvimagecodec_non_context_bytes(api_process_count)
+        + nvcodec.NVIMAGECODEC_CUDA_CONTEXT_BYTES
+    )
+    mm_config = MultiModalConfig(media_io_kwargs={"image": {"backend": "nvimagecodec"}})
+    assert reserve_mm_ipc_gpu_memory(
+        available_bytes,
+        mm_config,
+        api_process_count=api_process_count,
+    ) == (available_bytes - reserved)

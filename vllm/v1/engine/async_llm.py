@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 import asyncio
+import contextlib
 import os
 import socket
 import time
@@ -130,6 +131,7 @@ class AsyncLLM(EngineClient):
 
         # Ensure we can serialize custom transformer configs
         maybe_register_config_serialize_by_value()
+        vllm_config._validate_nvimagecodec_frontend()
 
         self.vllm_config = vllm_config
         self._elastic_ep_lock = asyncio.Lock()
@@ -236,6 +238,18 @@ class AsyncLLM(EngineClient):
                     "Frontend CPU profiling is disabled when multiple API server "
                     "processes share an engine."
                 )
+
+        try:
+            self.renderer.initialize_image_decode_backend()
+        except BaseException:
+            with contextlib.suppress(Exception):
+                self.engine_core.shutdown()
+            with contextlib.suppress(Exception):
+                self.renderer.shutdown()
+            if self.output_handler is not None:
+                with contextlib.suppress(Exception):
+                    cancel_task_threadsafe(self.output_handler)
+            raise
 
     @classmethod
     def from_vllm_config(
