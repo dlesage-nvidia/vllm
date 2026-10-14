@@ -4,13 +4,13 @@
 import os
 import tempfile
 import threading
-from contextlib import contextmanager, suppress
+import traceback
+from contextlib import contextmanager, nullcontext, suppress
 from typing import ClassVar, NamedTuple
 
 import numpy as np
 import numpy.typing as npt
 
-from vllm.logger import init_logger
 from vllm.utils.mem_constants import MiB_bytes
 
 from .base import (
@@ -19,8 +19,6 @@ from .base import (
     VideoTargetMetadata,
     check_frame_pixel_limit,
 )
-
-logger = init_logger(__name__)
 
 
 def decode_pynvvideocodec(
@@ -76,11 +74,75 @@ def _pynvvideocodec_exception_types(nvc) -> tuple[type[Exception], ...]:
     )
 
 
-def _pynvvc_frames_to_nhwc(frames):
-    """Return a stacked PyNvVideoCodec frame batch as contiguous NHWC."""
-    if frames.shape[-1] != 3 and frames.shape[-3] == 3:
-        frames = frames.permute(0, 2, 3, 1)
-    return frames.contiguous()
+def _pynvvc_frames_to_pinned_host(
+    decoded_frames,
+    use_rgbp: bool,
+    stream,
+) -> npt.NDArray:
+    """Copy decoded HWC or CHW frames into one pinned host batch."""
+    copy_frames = []
+    try:
+        import torch
+
+        # Keep source wrappers only in this list, which is cleared on failure.
+        for index in range(len(decoded_frames)):
+            copy_frames.append(torch.from_dlpack(decoded_frames[index]))
+            shape = tuple(copy_frames[index].shape)
+            if len(shape) != 3:
+                raise ValueError(
+                    f"PyNvVideoCodec returned frame shape {shape}; expected a 3D frame"
+                )
+            if not use_rgbp and shape[-1] != 3 and shape[0] == 3:
+                copy_frames[index] = copy_frames[index].permute(1, 2, 0)
+                shape = tuple(copy_frames[index].shape)
+            if shape[0 if use_rgbp else -1] != 3:
+                layout = "CHW" if use_rgbp else "HWC"
+                raise ValueError(
+                    f"PyNvVideoCodec returned frame shape {shape}; expected {layout}"
+                )
+        if not copy_frames:
+            stream.synchronize()
+            return np.empty((0,), dtype=np.uint8)
+
+        output_shape = tuple(copy_frames[0].shape)
+        if any(tuple(frame.shape) != output_shape for frame in copy_frames[1:]):
+            raise ValueError("PyNvVideoCodec returned frames with inconsistent shapes")
+
+        host_frames = torch.empty(
+            (len(copy_frames), *output_shape),
+            dtype=copy_frames[0].dtype,
+            device="cpu",
+            pin_memory=True,
+        )
+        # Indexed access avoids retaining a source wrapper in a copy_ traceback.
+        for index, host_frame in enumerate(host_frames):
+            host_frame.copy_(copy_frames[index], non_blocking=True)
+
+        stream.synchronize()
+        return host_frames.numpy()
+    except BaseException as exc:
+        try:
+            stream.synchronize()
+        except BaseException:
+            pass
+        else:
+            pending = [exc]
+            cleared = set()
+            while pending:
+                error = pending.pop()
+                if id(error) in cleared:
+                    continue
+                cleared.add(id(error))
+                traceback.clear_frames(error.__traceback__)
+                pending.extend(
+                    chained
+                    for chained in (error.__cause__, error.__context__)
+                    if chained is not None
+                )
+        # Propagating tracebacks retain locals, so drop DLPack owners here.
+        copy_frames.clear()
+        decoded_frames = None
+        raise
 
 
 class PyNvVideoCodecDecoderSlot:
@@ -99,16 +161,26 @@ class PyNvVideoCodecDecoderSlot:
         self.stream = stream
         self.decoder = None
         self.source_path: str | None = None
+        self.use_rgbp: bool | None = None
 
     def invalidate(self) -> None:
         self.decoder = None
         self.source_path = None
+        self.use_rgbp = None
 
-    def _construct(self, file_path: str, nvc, device_index: int) -> None:
+    def _construct(
+        self,
+        file_path: str,
+        nvc,
+        device_index: int,
+        use_rgbp: bool,
+    ) -> None:
         self.invalidate()
         decoder = nvc.SimpleDecoder(
             file_path,
-            output_color_type=nvc.OutputColorType.RGB,
+            output_color_type=(
+                nvc.OutputColorType.RGBP if use_rgbp else nvc.OutputColorType.RGB
+            ),
             use_device_memory=True,
             need_scanned_stream_metadata=True,
             gpu_id=device_index,
@@ -117,17 +189,24 @@ class PyNvVideoCodecDecoderSlot:
         )
         self.decoder = decoder
         self.source_path = file_path
+        self.use_rgbp = use_rgbp
 
-    def get_decoder(self, file_path: str, nvc, device_index: int):
-        if self.decoder is None:
-            self._construct(file_path, nvc, device_index)
+    def get_decoder(
+        self,
+        file_path: str,
+        nvc,
+        device_index: int,
+        use_rgbp: bool,
+    ):
+        if self.decoder is None or self.use_rgbp != use_rgbp:
+            self._construct(file_path, nvc, device_index, use_rgbp)
         elif self.source_path != file_path:
             try:
                 self.decoder.reconfigure_decoder(file_path)
                 self.source_path = file_path
             except Exception:
                 # reconfigure unsupported/unsafe for this source -> rebuild.
-                self._construct(file_path, nvc, device_index)
+                self._construct(file_path, nvc, device_index, use_rgbp)
         return self.decoder
 
 
@@ -240,11 +319,15 @@ class PyNvVideoCodecVideoBackendMixin:
         cls,
         file_path: str,
         nvc,
+        use_rgbp: bool,
     ) -> PyNvVideoCodecSourceMetadata:
         with cls._borrow_decoder_slot() as decoder_slot:
             with cls._torch_stream_context(decoder_slot.stream):
                 decoder = decoder_slot.get_decoder(
-                    file_path, nvc, device_index=cls._DEVICE_INDEX
+                    file_path,
+                    nvc,
+                    device_index=cls._DEVICE_INDEX,
+                    use_rgbp=use_rgbp,
                 )
                 metadata = decoder.get_stream_metadata()
                 total_frames_num = len(decoder)
@@ -280,9 +363,8 @@ class PyNvVideoCodecVideoBackendMixin:
         file_path: str,
         frame_idx: list[int],
         nvc,
+        use_rgbp: bool,
     ) -> npt.NDArray:
-        import torch
-
         if not frame_idx:
             return np.empty((0,), dtype=np.uint8)
 
@@ -291,43 +373,27 @@ class PyNvVideoCodecVideoBackendMixin:
             with cls._torch_stream_context(stream):
                 try:
                     decoder = decoder_slot.get_decoder(
-                        file_path, nvc, device_index=cls._DEVICE_INDEX
+                        file_path,
+                        nvc,
+                        device_index=cls._DEVICE_INDEX,
+                        use_rgbp=use_rgbp,
                     )
                     decoded_frames = decoder.get_batch_frames_by_index(frame_idx)
-                except Exception as exc:
+                except BaseException as exc:
+                    # Decode can enqueue work before raising; finish it before teardown.
+                    with suppress(BaseException):
+                        stream.synchronize()
                     if not isinstance(
-                        exc,
-                        _pynvvideocodec_exception_types(nvc) + (IndexError,),
+                        exc, _pynvvideocodec_exception_types(nvc) + (IndexError,)
                     ):
                         raise
                     raise ValueError("Invalid or unsupported video file.") from exc
-                if len(decoded_frames) < len(frame_idx):
-                    logger.warning(
-                        "pynvvideocodec video loading: expected %d frames but got %d.",
-                        len(frame_idx),
-                        len(decoded_frames),
+                try:
+                    return _pynvvc_frames_to_pinned_host(
+                        decoded_frames, use_rgbp, stream
                     )
-                torch_frames = [torch.from_dlpack(frame) for frame in decoded_frames]
-                if not torch_frames:
-                    return np.empty((0,), dtype=np.uint8)
-                device_frames = torch.stack(torch_frames)
-                if device_frames.ndim != 4:
-                    raise ValueError(
-                        "PyNvVideoCodec returned frames with unexpected shape "
-                        f"{tuple(device_frames.shape)}"
-                    )
-                device_frames = _pynvvc_frames_to_nhwc(device_frames)
-                host_frames = torch.empty(
-                    device_frames.shape,
-                    dtype=device_frames.dtype,
-                    device="cpu",
-                    pin_memory=True,
-                )
-                host_frames.copy_(device_frames, non_blocking=True)
-                stream.synchronize()
-                host_array = host_frames.numpy()
-                del decoded_frames, torch_frames, device_frames
-                return host_array
+                finally:
+                    del decoded_frames
 
     @classmethod
     def decode_frames_pynvvideocodec(
@@ -337,9 +403,12 @@ class PyNvVideoCodecVideoBackendMixin:
         target: VideoTargetMetadata,
         **kwargs,
     ) -> tuple[npt.NDArray, VideoSourceMetadata, list[int], list[int]]:
+        """Decode to pinned THWC, or TCHW when the loader opts into RGBP."""
         import PyNvVideoCodec as nvc
 
         from vllm.multimodal.gpu_ipc_memory import get_mm_gpu_ipc_pool
+
+        use_rgbp = getattr(loader_cls, "_pynvvideocodec_use_rgbp", False)
 
         temp_fd, temp_path = tempfile.mkstemp(suffix=".mp4")
         try:
@@ -347,7 +416,7 @@ class PyNvVideoCodecVideoBackendMixin:
                 temp_file.write(data)
 
             try:
-                gpu_source = cls._read_source_metadata(temp_path, nvc)
+                gpu_source = cls._read_source_metadata(temp_path, nvc, use_rgbp)
             except Exception as exc:
                 if not isinstance(exc, _pynvvideocodec_exception_types(nvc)):
                     raise
@@ -359,11 +428,13 @@ class PyNvVideoCodecVideoBackendMixin:
             )
             raw_frame_bytes = len(frame_idx) * gpu_source.height * gpu_source.width * 3
             pool = get_mm_gpu_ipc_pool()
-            if pool is None or raw_frame_bytes == 0:
-                frames = cls._decode_to_pinned_host(temp_path, frame_idx, nvc)
-            else:
-                with pool.acquire(raw_frame_bytes):
-                    frames = cls._decode_to_pinned_host(temp_path, frame_idx, nvc)
+            reservation = (
+                pool.acquire(raw_frame_bytes)
+                if pool is not None and raw_frame_bytes > 0
+                else nullcontext()
+            )
+            with reservation:
+                frames = cls._decode_to_pinned_host(temp_path, frame_idx, nvc, use_rgbp)
         finally:
             with suppress(FileNotFoundError):
                 os.unlink(temp_path)

@@ -3,11 +3,14 @@
 
 import os
 
+import numpy as np
 import pytest
+import torch
 
 from vllm.assets.video import VideoAsset
 from vllm.config import ModelConfig
 from vllm.multimodal import MULTIMODAL_REGISTRY
+from vllm.transformers_utils.processors.cosmos3_edge import Cosmos3EdgeVideoProcessor
 
 from ....conftest import ImageTestAssets
 from ...utils import build_model_context
@@ -103,11 +106,47 @@ def test_process_images(
 
 def test_process_video(processor) -> None:
     video_asset = VideoAsset(name="baby_reading", num_frames=8)
-    video = (video_asset.np_ndarrays, video_asset.metadata)
-    processed = processor(
-        VIDEO_PLACEHOLDER,
-        mm_items=processor.info.parse_mm_data({"video": [video]}),
-        hf_processor_mm_kwargs={},
-    )
+    thwc = video_asset.np_ndarrays
 
-    _assert_video_outputs(processor, processed)
+    def process(video):
+        return processor(
+            VIDEO_PLACEHOLDER,
+            mm_items=processor.info.parse_mm_data(
+                {"video": [(video, video_asset.metadata)]}
+            ),
+            hf_processor_mm_kwargs={},
+        )
+
+    baseline = process(thwc)
+    candidate = process(np.ascontiguousarray(thwc.transpose(0, 3, 1, 2)))
+
+    _assert_video_outputs(processor, baseline)
+    _assert_video_outputs(processor, candidate)
+
+    baseline_mm = baseline["mm_kwargs"].get_data()
+    candidate_mm = candidate["mm_kwargs"].get_data()
+    assert candidate["prompt_token_ids"] == baseline["prompt_token_ids"]
+    assert torch.equal(
+        candidate_mm["pixel_values_videos"], baseline_mm["pixel_values_videos"]
+    )
+    assert torch.equal(candidate_mm["video_grid_thw"], baseline_mm["video_grid_thw"])
+
+
+def test_video_processor_output_does_not_alias_input() -> None:
+    video = torch.arange(16 * 16 * 3, dtype=torch.float32).reshape(1, 16, 16, 3)
+    video = video.permute(0, 3, 1, 2)
+    output = Cosmos3EdgeVideoProcessor()(
+        video,
+        do_resize=False,
+        do_rescale=False,
+        do_normalize=False,
+        do_sample_frames=False,
+        patch_size=16,
+        merge_size=1,
+        return_tensors="pt",
+    )["pixel_values_videos"]
+    expected = output.clone()
+
+    video.zero_()
+
+    assert torch.equal(output, expected)

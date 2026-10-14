@@ -4,6 +4,19 @@ To enable various optimizations in vLLM such as [chunked prefill](../configurati
 
 In vLLM's rendering pipeline (see [BaseRenderer][vllm.renderers.base.BaseRenderer]), tokenization is performed as a separate step before multi-modal processing. Therefore, `BaseMultiModalProcessor` needs to recreate the output of calling HF processor end-to-end, while not being able to see the original text. This is achieved through **Dummy Input Text** and **Prompt Update Detection**.
 
+## PyNvVideoCodec Frame Layout
+
+The PyNvVideoCodec backend returns an owned, pinned CPU array. Generic video
+loaders retain the RGB THWC layout. Qwen3-VL and Cosmos3 Edge instead request
+planar RGB and receive TCHW frames, matching their video processors' input layout.
+Frames are copied directly into the host batch without stacking decoder surfaces
+into an intermediate GPU tensor. The decoder slot is reconstructed when switching
+between RGB and planar RGB output.
+
+This layout optimization requires the PyNvVideoCodec backend; other backends are
+unchanged. It composes with the existing device-side normalization setting and
+does not transfer decoder-owned surfaces across the process boundary.
+
 ## Dummy Input Text
 
 Since Transformers 5.10, `ProcessorMixin` now allows multi-modal inputs to be passed by themselves. However, certain subclasses (such as `ChameleonProcessor`) and older out-of-tree implementations may still define their own `__call__` method that assumes the presence of text with corresponding placeholder tokens. This causes a problem as we don't have the original text anymore to pass to these processors.

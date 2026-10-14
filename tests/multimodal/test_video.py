@@ -5,6 +5,7 @@ import itertools
 import subprocess
 import sys
 import threading
+import weakref
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import Any
@@ -40,8 +41,10 @@ from vllm.multimodal.video_decoders.opencv import OpenCVVideoBackendMixin
 from vllm.multimodal.video_decoders.pynvvideocodec import (
     PYNVVIDEOCODEC_DECODER_CACHE_SIZE,
     PyNvVideoCodecDecoderSlot,
+    PyNvVideoCodecSourceMetadata,
     PyNvVideoCodecVideoBackendMixin,
     _pynv_decoder_pool,
+    _pynvvc_frames_to_pinned_host,
 )
 from vllm.platforms import current_platform
 from vllm.transformers_utils.processor import get_video_processor_cls_name_from_config
@@ -283,7 +286,7 @@ def test_pynvvideocodec_backend_accounts_raw_decoded_frames(
             self.acquired.append(size)
             yield
 
-    def fake_decode(cls, file_path: str, frame_idx: list[int], nvc):
+    def fake_decode(cls, file_path: str, frame_idx: list[int], nvc, use_rgbp):
         return np.zeros((len(frame_idx), 20, 10, 3), dtype=np.uint8)
 
     pool = RecordingPool()
@@ -305,6 +308,75 @@ def test_pynvvideocodec_backend_accounts_raw_decoded_frames(
     assert decoder_cache_sizes == [PYNVVIDEOCODEC_DECODER_CACHE_SIZE]
     assert metadata["video_backend"] == PYNVVIDEOCODEC_VIDEO_BACKEND
     assert metadata["frames_indices"] == [0, 3, 6, 9]
+
+
+@pytest.mark.parametrize("has_pool", [False, True])
+@pytest.mark.parametrize("frame_indices", [[], [0, 3, 6, 9]])
+@pytest.mark.parametrize("decode_fails", [False, True])
+def test_pynvvideocodec_reservation_lifetime(
+    monkeypatch: pytest.MonkeyPatch,
+    has_pool: bool,
+    frame_indices: list[int],
+    decode_fails: bool,
+):
+    events = []
+    source = PyNvVideoCodecSourceMetadata(VideoSourceMetadata(10, 5.0, 2.0), 10, 20)
+
+    class RecordingPool:
+        @contextmanager
+        def acquire(self, size: int):
+            events.append(("acquire", size))
+            try:
+                yield
+            finally:
+                events.append(("release", size))
+
+    def fake_decode(cls, file_path, frame_idx, nvc, use_rgbp):
+        assert frame_idx == frame_indices
+        events.append(("decode", len(frame_idx)))
+        if decode_fails:
+            raise RuntimeError("decode failed")
+        return np.zeros((len(frame_idx), 20, 10, 3), dtype=np.uint8)
+
+    monkeypatch.setitem(sys.modules, "PyNvVideoCodec", object())
+    monkeypatch.setattr(
+        "vllm.multimodal.gpu_ipc_memory.get_mm_gpu_ipc_pool",
+        lambda: RecordingPool() if has_pool else None,
+    )
+    monkeypatch.setattr(
+        PyNvVideoCodecVideoBackendMixin,
+        "_read_source_metadata",
+        classmethod(lambda cls, *args: source),
+    )
+    monkeypatch.setattr(
+        PyNvVideoCodecVideoBackendMixin,
+        "_decode_to_pinned_host",
+        classmethod(fake_decode),
+    )
+    monkeypatch.setattr(
+        VideoBackend,
+        "compute_frames_index_to_sample",
+        classmethod(lambda cls, **kwargs: frame_indices),
+    )
+
+    def decode():
+        return PyNvVideoCodecVideoBackendMixin.decode_frames_pynvvideocodec(
+            VideoBackend, b"fake video", VideoTargetMetadata(4, -1, 300)
+        )
+
+    if decode_fails:
+        with pytest.raises(RuntimeError, match="decode failed"):
+            decode()
+    else:
+        frames, _, requested, valid = decode()
+        assert frames.shape == (len(frame_indices), 20, 10, 3)
+        assert requested == valid == frame_indices
+
+    expected = [("decode", len(frame_indices))]
+    if has_pool and frame_indices:
+        size = len(frame_indices) * 20 * 10 * 3
+        expected = [("acquire", size), *expected, ("release", size)]
+    assert events == expected
 
 
 @pytest.mark.skipif(not current_platform.is_cuda(), reason="Requires CUDA")
@@ -344,7 +416,7 @@ def test_pynvvideocodec_codec_uses_dynamic_sampling_strategy(
             self.acquired.append(size)
             yield
 
-    def fake_decode(cls, file_path: str, frame_idx: list[int], nvc):
+    def fake_decode(cls, file_path: str, frame_idx: list[int], nvc, use_rgbp):
         decoded_indices.append(frame_idx)
         return np.zeros((len(frame_idx), 20, 10, 3), dtype=np.uint8)
 
@@ -497,6 +569,7 @@ def test_pynvvideocodec_failed_rebuild_invalidates_decoder_slot():
     slot = PyNvVideoCodecDecoderSlot(FakeStream())
     slot.decoder = old_decoder
     slot.source_path = "valid.mp4"
+    slot.use_rgbp = False
 
     class FakeNvc:
         class OutputColorType:
@@ -529,6 +602,7 @@ def test_pynvvideocodec_failed_rebuild_invalidates_decoder_slot():
                 "unsupported-8k.mp4",
                 FakeNvc,
                 device_index=0,
+                use_rgbp=False,
             )
 
         assert events == [
@@ -674,6 +748,226 @@ def test_pynvvideocodec_rejects_invalid_hw_decoders(hw_decoders: object):
         )
 
 
+@pytest.mark.parametrize(
+    ("use_rgbp", "input_chw"), [(False, False), (False, True), (True, True)]
+)
+def test_pynvvideocodec_copies_frames_directly_to_pinned_host(
+    monkeypatch: pytest.MonkeyPatch,
+    use_rgbp: bool,
+    input_chw: bool,
+):
+    hwc = torch.arange(4 * 10 * 3, dtype=torch.uint8).reshape(4, 10, 3)[:, ::2]
+    source = hwc.permute(2, 0, 1) if input_chw else hwc
+    frames = [source, source + 1]
+    expected_frames = [hwc.permute(2, 0, 1), (hwc + 1).permute(2, 0, 1)]
+    if not use_rgbp:
+        expected_frames = [hwc, hwc + 1]
+    expected = np.stack([frame.numpy() for frame in expected_frames])
+
+    allocations = []
+    wrapper_refs = []
+    original_empty = torch.empty
+    original_from_dlpack = torch.from_dlpack
+
+    def record_empty(*args, **kwargs):
+        allocations.append(kwargs.pop("pin_memory", False))
+        return original_empty(*args, **kwargs)
+
+    def record_wrapper(frame):
+        wrapper = original_from_dlpack(frame)
+        wrapper_refs.append(weakref.ref(wrapper))
+        return wrapper
+
+    monkeypatch.setattr(torch, "empty", record_empty)
+    monkeypatch.setattr(torch, "from_dlpack", record_wrapper)
+    monkeypatch.setattr(
+        torch,
+        "stack",
+        lambda *args, **kwargs: pytest.fail("direct copy must not call torch.stack"),
+    )
+
+    class FakeStream:
+        synchronize_count = 0
+
+        def synchronize(self):
+            assert all(ref() is not None for ref in wrapper_refs)
+            self.synchronize_count += 1
+
+    stream = FakeStream()
+    output = _pynvvc_frames_to_pinned_host(frames, use_rgbp, stream)
+
+    np.testing.assert_array_equal(output, expected)
+    assert output.flags.c_contiguous
+    assert allocations == [True]
+    assert stream.synchronize_count == 1
+    assert all(ref() is None for ref in wrapper_refs)
+
+
+@pytest.mark.parametrize(
+    ("use_rgbp", "shapes", "expected_error"),
+    [
+        (True, [(4, 5, 3)], "expected CHW"),
+        (False, [(4, 5, 2)], "expected HWC"),
+        (True, [(4, 5)], "3D frame"),
+        (True, [(3, 4, 5), (4, 5, 3)], "expected CHW"),
+        (True, [(3, 4, 5), (3, 1, 5)], "inconsistent shapes"),
+    ],
+)
+def test_pynvvideocodec_rejects_invalid_rgbp_frames(
+    monkeypatch: pytest.MonkeyPatch,
+    use_rgbp: bool,
+    shapes: list[tuple[int, ...]],
+    expected_error: str,
+):
+    wrapper_refs = []
+    original_from_dlpack = torch.from_dlpack
+
+    def record_wrapper(frame):
+        wrapper = original_from_dlpack(frame)
+        wrapper_refs.append(weakref.ref(wrapper))
+        return wrapper
+
+    monkeypatch.setattr(torch, "from_dlpack", record_wrapper)
+
+    class FakeStream:
+        synchronize_count = 0
+
+        def synchronize(self):
+            self.synchronize_count += 1
+
+    stream = FakeStream()
+    frames = [torch.zeros(shape, dtype=torch.uint8) for shape in shapes]
+    with pytest.raises(ValueError, match=expected_error) as exc_info:
+        _pynvvc_frames_to_pinned_host(frames, use_rgbp, stream)
+    assert stream.synchronize_count == 1
+    # Holding the traceback must not keep decoder surfaces alive.
+    assert all(ref() is None for ref in wrapper_refs), exc_info.value
+
+
+def test_pynvvideocodec_synchronizes_after_partial_copy_failure(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    wrapper_refs = []
+    copy_count = 0
+    original_empty = torch.empty
+    original_from_dlpack = torch.from_dlpack
+    original_copy = torch.Tensor.copy_
+
+    def unpinned_empty(*args, **kwargs):
+        assert kwargs.pop("pin_memory")
+        return original_empty(*args, **kwargs)
+
+    def record_wrapper(frame):
+        wrapper = original_from_dlpack(frame)
+        wrapper_refs.append(weakref.ref(wrapper))
+        return wrapper
+
+    def fail_second_copy(self, source, *, non_blocking):
+        nonlocal copy_count
+        assert non_blocking
+        copy_count += 1
+        if copy_count == 2:
+            del source
+            raise RuntimeError("host copy failed")
+        return original_copy(self, source, non_blocking=non_blocking)
+
+    monkeypatch.setattr(torch, "empty", unpinned_empty)
+    monkeypatch.setattr(torch, "from_dlpack", record_wrapper)
+    monkeypatch.setattr(torch.Tensor, "copy_", fail_second_copy)
+
+    class FakeStream:
+        synchronize_count = 0
+
+        def synchronize(self):
+            self.synchronize_count += 1
+            raise RuntimeError("synchronize failed")
+
+    stream = FakeStream()
+    frames = [torch.zeros((4, 5, 3), dtype=torch.uint8) for _ in range(2)]
+    with pytest.raises(RuntimeError, match="host copy failed"):
+        _pynvvc_frames_to_pinned_host(frames, False, stream)
+
+    assert all(ref() is None for ref in wrapper_refs)
+    assert copy_count == 2
+    assert stream.synchronize_count == 1
+
+
+@pytest.mark.parametrize("error_chain", ["none", "cause", "cause_and_context"])
+def test_pynvvideocodec_releases_frames_after_export_failure(
+    monkeypatch: pytest.MonkeyPatch, error_chain: str
+):
+    export_error = RuntimeError("DLPack export failed")
+    wrapper_refs = []
+    original_from_dlpack = torch.from_dlpack
+
+    class BrokenFrame:
+        def __dlpack_device__(self):
+            return (1, 0)
+
+        def fail_export(self):
+            raise ValueError("inner export failed")
+
+        def fail_context(self):
+            raise LookupError("intermediate export failed")
+
+        def __dlpack__(self, **kwargs):
+            if error_chain == "none":
+                raise export_error
+            try:
+                self.fail_export()
+            except ValueError as cause:
+                if error_chain == "cause":
+                    raise export_error from cause
+                try:
+                    self.fail_context()
+                except LookupError:
+                    raise export_error from cause
+
+    def record_wrapper(frame):
+        wrapper = original_from_dlpack(frame)
+        wrapper_refs.append(weakref.ref(wrapper))
+        return wrapper
+
+    monkeypatch.setattr(torch, "from_dlpack", record_wrapper)
+    producer = BrokenFrame()
+    producer_ref = weakref.ref(producer)
+    frames = [torch.zeros((4, 5, 3), dtype=torch.uint8), producer]
+    del producer
+
+    class FakeStream:
+        synchronize_count = 0
+
+        def synchronize(self):
+            assert producer_ref() is not None
+            assert len(wrapper_refs) == 1
+            assert wrapper_refs[0]() is not None
+            self.synchronize_count += 1
+
+    stream = FakeStream()
+    with pytest.raises(RuntimeError, match="DLPack export failed") as exc_info:
+        _pynvvc_frames_to_pinned_host(frames, False, stream)
+    del frames
+
+    assert exc_info.value is export_error
+    assert stream.synchronize_count == 1
+    assert wrapper_refs[0]() is None
+    assert producer_ref() is None
+    traceback = exc_info.value.__traceback__
+    stack_names = []
+    while traceback is not None:
+        stack_names.append(traceback.tb_frame.f_code.co_name)
+        traceback = traceback.tb_next
+    assert "__dlpack__" in stack_names
+    if error_chain != "none":
+        assert str(export_error.__cause__) == "inner export failed"
+        expected_context = (
+            "inner export failed"
+            if error_chain == "cause"
+            else "intermediate export failed"
+        )
+        assert str(export_error.__context__) == expected_context
+
+
 def test_pynvvideocodec_decoder_slot_retains_simple_decoder():
     events: list[tuple[object, ...]] = []
 
@@ -686,6 +980,7 @@ def test_pynvvideocodec_decoder_slot_retains_simple_decoder():
                 (
                     "create",
                     file_path,
+                    kwargs["output_color_type"],
                     kwargs["gpu_id"],
                     kwargs["cuda_stream"],
                     kwargs["decoder_cache_size"],
@@ -698,26 +993,47 @@ def test_pynvvideocodec_decoder_slot_retains_simple_decoder():
     class FakeNvc:
         class OutputColorType:
             RGB = "rgb"
+            RGBP = "rgbp"
 
         SimpleDecoder = FakeDecoder
 
     slot = PyNvVideoCodecDecoderSlot(FakeStream())
 
-    decoder = slot.get_decoder("first.mp4", FakeNvc, device_index=7)
-    assert slot.get_decoder("first.mp4", FakeNvc, device_index=7) is decoder
-    assert slot.get_decoder("second.mp4", FakeNvc, device_index=7) is decoder
+    decoder = slot.get_decoder("first.mp4", FakeNvc, device_index=7, use_rgbp=False)
+    assert (
+        slot.get_decoder("first.mp4", FakeNvc, device_index=7, use_rgbp=False)
+        is decoder
+    )
+    assert (
+        slot.get_decoder("second.mp4", FakeNvc, device_index=7, use_rgbp=False)
+        is decoder
+    )
+    rgbp_decoder = slot.get_decoder(
+        "second.mp4", FakeNvc, device_index=7, use_rgbp=True
+    )
+    assert rgbp_decoder is not decoder
 
     assert events == [
         (
             "create",
             "first.mp4",
+            "rgb",
             7,
             "cuda-stream",
             PYNVVIDEOCODEC_DECODER_CACHE_SIZE,
         ),
         ("reconfigure", "second.mp4"),
+        (
+            "create",
+            "second.mp4",
+            "rgbp",
+            7,
+            "cuda-stream",
+            PYNVVIDEOCODEC_DECODER_CACHE_SIZE,
+        ),
     ]
     assert slot.source_path == "second.mp4"
+    assert slot.use_rgbp is True
 
 
 # ============================================================================
@@ -727,9 +1043,11 @@ def test_pynvvideocodec_decoder_slot_retains_simple_decoder():
 
 def test_cosmos3_edge_uses_qwen3_vl_video_backend():
     backend = get_video_loader_backend_for_processor("Cosmos3EdgeVideoProcessor")
+    loader = VIDEO_LOADER_REGISTRY.load(backend)
 
     assert backend == "qwen3_vl"
-    assert isinstance(VIDEO_LOADER_REGISTRY.load(backend), Qwen3VLVideoBackend)
+    assert isinstance(loader, Qwen3VLVideoBackend)
+    assert loader._pynvvideocodec_use_rgbp is True
 
 
 def test_qwen3_vl_unknown_source_fps_matches_hf(
