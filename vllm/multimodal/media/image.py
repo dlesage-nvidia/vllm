@@ -22,7 +22,6 @@ from vllm.multimodal.image_decoders.nvimagecodec import (
     NVIMAGECODEC_IMAGE_BACKEND,
     PILLOW_IMAGE_BACKEND,
     NvImageCodecInput,
-    NvImageCodecResult,
     create_nvimagecodec_decode_service,
     preflight_image_nvimagecodec,
     validate_image_backend,
@@ -283,28 +282,18 @@ class ImageMediaIO(MediaIO[LoadedImage]):
     def _prepare_bytes(self, data: bytes) -> LoadedImage | NvImageCodecInput:
         if self.backend == PILLOW_IMAGE_BACKEND:
             return self._load_bytes_pillow(data)
-        return preflight_image_nvimagecodec(
+        prepared = preflight_image_nvimagecodec(
             data,
             image_mode=self.image_mode,
         )
+        if self.decoded_budget is not None:
+            self.decoded_budget.charge(prepared.width * prepared.height * 4)
+        return prepared
 
     def load_bytes(self, data: bytes) -> LoadedImage:
         if self.backend == NVIMAGECODEC_IMAGE_BACKEND:
             raise RuntimeError("nvImageCodec requires asynchronous image loading.")
         return self._load_bytes_pillow(data)
-
-    @staticmethod
-    def _wrap_nvimagecodec_result(
-        data: bytes,
-        result: NvImageCodecResult,
-    ) -> LoadedImage:
-        if not isinstance(result, torch.Tensor):
-            raise RuntimeError("nvImageCodec failed to decode the JPEG.")
-        return MediaWithBytes(
-            result,
-            data,
-            {"backend": NVIMAGECODEC_IMAGE_BACKEND},
-        )
 
     async def load_bytes_async(
         self,
@@ -330,7 +319,9 @@ class ImageMediaIO(MediaIO[LoadedImage]):
         result = await asyncio.wrap_future(
             _get_nvimagecodec_decode_service().submit(prepared)
         )
-        return self._wrap_nvimagecodec_result(prepared.data, result)
+        return MediaWithBytes(
+            result, prepared.data, {"backend": NVIMAGECODEC_IMAGE_BACKEND}
+        )
 
     async def load_base64_async(
         self,

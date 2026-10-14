@@ -4,11 +4,13 @@
 from io import BytesIO
 from types import SimpleNamespace
 
+import pybase64
 import pytest
 from PIL import Image
 
 import vllm.envs as envs
 import vllm.multimodal.image_decoders.nvimagecodec as nvcodec
+from vllm.multimodal.media import MediaConnector, MediaDecodedBudget
 
 pytestmark = pytest.mark.cpu_test
 
@@ -132,3 +134,20 @@ def test_pixel_boundaries(monkeypatch, width, height, limit, outcome):
     else:
         result = nvcodec.preflight_image_nvimagecodec(_jpeg())
         assert (result.width, result.height) == (width, height)
+
+
+@pytest.mark.asyncio
+async def test_native_image_respects_request_decoded_budget(monkeypatch):
+    _install_codec(monkeypatch)
+    monkeypatch.setenv("VLLM_MAX_MEDIA_REQUEST_DECODE_BYTES", "127")
+    budget = MediaDecodedBudget()
+    connector = MediaConnector(
+        media_io_kwargs={"image": {"backend": "nvimagecodec"}},
+        decoded_budget=budget,
+    )
+    url = "data:image/jpeg;base64," + pybase64.b64encode(_jpeg()).decode()
+
+    with pytest.raises(ValueError, match="VLLM_MAX_MEDIA_REQUEST_DECODE_BYTES=127"):
+        await connector.fetch_image_async(url)
+
+    assert budget.used == 0

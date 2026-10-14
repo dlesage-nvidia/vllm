@@ -169,7 +169,7 @@ def reserve_mm_ipc_gpu_memory(
       these resources are not shared between processes.
     * For the nvImageCodec image backend, each API process's fixed two-wave
       device arenas, retained plugin workspace, and CUDA context. Its batch cap
-      is derived from ``api_process_count``; it does not consume the optional
+      is derived from `api_process_count`; it does not consume the optional
       raw-frame semaphore budget.
 
     Args:
@@ -233,7 +233,6 @@ def reserve_mm_ipc_gpu_memory(
         )
         if uses_pynvvideocodec
         else PYNVVIDEOCODEC_DECODER_GPU_MEMORY_BYTES
-    )
     )
     uses_gpu_video = mm_config.use_gpu_video_backend()
     uses_gpu_image = mm_config.use_gpu_image_backend()

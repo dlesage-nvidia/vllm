@@ -15,7 +15,12 @@ from vllm.multimodal.image_decoders.nvimagecodec import (
     NvImageCodecInput,
     NvImageCodecResult,
 )
-from vllm.multimodal.media import ImageMediaIO, MediaConnector, MediaWithBytes
+from vllm.multimodal.media import (
+    ImageMediaIO,
+    MediaConnector,
+    MediaDecodedBudget,
+    MediaWithBytes,
+)
 
 pytestmark = pytest.mark.cpu_test
 
@@ -44,7 +49,9 @@ async def test_async_jpeg_uses_native_service(monkeypatch) -> None:
     tensor = torch.zeros((3, 2, 3), dtype=torch.uint8)
     data, admitted, service = _install_native(monkeypatch, tensor)
 
-    image_io = ImageMediaIO(backend="nvimagecodec")
+    monkeypatch.setenv("VLLM_MAX_MEDIA_REQUEST_DECODE_BYTES", "24")
+    budget = MediaDecodedBudget()
+    image_io = ImageMediaIO(backend="nvimagecodec", decoded_budget=budget)
     monkeypatch.setattr(
         image_io, "_load_bytes_pillow", Mock(side_effect=AssertionError("used Pillow"))
     )
@@ -53,19 +60,22 @@ async def test_async_jpeg_uses_native_service(monkeypatch) -> None:
     assert result.media is tensor
     assert result.original_bytes is data
     assert result.io_config == {"backend": "nvimagecodec"}
+    assert budget.used == 24
     service.submit.assert_called_once_with(admitted)
 
 
 @pytest.mark.asyncio
 async def test_native_decode_failure_does_not_fall_back(monkeypatch) -> None:
-    data, admitted, service = _install_native(monkeypatch, None)
+    error = ValueError("nvImageCodec failed to decode the JPEG.")
+    data, admitted, service = _install_native(monkeypatch, error)
     image_io = ImageMediaIO(backend="nvimagecodec")
     monkeypatch.setattr(
         image_io, "_load_bytes_pillow", Mock(side_effect=AssertionError("used Pillow"))
     )
 
-    with pytest.raises(RuntimeError, match="failed to decode"):
+    with pytest.raises(ValueError, match="failed to decode") as caught:
         await image_io.load_bytes_async(data)
+    assert caught.value is error
     service.submit.assert_called_once_with(admitted)
 
 
