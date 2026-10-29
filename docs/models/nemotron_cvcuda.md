@@ -60,6 +60,10 @@ native linear layers remain unchanged.
 
 - Owner-retaining Pillow Arrow RGBX views and borrowed CPU multimodal collation
   avoid redundant CPU packing/staging copies, without changing native tiling.
+  Fragmented Pillow rows use exact, read-only RGBX serialization instead of an
+  unavailable Arrow view. Inputs larger than the qualified 8192-pixel extent
+  use native PR preprocessing with a warning, including large server-profile
+  dummy images; the resize contract is not widened. Encoder leads remain enabled.
 - Grouped uploads use shipping CV-CUDA `convertto`, `tvresize_into` and
   `reformat_into` operators. Separate compatibility kernels retain PR-B uint8
   rounding. **No CV-CUDA operator or library changes are included.**

@@ -4,7 +4,7 @@
   "base_head": "c8cfbb10f6c8d97a99117807cb0f26053e117928",
   "tested_patch_sha256": "62f4a9a4a4c1957e1b0cfd46e9026af79f3112aea9512dee284cda1c18ee4f2b",
   "tested_norm_gelu_bundle_sha256": "c79358406706a531468fde333751e416b2e9fa3b397f78d2f21f90615f53c688",
-  "publication_edits": "Repository formatting and SPDX headers, equivalent functools.cache spelling, local type annotations, CPU helper tests and qualification documentation only; GPU revalidation of the formatted bytes has not been performed.",
+  "publication_edits": "Repository formatting and SPDX headers, equivalent functools.cache spelling, local type annotations, CPU helper tests and qualification documentation; additional startup fixes serialize fragmented Pillow RGBX rows exactly and use native PR preprocessing with a warning above the qualified 8192-pixel input extent. These behavioral ingress fixes require separate GPU requalification and are not covered by Python AST normalization.",
   "proof_limits": "Python AST normalization permits adjacent import sorting, equivalent unbounded cache spelling and local type annotations. C++ proof compares lexical tokens and preprocessor directives with adjacent string literal concatenation normalized, not generated device code.",
   "files": {
     "vllm/model_executor/models/nemotron_cvcuda/_resize.py": {
@@ -60,8 +60,9 @@
     },
     "vllm/model_executor/models/nemotron_cvcuda/_arrow.py": {
       "tested_sha256": "242d8970e9d804af9735c9593a52cafff7a6ce2240cdb2265ac68aea0dcc8bfd",
-      "publication_sha256": "d6e34f903af250ad0a5102cb5a0b9dbfedd4aa770ebf6aa7eafee8ec7e5d64b2",
-      "normalized_python_ast_equal": true
+      "publication_sha256": "4f5ad9ddc4c81d5a30d85897321740d876b519c68fae4ad47733671885c44238",
+      "normalized_python_ast_equal": false,
+      "behavioral_change": "Exact owner-retaining read-only RGBX serialization when Pillow rows cannot be exported through Arrow."
     },
     "vllm/model_executor/models/nemotron_cvcuda/_fields.py": {
       "tested_sha256": "0faa579fd8965b9be4d462af61d7d162d93ad8f967275b764fa9422342fc78d0",
@@ -80,8 +81,9 @@
     },
     "vllm/model_executor/models/nemotron_cvcuda/_ingress.py": {
       "tested_sha256": "8ddc26861f142fae787f0583bacf279f981fbe4e4f2e6a0f024aaa705ba5df04",
-      "publication_sha256": "f706c952cf56ea3bd09e1c25efde655be6b67aa11e7d79b7b7b9386dfa5c8cbc",
-      "normalized_python_ast_equal": true
+      "publication_sha256": "76e29b0171ac2889c4305c00e8e785ca6087bc66a1777e1954687b2d7c41f06a",
+      "normalized_python_ast_equal": false,
+      "behavioral_change": "Native PR preprocessing with an explicit warning for inputs beyond the qualified 8192-pixel resize extent, including large server-profile dummy images."
     },
     "vllm/model_executor/models/nemotron_cvcuda/__init__.py": {
       "tested_sha256": "39b67a3543de12fbe919327958818a53222b223688ef8ece33a12bc1e46d1f14",

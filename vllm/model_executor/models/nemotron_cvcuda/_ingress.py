@@ -7,6 +7,10 @@
 import copy
 import types
 
+from vllm.logger import init_logger
+
+logger = init_logger(__name__)
+
 
 def install_processor(processor):
     import torch
@@ -22,6 +26,12 @@ def install_processor(processor):
 
     def preprocess(module, text, images, max_num_tiles):
         if not images:
+            return original(text, images, max_num_tiles)
+        if any(max(image.size) > 8192 for image in images):
+            logger.warning_once(
+                "CV-CUDA image preprocessing uses native PR behavior for "
+                "image extents above its qualified 8192-pixel limit."
+            )
             return original(text, images, max_num_tiles)
         deferred = copy.copy(module)
         deferred.dynamic_tiler = copy.copy(module.dynamic_tiler)

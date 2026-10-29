@@ -71,7 +71,20 @@ def export_rgbx(image, *, expected_size=(1920, 1080)):
         raise ValueError(
             f"Arrow export requires a {expected_size[0]}x{expected_size[1]} RGB image"
         )
-    schema_capsule, array_capsule = image.__arrow_c_array__()
+    try:
+        schema_capsule, array_capsule = image.__arrow_c_array__()
+    except ValueError as error:
+        if str(error) != "Image rows are not contiguous in memory.":
+            raise
+        serialized = image.tobytes("raw", "RGBX")
+        pixels = (
+            np.frombuffer(serialized, dtype=np.uint8)
+            .reshape(image.height, image.width, 4)
+            .view(OwnerRetainingPixels)
+        )
+        pixels.arrow_owners = (image, serialized)
+        pixels.setflags(write=False)
+        return OwnedRGBXView(image, None, None, pixels)
     schema = capsule_pointer(schema_capsule, b"arrow_schema", ArrowSchema)
     array = capsule_pointer(array_capsule, b"arrow_array", ArrowArray)
     if (

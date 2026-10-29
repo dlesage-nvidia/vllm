@@ -70,6 +70,28 @@ def test_arrow_rejects_mismatched_expected_geometry(cvcuda_cpu_helpers):
         cvcuda_cpu_helpers["_arrow"].export_rgbx(image, expected_size=(9, 13))
 
 
+def test_fragmented_pillow_rows_preserve_rgb_bytes_and_owner_lifetime(
+    cvcuda_cpu_helpers,
+):
+    expected = np.arange(32 * 257 * 3, dtype=np.uint8).reshape(32, 257, 3)
+    previous = Image.core.get_block_size()
+    try:
+        Image.core.set_block_size(4096)
+        image = Image.fromarray(expected)
+    finally:
+        Image.core.set_block_size(previous)
+    with pytest.raises(ValueError, match="rows are not contiguous"):
+        image.__arrow_c_array__()
+    owner = cvcuda_cpu_helpers["_arrow"].export_rgbx(image, expected_size=image.size)
+    pixels = owner.pixels[:, :, :3]
+    assert not pixels.flags.writeable
+    del owner, image
+    gc.collect()
+    np.testing.assert_array_equal(pixels, expected)
+    with pytest.raises(ValueError, match="read-only"):
+        pixels[0, 0, 0] = 0
+
+
 @pytest.mark.parametrize("extent", [1, 17, 128])
 def test_integer_resize_identity_preserves_each_uint8_value(cvcuda_cpu_helpers, extent):
     starts, counts, weights, precision = cvcuda_cpu_helpers[
