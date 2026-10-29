@@ -808,6 +808,7 @@ class NanoNemotronVLProcessor(BaseNanoNemotronVLProcessor):
         use_audio_in_video: bool = False,
         do_rescale: bool = True,
         do_normalize: bool = True,
+        cvcuda_vision: bool = False,
     ) -> None:
         if do_rescale != do_normalize:
             raise ValueError(
@@ -822,6 +823,12 @@ class NanoNemotronVLProcessor(BaseNanoNemotronVLProcessor):
             do_cpu_normalize=do_normalize,
         )
         # add extra video token for video processing
+        if cvcuda_vision:
+            from vllm.model_executor.models.nemotron_cvcuda._ingress import (
+                install_processor,
+            )
+
+            install_processor(self)
         self.video_token = video_token
         self.video_pruning_rate = video_pruning_rate
         self.use_audio_in_video = use_audio_in_video

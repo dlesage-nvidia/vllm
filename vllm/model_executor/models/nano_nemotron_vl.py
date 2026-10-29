@@ -399,6 +399,25 @@ class NanoNemotronVLMultiModalProcessor(
                 "image", image_num_patches
             )
 
+        if hf_inputs.get("pixel_values_raw") is not None:
+            from vllm.model_executor.models.nemotron_cvcuda._fields import (
+                borrowed_raw_config,
+            )
+
+            return dict(
+                image_num_patches=MultiModalFieldConfig.batched(
+                    "image", keep_on_cpu=True
+                ),
+                image_embeds=MultiModalFieldConfig.batched("image"),
+                pixel_values_raw=borrowed_raw_config(),
+                d_cvcuda_contract=MultiModalFieldConfig.batched(
+                    "image", keep_on_cpu=True
+                ),
+                imgs_sizes=MultiModalFieldConfig.batched("image", keep_on_cpu=True),
+                num_tokens_per_image=MultiModalFieldConfig.batched(
+                    "image", keep_on_cpu=True
+                ),
+            )
         return dict(
             pixel_values_flat=pixel_values_flat,
             image_num_patches=MultiModalFieldConfig.batched("image", keep_on_cpu=True),
@@ -1071,6 +1090,31 @@ class NemotronH_Nano_VL_V2(
                 "Dynamic resolution is enabled for NanoNemotronVLProcessor",
                 scope="global",
             )
+
+        if (multimodal_config.mm_processor_kwargs or {}).get("cvcuda_vision", False):
+            if (
+                vllm_config.compilation_config.compile_mm_encoder
+                or vllm_config.compilation_config.cudagraph_mm_encoder
+            ):
+                raise ValueError("CV-CUDA vision currently requires eager inference")
+            from vllm.model_executor.models.nemotron_cvcuda._ingress import (
+                install_model,
+            )
+
+            self._cvcuda_encoder_options = {
+                "norm": (multimodal_config.mm_processor_kwargs or {}).get(
+                    "cvcuda_residual_norm", True
+                ),
+                "gelu": (multimodal_config.mm_processor_kwargs or {}).get(
+                    "cvcuda_exact_gelu", True
+                ),
+            }
+            if any(
+                type(value) is not bool
+                for value in self._cvcuda_encoder_options.values()
+            ):
+                raise ValueError("CV-CUDA encoder options must be boolean")
+            install_model(self)
 
     def pixel_shuffle(self, x, scale_factor=0.5):
         n, h, w, c = x.size()
