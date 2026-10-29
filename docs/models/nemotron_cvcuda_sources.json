@@ -1,0 +1,134 @@
+{
+  "SPDX-License-Identifier": "Apache-2.0",
+  "SPDX-FileCopyrightText": "Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.",
+  "base_head": "c8cfbb10f6c8d97a99117807cb0f26053e117928",
+  "tested_patch_sha256": "62f4a9a4a4c1957e1b0cfd46e9026af79f3112aea9512dee284cda1c18ee4f2b",
+  "tested_norm_gelu_bundle_sha256": "c79358406706a531468fde333751e416b2e9fa3b397f78d2f21f90615f53c688",
+  "publication_edits": "Repository formatting and SPDX headers, equivalent functools.cache spelling, local type annotations, CPU helper tests and qualification documentation; additional serving fixes serialize fragmented Pillow RGBX rows exactly, use native PR preprocessing with a warning above the qualified 8192-pixel input extent, and transport one-tensor image groups through native multimodal fields without collation copies. These behavioral ingress fixes require separate GPU requalification and are not covered by Python AST normalization.",
+  "proof_limits": "Python AST normalization permits adjacent import sorting, equivalent unbounded cache spelling and local type annotations. C++ proof compares lexical tokens and preprocessor directives with adjacent string literal concatenation normalized, not generated device code.",
+  "files": {
+    "vllm/model_executor/models/nemotron_cvcuda/_resize.py": {
+      "tested_sha256": "e1f38061423dce892af575332041ceab41a44e271eec0ac0e3ce803f8e9cde36",
+      "publication_sha256": "94206d33dc277345470e27327d879c47a087cdbae31b20a63cc75be53e34f07b",
+      "normalized_python_ast_equal": true
+    },
+    "vllm/model_executor/models/nemotron_cvcuda/_resize.cpp": {
+      "tested_sha256": "d29431b36f1bd5e51dd944b90f107b45ee402c3135dd565e88ddc3533f432dbd",
+      "publication_sha256": "5a9d2b88d3971a6395159d7fa4ffd0e54c7c25b18b0103f34c2f284e4e549bfc",
+      "cpp_lexical_tokens_equal": true,
+      "preprocessor_directives_equal": true
+    },
+    "vllm/model_executor/models/nemotron_cvcuda/_resize.cu": {
+      "tested_sha256": "310e3a9960e2786cdf3bd503308c63a1a0d92273e130e14e2e0a3f78663aa4e7",
+      "publication_sha256": "4705139e85b88f93e413b04cce4b885512a9c375eb93f8968fb162f3a7a8e37c",
+      "cpp_lexical_tokens_equal": true,
+      "preprocessor_directives_equal": true
+    },
+    "vllm/model_executor/models/nemotron_cvcuda/_fast.py": {
+      "tested_sha256": "271670ad84e00531d9732bf43ba93aa260d3152aec6c4749feba305d124293bd",
+      "publication_sha256": "bf8e83655cef447f115b23acb36f5612d61eb356b33cb3c6282574afee141751",
+      "normalized_python_ast_equal": true
+    },
+    "vllm/model_executor/models/nemotron_cvcuda/_fast.cpp": {
+      "tested_sha256": "cd27c2e8b39c1b3180d34c8378b36b482c1f2d7693c8a5db5a920fde87249997",
+      "publication_sha256": "922fb49aa20f14899aed3a7ca734c5deb7ac1d8bc072ca7897d5bb9eea52f416",
+      "cpp_lexical_tokens_equal": true,
+      "preprocessor_directives_equal": true
+    },
+    "vllm/model_executor/models/nemotron_cvcuda/_fast.cu": {
+      "tested_sha256": "0defb19e484572d8372b3f5cb9655de1e6bad19dbfb232c2720de93bddbd8a05",
+      "publication_sha256": "15ac553aaa49953d130bd4813964d5b69cb33e8d393e98f715236ce9d6dfc276",
+      "cpp_lexical_tokens_equal": true,
+      "preprocessor_directives_equal": true
+    },
+    "vllm/model_executor/models/nemotron_cvcuda/_fused.py": {
+      "tested_sha256": "5b62bec2a0539da51f0c1fe476b40345ca7ce4b3beb50fedfb4caa752a80980c",
+      "publication_sha256": "e46183a936a3b1f339fd024ee6073be4223fb091a14739f7f9ff256e28c92c16",
+      "normalized_python_ast_equal": true
+    },
+    "vllm/model_executor/models/nemotron_cvcuda/_fused.cpp": {
+      "tested_sha256": "50f83cf783815ae667fbe152f213bd0f02ecae998efea53aa533a2a3a6a7962d",
+      "publication_sha256": "e466f1ffdfb71ec3dda50b651e6fe900ca46d49dc4426fbfebb647c8b9dd7bd4",
+      "cpp_lexical_tokens_equal": true,
+      "preprocessor_directives_equal": true
+    },
+    "vllm/model_executor/models/nemotron_cvcuda/_fused.cu": {
+      "tested_sha256": "4da3e5dde5b2315c2b817dc3e6c15e79dcf453a4ee9ea2d7a32ce00f82c5bf30",
+      "publication_sha256": "4d8b5a113d52f0fce4ef230746f64c6947b61814cb9cfd910cbe3c0c4bc5e363",
+      "cpp_lexical_tokens_equal": true,
+      "preprocessor_directives_equal": true
+    },
+    "vllm/model_executor/models/nemotron_cvcuda/_arrow.py": {
+      "tested_sha256": "242d8970e9d804af9735c9593a52cafff7a6ce2240cdb2265ac68aea0dcc8bfd",
+      "publication_sha256": "4f5ad9ddc4c81d5a30d85897321740d876b519c68fae4ad47733671885c44238",
+      "normalized_python_ast_equal": false,
+      "behavioral_change": "Exact owner-retaining read-only RGBX serialization when Pillow rows cannot be exported through Arrow."
+    },
+    "vllm/model_executor/models/nemotron_cvcuda/_fields.py": {
+      "tested_sha256": "0faa579fd8965b9be4d462af61d7d162d93ad8f967275b764fa9422342fc78d0",
+      "publication_sha256": "a589de2bcec9d271285e16dcce746597c17b459db7256e272b77c775c94bffbe",
+      "normalized_python_ast_equal": false,
+      "behavioral_change": "Native wire-compatible batched fields with one-tensor image groups preserve raw RGBX collation without copying or serializer-registry mutation."
+    },
+    "vllm/model_executor/models/nemotron_cvcuda/_upload.py": {
+      "tested_sha256": "e968d7526665f8f03cd0f780c279c607f58b6ef1a3e9310129e217745a6c8e66",
+      "publication_sha256": "d5d7572ba238c8ae13aacb571ad1be4466e50103f8ce66ee17c96906c1fece23",
+      "normalized_python_ast_equal": true
+    },
+    "vllm/model_executor/models/nemotron_cvcuda/_encoder.py": {
+      "tested_sha256": "5a16f8b3f76bdf7e5a3582a62ee42ec822b722d2b75763333a4c8bca169628a9",
+      "publication_sha256": "9b7cbd004586202cce192bdc463ecc027b6b5b72590b6dccdebb2d4219eadf7e",
+      "normalized_python_ast_equal": true
+    },
+    "vllm/model_executor/models/nemotron_cvcuda/_ingress.py": {
+      "tested_sha256": "8ddc26861f142fae787f0583bacf279f981fbe4e4f2e6a0f024aaa705ba5df04",
+      "publication_sha256": "78b7351571af194f497c29b38df51db8aa06e2fe4c7a9474e8be6c09433b54ab",
+      "normalized_python_ast_equal": false,
+      "behavioral_change": "Native PR preprocessing with an explicit warning above the qualified 8192-pixel resize extent, plus validated native-wire one-tensor image groups under the v2 raw-pixel contract."
+    },
+    "vllm/model_executor/models/nemotron_cvcuda/__init__.py": {
+      "tested_sha256": "39b67a3543de12fbe919327958818a53222b223688ef8ece33a12bc1e46d1f14",
+      "publication_sha256": "b5c5f40fb71f48670ebcca4b5d597d02b5276fcf4be2cecd5ea3865759f6f807",
+      "normalized_python_ast_equal": true
+    },
+    "vllm/transformers_utils/processors/nano_nemotron_vl.py": {
+      "tested_sha256": "eda6a7abdc11d0077319e9fcfe26b6f29e411bb50320ed6cd46c1deda2be8b28",
+      "publication_sha256": "eda6a7abdc11d0077319e9fcfe26b6f29e411bb50320ed6cd46c1deda2be8b28",
+      "normalized_python_ast_equal": true
+    },
+    "vllm/model_executor/models/nano_nemotron_vl.py": {
+      "tested_sha256": "fc29124a81eee45aad56acb699cac164754dbf3ee28abd2c2fb4c83c0f1ae3fd",
+      "publication_sha256": "5636b404a5c71653ac87637e34d1fd63d36ef9af9b2c3accd3d065a7ca1366a6",
+      "normalized_python_ast_equal": true
+    },
+    "setup.py": {
+      "tested_sha256": "5a5f8b854069f4d84ee45f5d49f0553f9bcaa98012a7178a02e6c7b4cbd95c23",
+      "publication_sha256": "5a5f8b854069f4d84ee45f5d49f0553f9bcaa98012a7178a02e6c7b4cbd95c23",
+      "normalized_python_ast_equal": true
+    },
+    "vllm/model_executor/models/nemotron_cvcuda/_leads.py": {
+      "tested_sha256": "b0623b7481328d6d600aebc57ded6273ca2d0659c4e86278813ec0fee2ef0973",
+      "publication_sha256": "c4de181d522052527a73cf66c9254150b8899fd38972bfe1cddd562a5a45e876",
+      "normalized_python_ast_equal": true
+    },
+    "vllm/model_executor/models/nemotron_cvcuda/_leads.cpp": {
+      "tested_sha256": "bbf994a28ce6f26343777566683f4cc254dac2ab88d1753748f536824b435ff9",
+      "publication_sha256": "1f9881f15d3e59afd73938f14fa40bb2098743aec4a36775c53c0ff85b460a99",
+      "cpp_lexical_tokens_equal": true,
+      "preprocessor_directives_equal": true
+    },
+    "vllm/model_executor/models/nemotron_cvcuda/_scalar_norm.cu": {
+      "tested_sha256": "ac62f5bf4c3876260728d233eb72ce973580e5449a8a537a7f6b7d573e1507a0",
+      "publication_sha256": "26174a3622d9e795f131ab5dde3796e1aa37aebb328ec5226c66825cf9066746",
+      "cpp_lexical_tokens_equal": true,
+      "preprocessor_directives_equal": true
+    },
+    "vllm/model_executor/models/nemotron_cvcuda/_gelu.cu": {
+      "tested_sha256": "663e0c22c72dd43b90153483c276531a7e5defd27a7897e7c97db165286c092c",
+      "publication_sha256": "bfd3d75c89c9ca2dc779192b3c98d18bc2018a806cbd84364bf367d67a1d6a64",
+      "cpp_lexical_tokens_equal": true,
+      "preprocessor_directives_equal": true
+    }
+  },
+  "publication_norm_gelu_bundle_sha256": "49f125602f909025e614d80cd5e3c2ddf826a0630a4c2ad20d611e596c166868"
+}

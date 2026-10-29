@@ -720,6 +720,8 @@ Some models are supported only via the [Transformers modeling backend](#transfor
 
 !!! note
     Both Nemotron Nano architecture names map to the same vLLM implementation.
+    For the experimental opt-in CV-CUDA image path, see
+    [Nemotron CV-CUDA vision](nemotron_cvcuda.md).
     Audio inputs are only supported by the Omni variants; `NemotronH_Nano_VL_V2`
     checkpoints such as `nvidia/NVIDIA-Nemotron-Nano-12B-v2-VL-BF16` accept text,
     image and video only.
