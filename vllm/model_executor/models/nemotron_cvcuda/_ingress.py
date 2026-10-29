@@ -16,6 +16,7 @@ def install_processor(processor):
     import torch
 
     from ._arrow import export_rgbx
+    from ._fields import RAW_RGBX_CONTRACT_VERSION
 
     if processor.do_cpu_normalize or not processor.dynamic_tiler:
         raise ValueError(
@@ -55,9 +56,11 @@ def install_processor(processor):
         result_text, fields = type(module)._preprocess_image(
             deferred, text, images, max_num_tiles
         )
-        fields["pixel_values_raw"] = fields.pop("pixel_values_flat")
+        fields["pixel_values_raw"] = [
+            [pixels] for pixels in fields.pop("pixel_values_flat")
+        ]
         fields["imgs_sizes"] = sizes
-        fields["d_cvcuda_contract"] = ["D-cvcuda-B-uint8-v1"] * len(sizes)
+        fields["d_cvcuda_contract"] = [RAW_RGBX_CONTRACT_VERSION] * len(sizes)
         return result_text, fields
 
     processor._preprocess_image = types.MethodType(preprocess, processor)
@@ -73,6 +76,7 @@ def install_model(model):
 
     from ._encoder import cached_positions, identity_blocks
     from ._fast import RawRGBXUploader
+    from ._fields import RAW_RGBX_CONTRACT_VERSION, preserve_raw_batch
     from ._fused import NormalizedPackedResize, TrustedNormalized
 
     if (
@@ -109,6 +113,7 @@ def install_model(model):
             if marker is not None:
                 raise ValueError("Raw-image marker has no pixels")
             return native_parse(**kwargs)
+        raw = preserve_raw_batch(raw)
         if (
             kwargs.get("pixel_values_flat") is not None
             or kwargs.get("image_embeds") is not None
@@ -123,7 +128,7 @@ def install_model(model):
             or not isinstance(tokens, list)
             or len(raw) != len(sizes)
             or len(raw) != len(tokens)
-            or marker != ["D-cvcuda-B-uint8-v1"] * len(raw)
+            or marker != [RAW_RGBX_CONTRACT_VERSION] * len(raw)
         ):
             raise ValueError("Invalid raw-image contract")
         if resizer is None:

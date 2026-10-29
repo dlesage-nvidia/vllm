@@ -4,7 +4,7 @@
   "base_head": "c8cfbb10f6c8d97a99117807cb0f26053e117928",
   "tested_patch_sha256": "62f4a9a4a4c1957e1b0cfd46e9026af79f3112aea9512dee284cda1c18ee4f2b",
   "tested_norm_gelu_bundle_sha256": "c79358406706a531468fde333751e416b2e9fa3b397f78d2f21f90615f53c688",
-  "publication_edits": "Repository formatting and SPDX headers, equivalent functools.cache spelling, local type annotations, CPU helper tests and qualification documentation; additional startup fixes serialize fragmented Pillow RGBX rows exactly and use native PR preprocessing with a warning above the qualified 8192-pixel input extent. These behavioral ingress fixes require separate GPU requalification and are not covered by Python AST normalization.",
+  "publication_edits": "Repository formatting and SPDX headers, equivalent functools.cache spelling, local type annotations, CPU helper tests and qualification documentation; additional serving fixes serialize fragmented Pillow RGBX rows exactly, use native PR preprocessing with a warning above the qualified 8192-pixel input extent, and transport one-tensor image groups through native multimodal fields without collation copies. These behavioral ingress fixes require separate GPU requalification and are not covered by Python AST normalization.",
   "proof_limits": "Python AST normalization permits adjacent import sorting, equivalent unbounded cache spelling and local type annotations. C++ proof compares lexical tokens and preprocessor directives with adjacent string literal concatenation normalized, not generated device code.",
   "files": {
     "vllm/model_executor/models/nemotron_cvcuda/_resize.py": {
@@ -66,8 +66,9 @@
     },
     "vllm/model_executor/models/nemotron_cvcuda/_fields.py": {
       "tested_sha256": "0faa579fd8965b9be4d462af61d7d162d93ad8f967275b764fa9422342fc78d0",
-      "publication_sha256": "08f0f023195f148b3614b50bc8a31689356f4c7d826a37df066ae018de1aff23",
-      "normalized_python_ast_equal": true
+      "publication_sha256": "a589de2bcec9d271285e16dcce746597c17b459db7256e272b77c775c94bffbe",
+      "normalized_python_ast_equal": false,
+      "behavioral_change": "Native wire-compatible batched fields with one-tensor image groups preserve raw RGBX collation without copying or serializer-registry mutation."
     },
     "vllm/model_executor/models/nemotron_cvcuda/_upload.py": {
       "tested_sha256": "e968d7526665f8f03cd0f780c279c607f58b6ef1a3e9310129e217745a6c8e66",
@@ -81,9 +82,9 @@
     },
     "vllm/model_executor/models/nemotron_cvcuda/_ingress.py": {
       "tested_sha256": "8ddc26861f142fae787f0583bacf279f981fbe4e4f2e6a0f024aaa705ba5df04",
-      "publication_sha256": "76e29b0171ac2889c4305c00e8e785ca6087bc66a1777e1954687b2d7c41f06a",
+      "publication_sha256": "78b7351571af194f497c29b38df51db8aa06e2fe4c7a9474e8be6c09433b54ab",
       "normalized_python_ast_equal": false,
-      "behavioral_change": "Native PR preprocessing with an explicit warning for inputs beyond the qualified 8192-pixel resize extent, including large server-profile dummy images."
+      "behavioral_change": "Native PR preprocessing with an explicit warning above the qualified 8192-pixel resize extent, plus validated native-wire one-tensor image groups under the v2 raw-pixel contract."
     },
     "vllm/model_executor/models/nemotron_cvcuda/__init__.py": {
       "tested_sha256": "39b67a3543de12fbe919327958818a53222b223688ef8ece33a12bc1e46d1f14",

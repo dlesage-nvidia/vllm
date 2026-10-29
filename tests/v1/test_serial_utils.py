@@ -101,6 +101,51 @@ class MyRequest(msgspec.Struct):
     mm: list[MultiModalKwargsItems] | None
 
 
+def test_nemotron_raw_rgbx_roundtrip_preserves_batch_bytes_without_collation_copy():
+    from vllm.model_executor.models.nemotron_cvcuda._fields import (
+        borrowed_raw_config,
+        preserve_raw_batch,
+    )
+
+    pixels = [
+        (torch.arange(60, dtype=torch.uint8) + index).reshape(3, 5, 4)
+        for index in range(2)
+    ]
+    field = borrowed_raw_config().field
+    elements = field.build_elems(
+        "image", "pixel_values_raw", [[pixel] for pixel in pixels]
+    )
+    items = MultiModalKwargsItems(
+        {
+            "image": [
+                MultiModalKwargsItem(
+                    {
+                        "pixel_values_raw": element,
+                        "d_cvcuda_contract": MultiModalFieldElem(
+                            2, MultiModalBatchedField(keep_on_cpu=True)
+                        ),
+                    }
+                )
+                for element in elements
+            ]
+        }
+    )
+    request = MyRequest([items])
+    encoded = MsgpackEncoder().encode(request)
+    decoded = MsgpackDecoder(MyRequest).decode(encoded).mm[0]
+    assert decoded.get_data()["d_cvcuda_contract"] == [2, 2]
+    original_batch = preserve_raw_batch(items.get_data()["pixel_values_raw"])
+    restored_batch = preserve_raw_batch(decoded.get_data()["pixel_values_raw"])
+    assert [pixel.data_ptr() for pixel in original_batch] == [
+        pixel.data_ptr() for pixel in pixels
+    ]
+    assert len(restored_batch) == len(pixels)
+    for reference, restored in zip(pixels, restored_batch, strict=True):
+        assert restored.dtype == torch.uint8 and restored.device.type == "cpu"
+        assert restored.is_contiguous() and restored.shape == reference.shape
+        assert torch.equal(reference, restored)
+
+
 def test_multimodal_kwargs():
     e1 = MultiModalFieldElem(
         torch.zeros(1000, dtype=torch.bfloat16),

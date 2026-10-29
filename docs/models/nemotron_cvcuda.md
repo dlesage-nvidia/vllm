@@ -64,6 +64,8 @@ native linear layers remain unchanged.
   unavailable Arrow view. Inputs larger than the qualified 8192-pixel extent
   use native PR preprocessing with a warning, including large server-profile
   dummy images; the resize contract is not widened. Encoder leads remain enabled.
+  One-tensor image groups use native multimodal fields for RPC transport while
+  retaining zero-copy raw-pixel collation; no serializer registry is modified.
 - Grouped uploads use shipping CV-CUDA `convertto`, `tvresize_into` and
   `reformat_into` operators. Separate compatibility kernels retain PR-B uint8
   rounding. **No CV-CUDA operator or library changes are included.**
