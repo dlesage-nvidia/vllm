@@ -456,3 +456,103 @@ def test_omni_mamba_ssm_cache_dtype(model: str, requested: str, expected: str):
         max_model_len=4096,
     ).create_engine_config()
     assert vllm_config.cache_config.mamba_ssm_cache_dtype == expected
+
+
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16, torch.float32])
+def test_nemotron_pure_cvcuda_identity_preserves_normalization(dtype):
+    """Identity resize must not quantize or apply normalization twice."""
+    from vllm.model_executor.models.nemotron_cvcuda_preprocessing import (
+        PureImagePreprocessor,
+    )
+
+    source = torch.arange(256, dtype=torch.uint8).reshape(16, 16, 1).expand(-1, -1, 3)
+    source = source.contiguous()
+    preprocessor = PureImagePreprocessor([0.5] * 3, [0.5] * 3)
+    actual = preprocessor.process_images([source], [(16, 16)], _DEVICE, dtype)[0]
+    expected = ((source.to(_DEVICE).float() / 255.0 - 0.5) * 2.0).permute(2, 0, 1)
+    expected = expected.contiguous().to(dtype)
+    assert bool(torch.isfinite(actual).all())
+    assert torch.equal(
+        actual.contiguous().view(torch.uint8), expected.view(torch.uint8)
+    )
+
+
+def test_nemotron_pure_cvcuda_retains_bicubic_overshoot():
+    """The FP32 path must not introduce current-main uint8 clipping."""
+    from vllm.model_executor.models.nemotron_cvcuda_preprocessing import (
+        PureImagePreprocessor,
+    )
+
+    source = torch.zeros((8, 8, 3), dtype=torch.uint8)
+    source[3:5, 3:5].fill_(255)
+    actual = PureImagePreprocessor([0.0] * 3, [1.0] * 3).process_images(
+        [source], [(32, 32)], _DEVICE, torch.float32
+    )[0]
+    assert bool(torch.isfinite(actual).all())
+    assert actual.min().item() < 0
+    assert actual.max().item() > 1
+
+
+def test_nemotron_pure_cvcuda_normalization_on_nondefault_stream():
+    """Cold normalization constants and uploads must follow the caller's stream."""
+    from vllm.model_executor.models.nemotron_cvcuda_preprocessing import (
+        PureImagePreprocessor,
+    )
+    from vllm.utils.gpu_sync_debug import enable_gpu_sync_check, with_gpu_sync_check
+
+    source = torch.arange(256, dtype=torch.uint8).reshape(16, 16, 1).expand(-1, -1, 3)
+    source = source.contiguous()
+    preprocessor = PureImagePreprocessor([0.5] * 3, [0.5] * 3)
+    enable_gpu_sync_check()
+    process = with_gpu_sync_check(preprocessor.process_images)
+    first = process([source], [(16, 16)], _DEVICE, torch.bfloat16)[0]
+    stream = torch.cuda.Stream()
+    with torch.cuda.stream(stream):
+        second = process([source], [(16, 16)], _DEVICE, torch.bfloat16)[0]
+    torch.cuda.current_stream().wait_stream(stream)
+    expected = ((source.to(_DEVICE).float() / 255.0 - 0.5) * 2.0).permute(2, 0, 1)
+    expected = expected.contiguous().to(torch.bfloat16)
+    assert bool(torch.isfinite(first).all())
+    assert bool(torch.isfinite(second).all())
+    assert torch.equal(first.view(torch.uint8), expected.view(torch.uint8))
+    assert torch.equal(first.view(torch.uint8), second.view(torch.uint8))
+
+
+@pytest.mark.parametrize("invalid_std", [[0.0] * 3, [float("nan")] * 3, [-1.0] * 3])
+def test_nemotron_pure_cvcuda_rejects_invalid_normalization(invalid_std):
+    from vllm.model_executor.models.nemotron_cvcuda_preprocessing import (
+        PureImagePreprocessor,
+    )
+
+    with pytest.raises(ValueError, match="positive stds"):
+        PureImagePreprocessor([0.5] * 3, invalid_std)
+
+
+@pytest.mark.usefixtures("enable_pickle")
+def test_nemotron_pure_cvcuda_real_generation_is_repeatable(vllm_runner):
+    """Exercise raw-image transport and normalization dispatch with real weights."""
+    image = Image.fromarray(
+        np.random.default_rng(57924).integers(0, 256, (72, 96, 3), dtype=np.uint8)
+    )
+    with vllm_runner(
+        "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4",
+        revision="16993199e436da4ba75ddc410855f87e0d996ee6",
+        trust_remote_code=True,
+        dtype="bfloat16",
+        max_model_len=8192,
+        max_num_seqs=1,
+        kv_cache_dtype="fp8",
+        enable_prefix_caching=False,
+        mm_processor_cache_gb=0,
+        mm_device_do_normalize=True,
+        limit_mm_per_prompt={"image": 1, "video": 0, "audio": 0},
+        mm_processor_kwargs={"pure_cvcuda_preprocessing": True},
+    ) as model:
+        assert model.apply_model(
+            lambda module: module._pure_cvcuda_preprocessor is not None
+        ) == [True]
+        first = model.generate_greedy(["<image>Describe the image."], 1, images=[image])
+        second = model.generate_greedy(
+            ["<image>Describe the image."], 1, images=[image]
+        )
+        assert first == second

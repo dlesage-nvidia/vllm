@@ -84,6 +84,7 @@ from vllm.multimodal.video_prune.evs import (
     compute_retained_tokens_count,
     compute_retention_mask,
 )
+from vllm.platforms import current_platform
 from vllm.renderers import TokenizeParams
 from vllm.sequence import IntermediateTensors
 from vllm.tokenizers import cached_tokenizer_from_config
@@ -147,6 +148,7 @@ class NanoNemotronVLImagePixelInputsDynamic(TensorSchema):
     pixel_values_flat: Annotated[torch.Tensor, TensorShape("bn", "h", "w")]
     imgs_sizes: list[tuple[int, int]]
     num_tokens_per_image: list[int]
+    already_normalized: bool = False
 
 
 class NanoNemotronVLImageEmbeddingInputs(TensorSchema):
@@ -401,6 +403,7 @@ class NanoNemotronVLMultiModalProcessor(
 
         return dict(
             pixel_values_flat=pixel_values_flat,
+            pixel_values_raw=MultiModalFieldConfig.batched("image", keep_on_cpu=True),
             image_num_patches=MultiModalFieldConfig.batched("image", keep_on_cpu=True),
             image_embeds=MultiModalFieldConfig.batched("image"),
             num_tokens_per_image=MultiModalFieldConfig.batched(
@@ -1068,6 +1071,31 @@ class NemotronH_Nano_VL_V2(
         self.dynamic_resolution = BaseNanoNemotronVLProcessor.use_dynamic_resolution(
             config
         )
+        processor_kwargs = multimodal_config.mm_processor_kwargs or {}
+        pure_cvcuda_preprocessing = processor_kwargs.get(
+            "pure_cvcuda_preprocessing", False
+        )
+        self._pure_cvcuda_preprocessor = None
+        if type(pure_cvcuda_preprocessing) is not bool:
+            raise ValueError("pure_cvcuda_preprocessing must be a bool")
+        if pure_cvcuda_preprocessing:
+            compilation = vllm_config.compilation_config
+            if (
+                not self.dynamic_resolution
+                or self.input_norm is None
+                or not current_platform.is_cuda()
+                or compilation.compile_mm_encoder
+                or compilation.cudagraph_mm_encoder
+            ):
+                raise ValueError(
+                    "Pure CV-CUDA preprocessing requires CUDA, dynamic images, "
+                    "mm_device_do_normalize=True and an eager multimodal encoder"
+                )
+            from .nemotron_cvcuda_preprocessing import PureImagePreprocessor
+
+            self._pure_cvcuda_preprocessor = PureImagePreprocessor(
+                config.norm_mean, config.norm_std
+            )
         if self.dynamic_resolution:
             logger.info_once(
                 "Dynamic resolution is enabled for NanoNemotronVLProcessor",
@@ -1125,10 +1153,21 @@ class NemotronH_Nano_VL_V2(
         return normalized.reshape(shape)
 
     def extract_feature_dynamic(
-        self, pixel_values: torch.Tensor, imgs_sizes: list[tuple[int, int]]
+        self,
+        pixel_values: torch.Tensor,
+        imgs_sizes: list[tuple[int, int]],
+        *,
+        already_normalized: bool = False,
     ):
         """Dynamic resolution extract_feature for images."""
-        pixel_values = self._normalize_pixel_values(pixel_values)
+        if already_normalized:
+            if (
+                self._pure_cvcuda_preprocessor is None
+                or pixel_values.dtype != self.llm_dtype
+            ):
+                raise ValueError("Pre-normalized images require the pure CV-CUDA path")
+        else:
+            pixel_values = self._normalize_pixel_values(pixel_values)
         _, vit_embeds = self.vision_model(pixel_values, imgs_sizes=imgs_sizes)
         vit_embeds = vit_embeds.to(dtype=torch.bfloat16)
         if self.vision_final_layernorm is not None:
@@ -1193,7 +1232,23 @@ class NemotronH_Nano_VL_V2(
                 data=image_embeds,
             )
 
+        pixel_values_raw = kwargs.pop("pixel_values_raw", None)
         pixel_values_flat = kwargs.pop("pixel_values_flat", None)
+        already_normalized = pixel_values_raw is not None
+        if already_normalized:
+            if self._pure_cvcuda_preprocessor is None:
+                raise ValueError(
+                    "Raw images require pure_cvcuda_preprocessing at startup"
+                )
+            if pixel_values_flat is not None:
+                raise ValueError("Raw and resized images cannot be supplied together")
+            assert self.input_norm is not None
+            pixel_values_flat = self._pure_cvcuda_preprocessor.process_images(
+                pixel_values_raw,
+                kwargs.get("imgs_sizes"),
+                self.input_norm.weight.device,
+                self.llm_dtype,
+            )
         if pixel_values_flat is None:
             return None
 
@@ -1210,6 +1265,7 @@ class NemotronH_Nano_VL_V2(
                 pixel_values_flat=pixel_values_flat,
                 imgs_sizes=imgs_sizes,
                 num_tokens_per_image=num_tokens_per_image,
+                already_normalized=already_normalized,
             )
         else:
             assert isinstance(pixel_values_flat, torch.Tensor)
@@ -1224,7 +1280,9 @@ class NemotronH_Nano_VL_V2(
         self, image_input: NanoNemotronVLImagePixelInputsDynamic
     ) -> tuple[torch.Tensor, ...]:
         image_embeds = self.extract_feature_dynamic(
-            image_input.pixel_values_flat, image_input.imgs_sizes
+            image_input.pixel_values_flat,
+            image_input.imgs_sizes,
+            already_normalized=image_input.already_normalized,
         )
         num_tokens_per_image = image_input.num_tokens_per_image
 
@@ -1518,7 +1576,7 @@ class NemotronH_Nano_VL_V2(
         # from the order of kwargs.
         for input_key in kwargs:
             if (
-                input_key in ("pixel_values_flat", "image_embeds")
+                input_key in ("pixel_values_flat", "pixel_values_raw", "image_embeds")
                 and "images" not in modalities
             ):
                 modalities["images"] = self._parse_and_validate_image_input(**kwargs)
