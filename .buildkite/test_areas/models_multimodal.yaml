@@ -2,6 +2,22 @@ group: Models - Multimodal
 depends_on: 
   - image-build
 steps:
+- label: ":nvidia: (B200) Nano Nemotron Pure CV-CUDA"
+  key: nano-nemotron-pure-cvcuda
+  timeout_in_minutes: 60
+  device: b200-k8s
+  source_file_dependencies:
+  - vllm/model_executor/models/nano_nemotron_vl.py
+  - vllm/model_executor/models/nemotron_cvcuda_preprocessing.py
+  - vllm/transformers_utils/processors/nano_nemotron_vl.py
+  - tests/models/multimodal/test_nano_nemotron_vl.py
+  commands:
+    - uv pip install cvcuda-cu13==0.19.0
+    - >-
+      VLLM_GPU_SYNC_CHECK=error pytest -v -s
+      models/multimodal/test_nano_nemotron_vl.py
+      -k pure_cvcuda
+
 - label: ":nvidia: (H200 MIG 18GB) Multimodal Models (Standard) 1: qwen2"
   key: multi-modal-models-standard-1-qwen2
   timeout_in_minutes: 68

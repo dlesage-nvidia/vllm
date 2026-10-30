@@ -631,6 +631,7 @@ class BaseNanoNemotronVLProcessor(ABC):
         self.image_size = image_size
         self.use_thumbnail: bool = config.use_thumbnail
         self.do_cpu_normalize = do_cpu_normalize
+        self.pure_cvcuda_preprocessing = False
         self.norm_mean = torch.Tensor(config.norm_mean).reshape(1, 3, 1, 1)
         self.norm_std = torch.Tensor(config.norm_std).reshape(1, 3, 1, 1)
 
@@ -718,15 +719,37 @@ class BaseNanoNemotronVLProcessor(ABC):
             text_prompt_length = len(
                 self.tokenizer(sans_images, add_special_tokens=False).input_ids
             )
-            pixel_values_lst, num_tokens_per_image = tiler._images_to_pixel_values_lst(
-                text_prompt_length=text_prompt_length,
-                images=images,
-                dtype=self.dtype,
-            )
-            imgs_sizes = [(pv.shape[-2], pv.shape[-1]) for pv in pixel_values_lst]
+            if self.pure_cvcuda_preprocessing:
+                params = tiler.compute_params(
+                    images, tiler.max_num_tokens_available(text_prompt_length)
+                )
+                pixel_values_lst = [
+                    _pil_to_nhwc_tensor(param.media)[0] for param in params
+                ]
+                num_tokens_per_image = [param.num_embeddings for param in params]
+                imgs_sizes = [
+                    (
+                        param.patch_size[1] * tiler._patch_size,
+                        param.patch_size[0] * tiler._patch_size,
+                    )
+                    for param in params
+                ]
+            else:
+                pixel_values_lst, num_tokens_per_image = (
+                    tiler._images_to_pixel_values_lst(
+                        text_prompt_length=text_prompt_length,
+                        images=images,
+                        dtype=self.dtype,
+                    )
+                )
+                imgs_sizes = [(pv.shape[-2], pv.shape[-1]) for pv in pixel_values_lst]
             image_num_patches = torch.tensor([1] * len(num_tokens_per_image))
             image_inputs = {
-                "pixel_values_flat": pixel_values_lst,
+                (
+                    "pixel_values_raw"
+                    if self.pure_cvcuda_preprocessing
+                    else "pixel_values_flat"
+                ): pixel_values_lst,
                 "imgs_sizes": imgs_sizes,
                 "num_tokens_per_image": num_tokens_per_image,
             }
@@ -808,6 +831,7 @@ class NanoNemotronVLProcessor(BaseNanoNemotronVLProcessor):
         use_audio_in_video: bool = False,
         do_rescale: bool = True,
         do_normalize: bool = True,
+        pure_cvcuda_preprocessing: bool = False,
     ) -> None:
         if do_rescale != do_normalize:
             raise ValueError(
@@ -821,6 +845,14 @@ class NanoNemotronVLProcessor(BaseNanoNemotronVLProcessor):
             max_num_tiles=max_num_tiles,
             do_cpu_normalize=do_normalize,
         )
+        if type(pure_cvcuda_preprocessing) is not bool:
+            raise ValueError("pure_cvcuda_preprocessing must be a bool")
+        if pure_cvcuda_preprocessing and (do_normalize or self.dynamic_tiler is None):
+            raise ValueError(
+                "Pure CV-CUDA preprocessing requires dynamic images and "
+                "mm_device_do_normalize=True"
+            )
+        self.pure_cvcuda_preprocessing = pure_cvcuda_preprocessing
         # add extra video token for video processing
         self.video_token = video_token
         self.video_pruning_rate = video_pruning_rate

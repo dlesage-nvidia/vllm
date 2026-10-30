@@ -508,6 +508,8 @@ Some models are supported only via the [Transformers modeling backend](#transfor
 
 ## List of Multimodal Language Models
 
+Nano Nemotron dynamic images support [experimental pure CV-CUDA preprocessing](nemotron_pure_cvcuda_preprocessing.md).
+
 The following modalities are supported depending on the model:
 
 - **T**ext
