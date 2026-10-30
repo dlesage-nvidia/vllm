@@ -12,7 +12,7 @@ steps:
   - vllm/transformers_utils/processors/nano_nemotron_vl.py
   - tests/models/multimodal/test_nano_nemotron_vl.py
   commands:
-    - uv pip install cvcuda-cu13==0.19.0
+    - uv pip install --system cvcuda-cu13==0.19.0
     - >-
       VLLM_GPU_SYNC_CHECK=error pytest -v -s
       models/multimodal/test_nano_nemotron_vl.py
