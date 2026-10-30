@@ -377,19 +377,21 @@ class DynamicResolutionImageTiler:
         num_embeddings: int
         patch_size: tuple[int, int]
 
+    def get_target_size(self, params: DynamicResolutionParams) -> tuple[int, int]:
+        return (
+            params.patch_size[1] * self._patch_size,
+            params.patch_size[0] * self._patch_size,
+        )
+
     def apply_params(
         self,
         params: DynamicResolutionParams,
         dtype: torch.dtype = torch.float32,
     ) -> list[torch.Tensor]:
-        target_size = (
-            params.patch_size[1] * self._patch_size,
-            params.patch_size[0] * self._patch_size,
-        )
         tensor = _pil_to_nhwc_tensor(params.media)
         resized_img = _bicubic_resize_and_normalize(
             tensor,
-            size=target_size,
+            size=self.get_target_size(params),
             norm_mean=self.norm_mean,
             norm_std=self.norm_std,
             do_cpu_normalize=self.do_cpu_normalize,
@@ -727,13 +729,7 @@ class BaseNanoNemotronVLProcessor(ABC):
                     _pil_to_nhwc_tensor(param.media)[0] for param in params
                 ]
                 num_tokens_per_image = [param.num_embeddings for param in params]
-                imgs_sizes = [
-                    (
-                        param.patch_size[1] * tiler._patch_size,
-                        param.patch_size[0] * tiler._patch_size,
-                    )
-                    for param in params
-                ]
+                imgs_sizes = [tiler.get_target_size(param) for param in params]
             else:
                 pixel_values_lst, num_tokens_per_image = (
                     tiler._images_to_pixel_values_lst(
@@ -745,14 +741,12 @@ class BaseNanoNemotronVLProcessor(ABC):
                 imgs_sizes = [(pv.shape[-2], pv.shape[-1]) for pv in pixel_values_lst]
             image_num_patches = torch.tensor([1] * len(num_tokens_per_image))
             image_inputs = {
-                (
-                    "pixel_values_raw"
-                    if self.pure_cvcuda_preprocessing
-                    else "pixel_values_flat"
-                ): pixel_values_lst,
+                "pixel_values_flat": pixel_values_lst,
                 "imgs_sizes": imgs_sizes,
                 "num_tokens_per_image": num_tokens_per_image,
             }
+            if self.pure_cvcuda_preprocessing:
+                image_inputs["pixel_values_raw"] = image_inputs.pop("pixel_values_flat")
         else:
             pixel_values_lst = self._images_to_pixel_values_lst(images, max_num_tiles)
             image_num_patches = torch.tensor([len(item) for item in pixel_values_lst])

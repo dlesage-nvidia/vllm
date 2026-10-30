@@ -48,7 +48,3 @@ With the optional dependency and a compatible model GPU installed, run:
 VLLM_GPU_SYNC_CHECK=error .venv/bin/python -m pytest -v \
   tests/models/multimodal/test_nano_nemotron_vl.py -k pure_cvcuda
 ```
-
-Benchmark and model-output evidence, exact source identities and remaining
-limitations are included in the PR description. Human review of every changed
-line and execution of the relevant tests are required before PR submission.

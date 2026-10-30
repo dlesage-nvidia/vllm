@@ -1072,13 +1072,13 @@ class NemotronH_Nano_VL_V2(
             config
         )
         processor_kwargs = multimodal_config.mm_processor_kwargs or {}
-        self.pure_cvcuda_preprocessing = processor_kwargs.get(
+        pure_cvcuda_preprocessing = processor_kwargs.get(
             "pure_cvcuda_preprocessing", False
         )
         self._pure_cvcuda_preprocessor = None
-        if type(self.pure_cvcuda_preprocessing) is not bool:
+        if type(pure_cvcuda_preprocessing) is not bool:
             raise ValueError("pure_cvcuda_preprocessing must be a bool")
-        if self.pure_cvcuda_preprocessing:
+        if pure_cvcuda_preprocessing:
             compilation = vllm_config.compilation_config
             if (
                 not self.dynamic_resolution
@@ -1162,7 +1162,7 @@ class NemotronH_Nano_VL_V2(
         """Dynamic resolution extract_feature for images."""
         if already_normalized:
             if (
-                not self.pure_cvcuda_preprocessing
+                self._pure_cvcuda_preprocessor is None
                 or pixel_values.dtype != self.llm_dtype
             ):
                 raise ValueError("Pre-normalized images require the pure CV-CUDA path")

@@ -510,6 +510,11 @@ def test_nemotron_pure_cvcuda_normalization_on_nondefault_stream():
     with torch.cuda.stream(stream):
         second = process([source], [(16, 16)], _DEVICE, torch.bfloat16)[0]
     torch.cuda.current_stream().wait_stream(stream)
+    expected = ((source.to(_DEVICE).float() / 255.0 - 0.5) * 2.0).permute(2, 0, 1)
+    expected = expected.contiguous().to(torch.bfloat16)
+    assert bool(torch.isfinite(first).all())
+    assert bool(torch.isfinite(second).all())
+    assert torch.equal(first.view(torch.uint8), expected.view(torch.uint8))
     assert torch.equal(first.view(torch.uint8), second.view(torch.uint8))
 
 
@@ -544,7 +549,7 @@ def test_nemotron_pure_cvcuda_real_generation_is_repeatable(vllm_runner):
         mm_processor_kwargs={"pure_cvcuda_preprocessing": True},
     ) as model:
         assert model.apply_model(
-            lambda module: bool(getattr(module, "pure_cvcuda_preprocessing", False))
+            lambda module: module._pure_cvcuda_preprocessor is not None
         ) == [True]
         first = model.generate_greedy(["<image>Describe the image."], 1, images=[image])
         second = model.generate_greedy(

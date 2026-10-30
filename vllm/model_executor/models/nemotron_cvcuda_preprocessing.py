@@ -98,37 +98,35 @@ class PureImagePreprocessor:
         ]
         source_cv, floating_cv, resized_cv, scaled_cv = views[:4]
         normalized_cv, planar_cv, mean_cv, inverse_cv = views[4:]
-        operations = [
-            self.cvcuda.convertto_into(floating_cv, source_cv, stream=stream),
-            self.cvcuda.tvresize_into(
-                resized_cv,
-                floating_cv,
-                interp=self.cvcuda.Interp.CUBIC,
-                antialias=True,
-                stream=stream,
-            ),
-            self.cvcuda.convertto_into(
-                scaled_cv, resized_cv, scale=1.0 / 255.0, stream=stream
-            ),
-            self.cvcuda.normalize_into(
-                normalized_cv,
-                scaled_cv,
-                mean_cv,
-                inverse_cv,
-                globalscale=1.0,
-                globalshift=0.0,
-                epsilon=0.0,
-                stream=stream,
-            ),
-            self.cvcuda.reformat_into(planar_cv, normalized_cv, stream=stream),
-        ]
+        self.cvcuda.convertto_into(floating_cv, source_cv, stream=stream)
+        self.cvcuda.tvresize_into(
+            resized_cv,
+            floating_cv,
+            interp=self.cvcuda.Interp.CUBIC,
+            antialias=True,
+            stream=stream,
+        )
+        self.cvcuda.convertto_into(
+            scaled_cv, resized_cv, scale=1.0 / 255.0, stream=stream
+        )
+        self.cvcuda.normalize_into(
+            normalized_cv,
+            scaled_cv,
+            mean_cv,
+            inverse_cv,
+            globalscale=1.0,
+            globalshift=0.0,
+            epsilon=0.0,
+            stream=stream,
+        )
+        self.cvcuda.reformat_into(planar_cv, normalized_cv, stream=stream)
         result = planar.to(dtype)
         event = torch.cuda.Event()
         event.record(torch_stream)
         self.pending.append(
             (
                 event,
-                [*buffers, *views, *operations, result, self.mean_host, self.std_host],
+                [*buffers, *views, result, self.mean_host, self.std_host],
             )
         )
         return result
