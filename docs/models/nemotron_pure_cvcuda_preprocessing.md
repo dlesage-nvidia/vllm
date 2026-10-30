@@ -4,7 +4,6 @@ Nano Nemotron dynamic-resolution images can opt into GPU preprocessing using
 shipping CV-CUDA operators, without an application CUDA kernel or CV-CUDA changes:
 
 ```bash
-uv pip install cvcuda-cu13==0.19.0
 vllm serve nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4 \
   --trust-remote-code \
   --mm-processor-kwargs '{"pure_cvcuda_preprocessing": true}'
@@ -13,8 +12,10 @@ vllm serve nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4 \
 The default remains **false**. This option requires CUDA, CV-CUDA 0.19.0,
 dynamic-resolution images, `mm_device_do_normalize=True`, and an eager multimodal
 encoder (`compile_mm_encoder=False`, `cudagraph_mm_encoder=False`). Decoder settings
-are unchanged. Use `cvcuda-cu12` instead for a matching CUDA 12 runtime; the measured
-configuration uses CUDA 13 and BF16. Other configurations require qualification.
+are unchanged. CUDA builds install CV-CUDA 0.19.0 automatically, using
+`cvcuda-cu12` for CUDA 12 and `cvcuda-cu13` for CUDA 13. Installs using `--no-deps`
+must provide the matching package separately. The measured configuration uses
+CUDA 13 and BF16. Other configurations require qualification.
 
 The native CPU processor retains geometry, ordering and token budgeting, but sends
 raw RGB uint8 images to the model. The GPU path is CV-CUDA uint8-to-FP32 conversion,
