@@ -29,7 +29,7 @@ from vllm.multimodal.video import (
 )
 from vllm.multimodal.video_decoders.pynvvideocodec import (
     PyNvVideoCodecVideoBackendMixin,
-    _pynvvc_frames_to_nhwc,
+    _pynvvc_frame_to_hwc,
 )
 
 from ..utils import cosine_similarity, create_video_from_image, normalize_image
@@ -707,20 +707,19 @@ def test_same_backend_keeps_codec_options():
     assert result["num_frames"] == 8
 
 
-@pytest.mark.parametrize("layout", ["nhwc", "nchw"])
-def test_pynvvc_frames_normalized_to_nhwc(layout: str):
-    """PyNvVideoCodec frame batches are normalized to NHWC regardless of the
-    per-frame layout the decoder emits (it has varied across versions), so the
-    HF video processors (which materialize a PIL image per frame) receive the
-    same NHWC shape as every other video backend."""
+@pytest.mark.parametrize("layout", ["hwc", "chw"])
+def test_pynvvc_frame_normalized_to_hwc_without_copy(layout: str):
+    """Normalize either decoder layout to an HWC view without device staging."""
     torch = pytest.importorskip("torch")
 
-    n, h, w, c = 4, 5, 6, 3
-    nhwc = torch.arange(n * h * w * c, dtype=torch.uint8).reshape(n, h, w, c)
-    frames = nhwc if layout == "nhwc" else nhwc.permute(0, 3, 1, 2).contiguous()
+    height, width, channels = 5, 6, 3
+    hwc = torch.arange(height * width * channels, dtype=torch.uint8).reshape(
+        height, width, channels
+    )
+    frame = hwc if layout == "hwc" else hwc.permute(2, 0, 1).contiguous()
 
-    out = _pynvvc_frames_to_nhwc(frames)
+    output = _pynvvc_frame_to_hwc(frame)
 
-    assert out.shape == (n, h, w, c)
-    assert out.is_contiguous()
-    assert torch.equal(out, nhwc)  # content preserved / correctly transposed
+    assert output.shape == (height, width, channels)
+    assert output.data_ptr() == frame.data_ptr()
+    assert torch.equal(output, hwc)
