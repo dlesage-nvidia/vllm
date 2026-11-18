@@ -193,11 +193,21 @@ def _pynvvideocodec_exception_types(nvc) -> tuple[type[Exception], ...]:
     )
 
 
-def _pynvvc_frames_to_nhwc(frames):
-    """Return a stacked PyNvVideoCodec frame batch as contiguous NHWC."""
-    if frames.shape[-1] != 3 and frames.shape[-3] == 3:
-        frames = frames.permute(0, 2, 3, 1)
-    return frames.contiguous()
+def _pynvvc_frame_to_hwc(frame):
+    """Return an HWC view of a PyNvVideoCodec frame without a device copy."""
+    if frame.ndim != 3:
+        raise ValueError(
+            f"PyNvVideoCodec returned frames with unexpected shape {tuple(frame.shape)}"
+        )
+    if frame.shape[-1] != 3 and frame.shape[0] == 3:
+        frame = frame.permute(1, 2, 0)
+    return frame
+
+
+def _pynvvc_copy_frames_to_host(frames, host_frames):
+    """Copy frame views without batch-sized GPU staging."""
+    for index in range(len(frames)):
+        host_frames[index].copy_(frames[index], non_blocking=True)
 
 
 class PyNvVideoCodecDecoderSlot:
@@ -570,36 +580,34 @@ class PyNvVideoCodecVideoBackendMixin:
                         raise ValueError("Invalid or unsupported video file.")
 
                     torch_frames = [
-                        torch.from_dlpack(frame) for frame in decoded_frames
+                        _pynvvc_frame_to_hwc(torch.from_dlpack(frame))
+                        for frame in decoded_frames
                     ]
                     if not torch_frames:
                         stream.synchronize()
                         break
-                    device_frames = _pynvvc_frames_to_nhwc(torch.stack(torch_frames))
-                    if device_frames.ndim != 4:
-                        raise ValueError(
-                            "PyNvVideoCodec returned frames with unexpected shape "
-                            f"{tuple(device_frames.shape)}"
-                        )
                     if host_frames is None:
                         host_frames = torch.empty(
-                            (len(frame_idx), *device_frames.shape[1:]),
-                            dtype=device_frames.dtype,
+                            (len(frame_idx), *torch_frames[0].shape),
+                            dtype=torch_frames[0].dtype,
                             device="cpu",
                             pin_memory=True,
                         )
-                    elif tuple(device_frames.shape[1:]) != tuple(host_frames.shape[1:]):
+                    if any(
+                        tuple(frame.shape) != tuple(host_frames.shape[1:])
+                        for frame in torch_frames
+                    ):
                         raise ValueError(
                             "PyNvVideoCodec returned frames with inconsistent shapes"
                         )
 
-                    next_count = decoded_count + len(device_frames)
-                    host_frames[decoded_count:next_count].copy_(
-                        device_frames, non_blocking=True
+                    next_count = decoded_count + len(torch_frames)
+                    _pynvvc_copy_frames_to_host(
+                        torch_frames, host_frames[decoded_count:next_count]
                     )
                     stream.synchronize()
                     decoded_count = next_count
-                    del decoded_frames, torch_frames, device_frames
+                    del decoded_frames, torch_frames
 
                     if decoded_count < start + len(chunk_indices):
                         break

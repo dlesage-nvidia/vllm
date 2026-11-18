@@ -45,6 +45,8 @@ from vllm.multimodal.video_decoders.pynvvideocodec import (
     PyNvVideoCodecVideoBackendMixin,
     _get_decoder_caps,
     _pynv_decoder_pool,
+    _pynvvc_copy_frames_to_host,
+    _pynvvc_frame_to_hwc,
     _sample_nearest_keyframes,
 )
 from vllm.platforms import current_platform
@@ -1335,8 +1337,42 @@ def test_pynvvideocodec_keyframe_sampling_decodes_keyframes(
 
 
 @pytest.mark.skipif(not current_platform.is_cuda(), reason="Requires CUDA")
-def test_pynvvideocodec_chunked_decode_preserves_frame_order():
-    video = create_long_gop_video(num_frames=65, width=64, height=64)
+@pytest.mark.parametrize("num_frames", [1, 32, 33, 65])
+def test_pynvvideocodec_chunked_decode_preserves_frame_order(
+    tmp_path: Path, num_frames: int
+):
+    import PyNvVideoCodec as nvc
+
+    video = create_long_gop_video(num_frames=num_frames, width=64, height=64)
+    video_path = tmp_path / "video.mp4"
+    video_path.write_bytes(video)
+    reference_stream = torch.cuda.Stream()
+    reference_frames = torch.empty(
+        (num_frames, 64, 64, 3), dtype=torch.uint8, pin_memory=True
+    )
+    with torch.cuda.stream(reference_stream):
+        decoder_slot = PyNvVideoCodecDecoderSlot(reference_stream)
+        decoder = decoder_slot.get_decoder(
+            str(video_path),
+            nvc,
+            device_index=0,
+            max_width=64,
+            max_height=64,
+        )
+        for start in range(0, num_frames, PYNVVIDEOCODEC_DECODE_BATCH_SIZE):
+            stop = min(start + PYNVVIDEOCODEC_DECODE_BATCH_SIZE, num_frames)
+            decoded_frames = decoder.get_batch_frames_by_index(list(range(start, stop)))
+            reference_batch = torch.stack(
+                [torch.from_dlpack(frame) for frame in decoded_frames]
+            )
+            if reference_batch.shape[-1] != 3 and reference_batch.shape[-3] == 3:
+                reference_batch = reference_batch.permute(0, 2, 3, 1)
+            reference_batch = reference_batch.contiguous()
+            reference_frames[start:stop].copy_(reference_batch, non_blocking=True)
+            reference_stream.synchronize()
+            del reference_batch, decoded_frames
+        del decoder
+        decoder_slot.reset()
 
     with _fresh_decoder_pool():
         loader = VIDEO_LOADER_REGISTRY.load(PYNVVIDEOCODEC_VIDEO_BACKEND)
@@ -1346,10 +1382,52 @@ def test_pynvvideocodec_chunked_decode_preserves_frame_order():
             hw_decoders=1,
         )
 
-    assert frames.shape == (65, 64, 64, 3)
-    assert metadata["frames_indices"] == list(range(65))
-    mean_green = frames[..., 1].reshape(65, -1).mean(axis=1)
-    np.testing.assert_allclose(mean_green, np.arange(65), atol=5)
+    assert frames.shape == (num_frames, 64, 64, 3)
+    assert metadata["frames_indices"] == list(range(num_frames))
+    np.testing.assert_array_equal(frames, reference_frames.numpy())
+    assert torch.from_numpy(frames).is_pinned()
+    mean_green = frames[..., 1].reshape(num_frames, -1).mean(axis=1)
+    np.testing.assert_allclose(mean_green, np.arange(num_frames), atol=5)
+
+
+@pytest.mark.skipif(not current_platform.is_cuda(), reason="Requires CUDA")
+@pytest.mark.parametrize("layout", ["hwc", "chw"])
+def test_pynvvideocodec_host_copy_has_no_batch_gpu_staging(layout: str):
+    """HWC copies allocate nothing on GPU; CHW staging is at most one frame."""
+    num_frames, height, width, channels = 32, 1080, 1920, 3
+    shape = (height, width, channels) if layout == "hwc" else (channels, height, width)
+    decoded_frames = torch.randint(
+        0,
+        256,
+        (num_frames, *shape),
+        dtype=torch.uint8,
+        device="cuda",
+        generator=torch.Generator(device="cuda").manual_seed(0),
+    ).unbind(0)
+    reference_batch = torch.stack(decoded_frames)
+    if layout == "chw":
+        reference_batch = reference_batch.permute(0, 2, 3, 1)
+    reference_frames = reference_batch.contiguous().cpu()
+    del reference_batch
+    torch_frames = [_pynvvc_frame_to_hwc(frame) for frame in decoded_frames]
+    host_frames = torch.empty(
+        (num_frames, height, width, channels), dtype=torch.uint8, pin_memory=True
+    )
+    stream = torch.cuda.Stream()
+    torch.accelerator.synchronize()
+    allocated_before = torch.accelerator.memory_allocated()
+    torch.accelerator.reset_peak_memory_stats()
+    with torch.cuda.stream(stream):
+        _pynvvc_copy_frames_to_host(torch_frames, host_frames)
+        stream.synchronize()
+
+    max_staging_bytes = 0 if layout == "hwc" else height * width * channels
+    assert torch.accelerator.max_memory_allocated() - allocated_before <= (
+        max_staging_bytes
+    )
+    assert torch.accelerator.memory_allocated() == allocated_before
+    assert host_frames.is_pinned()
+    assert torch.equal(host_frames, reference_frames)
 
 
 # ============================================================================
