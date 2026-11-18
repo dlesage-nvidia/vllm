@@ -647,7 +647,7 @@ steps:
   commands:
   - pytest -v -s detokenizer
   - pytest -v -s -m 'not cpu_test' multimodal
-  - pytest -v -s multimodal/test_video.py::test_pynvvideocodec_chunked_decode_preserves_frame_order
+  - pytest -v -s -k pynvvideocodec multimodal/test_video.py
   - pytest -v -s utils_
   mirror:
     amd:

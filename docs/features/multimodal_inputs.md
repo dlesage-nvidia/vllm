@@ -971,9 +971,6 @@ preprocessing. For workloads with large videos and relatively light inference,
 such as video tagging, this can alleviate bottlenecks in CPU-based video
 decoders.
 
-Decoded frames are copied directly into pinned host output buffers in bounded
-batches, without allocating an additional stacked RGB batch on the GPU.
-
 !!! warning
     [CUDA Multi-Process Service (MPS)](https://docs.nvidia.com/deploy/mps/quick-start.html)
     is required when using this backend. Video decoding runs in the API server

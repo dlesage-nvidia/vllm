@@ -204,6 +204,12 @@ def _pynvvc_frame_to_hwc(frame):
     return frame
 
 
+def _pynvvc_copy_frames_to_host(frames, host_frames):
+    """Copy frame views without batch-sized GPU staging."""
+    for index in range(len(frames)):
+        host_frames[index].copy_(frames[index], non_blocking=True)
+
+
 class PyNvVideoCodecDecoderSlot:
     """A retained PyNv decoder slot and its CUDA stream.
 
@@ -596,13 +602,12 @@ class PyNvVideoCodecVideoBackendMixin:
                         )
 
                     next_count = decoded_count + len(torch_frames)
-                    for offset, device_frame in enumerate(torch_frames):
-                        host_frames[decoded_count + offset].copy_(
-                            device_frame, non_blocking=True
-                        )
+                    _pynvvc_copy_frames_to_host(
+                        torch_frames, host_frames[decoded_count:next_count]
+                    )
                     stream.synchronize()
                     decoded_count = next_count
-                    del decoded_frames, torch_frames, device_frame
+                    del decoded_frames, torch_frames
 
                     if decoded_count < start + len(chunk_indices):
                         break
