@@ -218,6 +218,7 @@ class VideoBackend(VideoLoader):
     """
 
     _sampling_suffix: ClassVar[str] = ""
+    _pynvvideocodec_use_rgbp: ClassVar[bool] = False
 
     @classmethod
     def compute_frames_index_to_sample(
@@ -376,6 +377,7 @@ class PyNvVideoCodecVideoBackend(VideoBackend):
     ),
 )
 class Qwen3VLVideoBackend(VideoBackend):
+    _pynvvideocodec_use_rgbp = True
     _MAX_FRAMES: ClassVar[int] = 768
     _MAX_FPS: ClassVar[int] = 30
 
