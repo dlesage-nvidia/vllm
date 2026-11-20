@@ -1328,6 +1328,7 @@ _MULTIMODAL_EXAMPLE_MODELS = {
     ),
     "Qwen3_5MoeForConditionalGeneration": _HfExamplesInfo(
         "Qwen/Qwen3.5-35B-A3B",
+        extras={"122b-a10b": "Qwen/Qwen3.5-122B-A10B"},
         max_model_len=4096,
     ),
     "Qwen3_5ForSlotDecision": _HfExamplesInfo(

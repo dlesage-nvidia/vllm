@@ -126,3 +126,29 @@ vllm serve nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4 \
 ```
 
 The API server then sends the decoded `uint8` pixels at their source resolution. On the GPU, CV-CUDA resizes them (bicubic, antialiased, `uint8` in and out) and reformats them to NCHW; `FusedMMInputNorm` then casts, rescales and normalizes them exactly as it does for the CPU path. This covers dynamic-resolution images and video frames. The pixels are uploaded on a stream of their own, so the upload does not wait for the steps already queued on the model's stream; the resize kernels are queued on the model's stream after it. CV-CUDA's scratch buffer is capped at 512 MiB and reserved during the startup memory profile.
+
+#### Resizing on the Device (Qwen3.5)
+
+Qwen3.5 dense and MoE vision-language models can also use CV-CUDA for image and video preprocessing. Enable it in the engine's `mm_processor_kwargs`; it is **off by default**:
+
+```bash
+pip install "vllm[cvcuda]"
+vllm serve Qwen/Qwen3.5-4B --mm-processor-kwargs '{"device_resize": true}'
+```
+
+The same option applies to larger checkpoints. For example, on a host with enough GPU memory for the BF16 weights and runtime buffers:
+
+```bash
+vllm serve Qwen/Qwen3.5-122B-A10B --dtype bfloat16 --tensor-parallel-size 4 \
+    --max-model-len 16384 --mm-processor-kwargs '{"device_resize": true}'
+```
+
+This requires CUDA, the optional CV-CUDA dependency, torchvision preprocessing, and `mm_device_do_normalize=True`. It accepts decoded RGB `uint8` images and videos with bicubic antialiased resizing. It cannot be enabled only on an individual request, because the engine must account for its memory at startup. Requests can disable it with `device_resize: false`.
+
+The API server uses the Hugging Face processor's shape logic on metadata-only tensors, preserving its target grids, frame sampling, per-frame pixel caps, timestamps, and prompt expansion without resizing or packing pixels on the CPU. It sends source-resolution pixels to the model, which resizes and packs Qwen's spatial and temporal patches on the GPU. Odd frame counts repeat the final frame, matching the reference processor.
+
+This path requires a CV-CUDA build exposing `TvResize`'s opt-in `torchvision_cpu_uint8` mode. CV-CUDA 0.19.0 does not expose this mode: installing `vllm[cvcuda]` alone with that version is insufficient for Qwen. Install a compatible CV-CUDA wheel before installing the extra; the extra permits newer compatible wheels without downgrading them, while retaining Nemotron's minimum dependency. Qwen's CI requires the 0.21.0 wheel and verifies the keyword, so publication depends on that wheel including the new mode being available.
+
+Qwen resizing is intended to match torchvision v2's CPU `uint8` bicubic antialiased preprocessing, using fixed-point coefficients and horizontal-then-vertical `uint8` clipping and rounding. Older CV-CUDA builds are rejected instead of using a floating-point approximation. Rescale and normalization use the existing device input-normalization layer. These implementation choices do not establish full-model output or serving equivalence; broader actual-weight accuracy and end-to-end validation remain pending with a compatible build. The shared resize helper also changes Nemotron's stream and upload handling, so compatibility of that path remains to be validated.
+
+Uploads are chunked to 256 MiB and use a separate stream. Pageable host copies can wait for that upload stream, but not for work queued on the model's stream. CV-CUDA work is ordered with PyTorch without host synchronization, including when the model uses CUDA's legacy default stream. The startup memory profile accounts for the 512 MiB CV-CUDA scratch buffer and a 384 MiB allowance for upload and intermediate buffers overlapping the vision encoder. A single source frame that would exceed the scratch budget is rejected rather than growing the cached workspace. Encoder CUDA graphs are disabled for this opt-in mode; language-model CUDA graphs are unaffected.
