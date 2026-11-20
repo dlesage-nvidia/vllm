@@ -10,8 +10,7 @@ import torch
 # one reserves exactly this much: one buffer, allocated in the startup memory
 # profile, serves every resize.
 _CVCUDA_SCRATCH_BYTES = 512 * 1024 * 1024
-_cvcuda_scratch_reserved: set[int | tuple[int, bool]] = set()
-_cpu_uint8_scratch_reserved_bytes: dict[int, int] = {}
+_cvcuda_scratch_reserved: set[int] = set()
 
 # Frames in host memory are uploaded on a stream of their own. A copy from
 # pageable memory first waits for its stream, so on the model's stream it would
@@ -48,7 +47,7 @@ class _CudaArrayOnStream:
 def cvcuda_cpu_uint8_scratch_bytes(
     height: int, width: int, target_height: int, target_width: int, num_frames: int = 1
 ) -> int:
-    """Caller-owned workspace required by TvResize's CPU uint8 numeric mode."""
+    """Conservative aligned coefficient and uint8 intermediate workspace bound."""
     if min(height, width, target_height, target_width) <= 0 or num_frames < 0:
         raise ValueError("Resize extents must be positive and frame count nonnegative")
     if num_frames == 0 or (height, width) == (target_height, target_width):
@@ -104,23 +103,39 @@ def cvcuda_bicubic_resize(
     so the caller waits for the copy but not for work queued on the current
     stream. The resize is queued on the current stream, after the upload.
 
-    With *quantize_intermediate*, use TvResize's opt-in TorchVision v2 CPU
-    uint8 mode: fixed-point coefficients and per-axis uint8 rounding/clipping.
-    This requires a CV-CUDA build exposing `torchvision_cpu_uint8`; an older
-    floating-point approximation is never substituted.
+    With *quantize_intermediate*, use public v0.19 FP32 TvResize separately
+    for each axis, followed by selective exact integer GPU correction. This
+    preserves TorchVision CPU uint8 coefficients and per-axis rounding/clipping
+    without requiring a private CV-CUDA operator mode. Tensor temporaries use a
+    separate 384 MiB budget; `max_chunk_bytes` retains its soft frame-chunk limit.
     """
+    if quantize_intermediate:
+        from vllm.transformers_utils.processors.cvcuda_uint8_resize import (
+            cvcuda_bicubic_resize as resize_uint8,
+        )
+
+        if (
+            frames.ndim != 4
+            or frames.dtype != torch.uint8
+            or min(frames.shape[:3]) < 1
+            or frames.shape[-1] != 3
+            or max_chunk_bytes < 1
+        ):
+            raise ValueError(
+                "TorchVision CPU uint8 resize requires nonempty RGB frames"
+            )
+        frame_bytes = frames.shape[1] * frames.shape[2] * 3
+        return resize_uint8(
+            frames,
+            size,
+            device,
+            max_temporary_bytes=384 * 1024 * 1024,
+            preferred_frame_step=max(1, max_chunk_bytes // frame_bytes),
+        )
+
     import cvcuda
 
     from vllm.utils.gpu_sync_debug import gpu_sync_allowed
-
-    if quantize_intermediate:
-        if "torchvision_cpu_uint8" not in (cvcuda.tvresize_into.__doc__ or ""):
-            raise RuntimeError(
-                "Qwen3.5 GPU resizing requires a CV-CUDA build with "
-                "TvResize's torchvision_cpu_uint8 mode"
-            )
-        if frames.dtype != torch.uint8:
-            raise ValueError("TorchVision CPU uint8 resize requires uint8 frames")
 
     torch_stream = torch.cuda.current_stream(device)
     if torch_stream.cuda_stream == 0:
@@ -154,28 +169,17 @@ def cvcuda_bicubic_resize(
             interp=cvcuda.Interp.CUBIC,
             antialias=True,
             stream=stream,
-            **({"torchvision_cpu_uint8": True} if quantize_intermediate else {}),
         )
 
-    reservation_key = (
-        (torch_stream.device_index, True)
-        if quantize_intermediate
-        else torch_stream.device_index
-    )
+    reservation_key = torch_stream.device_index
     if reservation_key not in _cvcuda_scratch_reserved:
         # One frame from 16 columns to 4096 needs exactly the cap.
         rows = -(-_CVCUDA_SCRATCH_BYTES // (12 * 4096))
-        if quantize_intermediate:
-            rows, reserved_bytes = _cpu_uint8_reservation_shape()
         tvresize(
             torch.empty((1, 16, 4096, 3), dtype=torch.uint8, device=device),
             torch.zeros((1, rows, 16, 3), dtype=torch.uint8, device=device),
         )
         _cvcuda_scratch_reserved.add(reservation_key)
-        if quantize_intermediate:
-            _cpu_uint8_scratch_reserved_bytes[torch_stream.device_index] = (
-                reserved_bytes
-            )
 
     num_frames, height, width, _ = frames.shape
     out = torch.empty((num_frames, 3, *size), dtype=torch.uint8, device=device)
@@ -193,18 +197,8 @@ def cvcuda_bicubic_resize(
         frame_scratch = 12 * height * size[1]
         filter_scratch = 136 * (size[0] + size[1])
         scratch_limit = _CVCUDA_SCRATCH_BYTES
-        if quantize_intermediate:
-            scratch_limit = _cpu_uint8_scratch_reserved_bytes[torch_stream.device_index]
-            frame_scratch = (
-                3 * height * size[1] if height != size[0] and width != size[1] else 0
-            )
-            filter_scratch = (
-                cvcuda_cpu_uint8_scratch_bytes(height, width, *size) - frame_scratch
-            )
-            if filter_scratch + frame_scratch > scratch_limit:
-                raise ValueError(
-                    "A source frame exceeds the CV-CUDA scratch memory budget"
-                )
+        if filter_scratch + frame_scratch > scratch_limit:
+            raise ValueError("A source frame exceeds the CV-CUDA scratch memory budget")
         step = (
             max(1, min(step, (scratch_limit - filter_scratch) // frame_scratch))
             if frame_scratch

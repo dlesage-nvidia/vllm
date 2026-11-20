@@ -40,6 +40,44 @@ def _process(processor, pixels, is_video: bool, **kwargs):
     )
 
 
+@pytest.mark.parametrize(
+    "source,target",
+    [(1, 32), (7, 3), (31, 32), (32, 31), (64, 1), (97, 96), (225, 224)],
+)
+def test_cvcuda_uint8_coefficients_preserve_torchvision_cpu_rounding(source, target):
+    from torchvision.transforms import InterpolationMode
+    from torchvision.transforms.v2.functional import resize
+
+    from vllm.transformers_utils.processors.cvcuda_uint8_coefficients import (
+        resize_axis_table,
+    )
+
+    pixels = _inputs(False, 16, source)[0]
+    expected = resize(pixels, [16, target], InterpolationMode.BICUBIC, antialias=True)
+    table = resize_axis_table(source, target)
+    actual = torch.empty((3, 16, target), dtype=torch.uint8)
+    for coordinate in range(target):
+        start, count = int(table.starts[coordinate]), int(table.counts[coordinate])
+        coefficients = torch.from_numpy(
+            table.coefficients[coordinate, :count].copy()
+        ).to(dtype=torch.int64)
+        values = pixels[:, :, start : start + count].to(dtype=torch.int64)
+        accumulator = (values * coefficients).sum(dim=-1)
+        accumulator += 1 << (table.precision - 1)
+        actual[:, :, coordinate] = (accumulator >> table.precision).clamp(0, 255)
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    assert resize_axis_table(source, target) is table
+    assert all(
+        not values.flags.writeable
+        for values in (
+            table.starts,
+            table.counts,
+            table.coefficients,
+            table.error_bounds,
+        )
+    )
+
+
 @pytest.mark.parametrize("is_video", [False, True])
 @pytest.mark.parametrize("do_resize", [False, True])
 def test_raw_pixels_and_grid_match_stock_processor(is_video, do_resize):

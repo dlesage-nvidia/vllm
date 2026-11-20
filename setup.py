@@ -1533,8 +1533,8 @@ def get_cvcuda_requirements() -> list[str]:
     if not _is_cuda():
         return []
     if torch.version.cuda.startswith("12."):
-        return ["cvcuda-cu12>=0.19.0"]
-    return ["cvcuda-cu13>=0.19.0"]
+        return ["cvcuda-cu12==0.19.0"]
+    return ["cvcuda-cu13==0.19.0"]
 
 
 def get_rocm_device_requirements() -> list[str]:

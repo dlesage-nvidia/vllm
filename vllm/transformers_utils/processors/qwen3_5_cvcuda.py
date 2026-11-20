@@ -40,16 +40,11 @@ else:
 
 def reserve_qwen3_5_cvcuda_workspace(device: torch.device) -> torch.Tensor:
     """Account for bounded upload/intermediate buffers in the startup profile."""
-    from vllm.transformers_utils.processors.cvcuda_utils import cvcuda_bicubic_resize
-
-    workspace = torch.empty(384 * 1024 * 1024, dtype=torch.uint8, device=device)
-    cvcuda_bicubic_resize(
-        torch.zeros((1, 16, 33, 3), dtype=torch.uint8, device="cpu"),
-        (16, 32),
-        device,
-        quantize_intermediate=True,
+    from vllm.transformers_utils.processors.cvcuda_uint8_resize import (
+        reserve_cvcuda_workspace,
     )
-    return workspace
+
+    return reserve_cvcuda_workspace(device)
 
 
 class Qwen3_5CVCUDAImageKwargs(Qwen2VLImageProcessorKwargs, total=False):
