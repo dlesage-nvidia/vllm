@@ -51,8 +51,11 @@ def processors(request):
 
 @pytest.mark.parametrize("shape", [(64, 96), (193, 319)])
 @pytest.mark.parametrize("is_video", [False, True], ids=["image", "video"])
-def test_gpu_edge_patchify_matches_stock_uint8(processors, shape, is_video):
-    """Compare real SigLIP2 CUDA patches with HF bytes at the unchanged <=1 gate."""
+@pytest.mark.parametrize("batch_size", [1, 32])
+def test_gpu_edge_patchify_matches_fp32_round_once(
+    processors, shape, is_video, batch_size
+):
+    """Keep stock geometry and normalization; apply the Nemotron pixel criterion."""
     stock, adapter = processors
     processor = stock.video_processor if is_video else stock.image_processor
     pixel_key = "pixel_values_videos" if is_video else "pixel_values"
@@ -61,7 +64,7 @@ def test_gpu_edge_patchify_matches_stock_uint8(processors, shape, is_video):
         0, 256, (3 if is_video else 1, *shape, 3), dtype=np.uint8
     )
     inputs = dict(
-        text=[VIDEO_PROMPT if is_video else IMAGE_PROMPT],
+        text=[VIDEO_PROMPT if is_video else IMAGE_PROMPT] * batch_size,
         return_tensors="pt",
         do_rescale=False,
         do_normalize=False,
@@ -69,14 +72,15 @@ def test_gpu_edge_patchify_matches_stock_uint8(processors, shape, is_video):
     )
     if is_video:
         inputs.update(
-            videos=[pixels],
+            videos=[pixels] * batch_size,
             do_sample_frames=False,
             video_metadata=[
                 VideoMetadata(total_num_frames=3, fps=7, frames_indices=[0, 1, 2])
-            ],
+            ]
+            * batch_size,
         )
     else:
-        inputs["images"] = [pixels[0]]
+        inputs["images"] = [pixels[0]] * batch_size
     expected = stock(**copy.deepcopy(inputs))
     raw = adapter(**copy.deepcopy(inputs))
     torch.testing.assert_close(raw["input_ids"], expected["input_ids"], rtol=0, atol=0)
@@ -93,13 +97,35 @@ def test_gpu_edge_patchify_matches_stock_uint8(processors, shape, is_video):
     assert actual.dtype == torch.uint8
     expected_pixels = expected[pixel_key].reshape(-1, 3 * processor.patch_size**2)
     assert actual.shape == expected_pixels.shape
-    max_uint8_error = int(
-        (actual.cpu().to(torch.int16) - expected_pixels.to(torch.int16)).abs().max()
-    )
-    assert max_uint8_error <= 1, (
-        f"{stock.tokenizer.name_or_path}, shape={shape}, is_video={is_video}: "
-        f"max_uint8_error={max_uint8_error} exceeds 1"
-    )
+    reference = []
+    for (frames, transform), grid in zip(
+        raw[f"{pixel_key}_raw"], raw[grid_key].tolist()
+    ):
+        resized = (
+            torch.nn.functional.interpolate(
+                frames.permute(0, 3, 1, 2).float(),
+                size=(grid[1] * processor.patch_size, grid[2] * processor.patch_size),
+                mode="bicubic",
+                align_corners=False,
+                antialias=True,
+            )
+            .round()
+            .clamp(0, 255)
+            .to(torch.uint8)
+        )
+        reference.append(
+            pack_cosmos3_edge_frames(
+                normalize_cosmos3_edge_frames(
+                    resized, transform, image_processor=processor
+                ),
+                grid,
+                patch_size=processor.patch_size,
+                merge_size=processor.merge_size,
+            )
+        )
+    difference = (actual.cpu().int() - torch.cat(reference).int()).abs()
+    assert difference.max() <= 1
+    assert (difference > 0).float().mean() < 1e-3
 
 
 def make_native_processor(stock):

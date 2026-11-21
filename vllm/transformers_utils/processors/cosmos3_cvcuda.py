@@ -234,23 +234,20 @@ def cvcuda_cosmos3_patchify(
     is_video: bool,
 ) -> torch.Tensor:
     """Resize raw RGB transport; leave normalization in Nano/Super's input norm."""
-    from vllm.transformers_utils.processors.cvcuda_uint8_resize import (
-        cvcuda_bicubic_resize,
+    from vllm.transformers_utils.processors.cosmos3_cvcuda_resize import (
+        cvcuda_bicubic_resize_many,
     )
 
     if grid_thw.device.type != "cpu" or len(pixels) != len(grid_thw):
         raise ValueError("Raw pixel count must match the CPU vision grids")
+    grids = grid_thw.tolist()
+    sizes = [
+        (grid[1] * image_processor.patch_size, grid[2] * image_processor.patch_size)
+        for grid in grids
+    ]
+    resized_items = cvcuda_bicubic_resize_many(pixels, sizes, device)
     output = []
-    for frames, grid in zip(pixels, grid_thw.tolist()):
-        resized = cvcuda_bicubic_resize(
-            frames,
-            (
-                grid[1] * image_processor.patch_size,
-                grid[2] * image_processor.patch_size,
-            ),
-            device,
-            max_temporary_bytes=256 * 1024 * 1024,
-        )
+    for resized, grid in zip(resized_items, grids):
         output.append(
             pack_cosmos3_frames(
                 resized,

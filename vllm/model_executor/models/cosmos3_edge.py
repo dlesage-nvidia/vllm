@@ -319,7 +319,7 @@ class Cosmos3EdgeProcessingInfo(Qwen3VLProcessingInfo):
             raise ValueError("Edge device_resize requires mm_device_do_normalize=False")
         if not current_platform.is_cuda() or find_spec("cvcuda") is None:
             raise ValueError("Edge device_resize requires CUDA and vllm[cvcuda]")
-        from vllm.transformers_utils.processors.cvcuda_uint8_resize import (
+        from vllm.transformers_utils.processors.cosmos3_cvcuda_resize import (
             require_cvcuda_release,
         )
 
@@ -867,7 +867,7 @@ class Cosmos3EdgeForConditionalGeneration(
                 image_processor=processor,
             )
         if enabled and not self._cvcuda_workspace_profiled:
-            from vllm.transformers_utils.processors.cvcuda_uint8_resize import (
+            from vllm.transformers_utils.processors.cosmos3_cvcuda_resize import (
                 reserve_cvcuda_workspace,
             )
 

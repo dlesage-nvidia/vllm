@@ -257,16 +257,16 @@ def cvcuda_cosmos3_edge_patchify(
     image_processor: Cosmos3EdgeImageProcessor | Cosmos3EdgeVideoProcessor,
 ) -> torch.Tensor:
     """Resize source RGB, normalize on device, then pack the distinct SigLIP2 layout."""
-    from vllm.transformers_utils.processors.cvcuda_uint8_resize import (
-        cvcuda_bicubic_resize,
+    from vllm.transformers_utils.processors.cosmos3_cvcuda_resize import (
+        cvcuda_bicubic_resize_many,
     )
 
     if grid_thw.device.type != "cpu" or grid_thw.ndim != 2 or grid_thw.shape[1] != 3:
         raise ValueError("Edge raw pixels require CPU THW grids")
     if len(items) != len(grid_thw) or not items:
         raise ValueError("Edge raw item count must match the vision grids")
-    output = []
-    for item, grid in zip(items, grid_thw.tolist()):
+    grids = grid_thw.tolist()
+    for item, grid in zip(items, grids):
         if len(item) != 2:
             raise ValueError("Edge raw items require frames and normalization settings")
         frames, transform = item
@@ -280,15 +280,16 @@ def cvcuda_cosmos3_edge_patchify(
             or transform.shape != (9,)
         ):
             raise ValueError("Edge raw items must preserve CPU RGB frames and settings")
-        resized = cvcuda_bicubic_resize(
-            frames,
-            (
-                grid[1] * image_processor.patch_size,
-                grid[2] * image_processor.patch_size,
-            ),
-            device,
-            max_temporary_bytes=256 * 1024 * 1024,
-        )
+    sizes = [
+        (grid[1] * image_processor.patch_size, grid[2] * image_processor.patch_size)
+        for grid in grids
+    ]
+    resized_items = cvcuda_bicubic_resize_many(
+        [item[0] for item in items], sizes, device
+    )
+    output = []
+    for resized, item, grid in zip(resized_items, items, grids):
+        transform = item[1]
         output.append(
             pack_cosmos3_edge_frames(
                 normalize_cosmos3_edge_frames(

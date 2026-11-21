@@ -140,7 +140,7 @@ extra selects that exact release through normal dependency installation:
 uv pip install 'vllm[cvcuda]'
 ```
 
-The shared resize adapter admits exact CV-CUDA `0.19.0` and `0.20.0` versions
+The Cosmos resize adapter admits exact CV-CUDA `0.19.0` and `0.20.0` versions
 only. The module and installed distribution versions must match, and public
 `tvresize_into`, `reformat_into`, `as_tensor`, `as_stream`, and `Interp.CUBIC`
 must be available. Private, prerelease, postrelease, and `0.21.0` versions are
@@ -150,16 +150,13 @@ numerical, or serving qualification. A separately prepared `0.20.0` runtime must
 use normal full dependency resolution rather than requesting the `0.19.0`-pinned
 extra. The optional dependency and CI defaults remain public `0.19.0`.
 
-The adapter uses only released operators: each axis is resized in FP32 with
-public `TvResize`, then quantized to uint8. An independently generated signed
-int16 coefficient table and outward-rounded error bounds identify outputs near
-ambiguous half-integer rounding boundaries. A masked Triton kernel recomputes
-only those outputs with exact integer arithmetic; other pixels use the CV-CUDA
-result directly. The horizontal uint8 result is the vertical pass's input.
-Identity axes are not filtered. There is no private native resize keyword,
-Torch-only resize fallback, or dependency on a newer CV-CUDA build. Nano/Super
-and Edge share the private uint8 resize implementation; the existing default
-Nemotron resize path is unchanged.
+The adapter uses the public `TvResize` bicubic-antialias operator on complete
+NHWC RGB `uint8` frame batches, followed by public `Reformat` into NCHW. Compatible
+image and video tensors are grouped by source shape, target shape and device,
+without changing item order. There are no CPU coefficient/error tables,
+per-axis correction kernels, private resize keywords or Torch resize fallbacks.
+Nano/Super and Edge use the same direct adapter; the merged Nemotron path is
+unchanged.
 
 The intended device path requires CUDA and `mm_device_do_normalize=True`.
 The API-server transport retains source-resolution CPU RGB `uint8`; the
@@ -172,32 +169,33 @@ Raw pixels stay on CPU until upload; encoder CUDA graphs are disabled for this
 opt-in path. Startup profiling charges CV-CUDA scratch and temporary buffers.
 Larger source-resolution IPC/cache payloads and upload costs are trade-offs.
 
-The pinned processor contract oracle is Transformers 5.23.0
-with Torch 2.15.0 and torchvision 0.29.2, loaded from immutable NVIDIA model
-revisions. Its CPU uint8 bicubic-antialias resize uses double-derived,
-axis-dependent signed int16 coefficients and an integer accumulation/rounding
-step, with a rounded and saturated uint8 horizontal intermediate before the
-vertical pass. Released `TvResize` uses floating-point coefficients and scratch;
-released `PillowResize` uses a different coefficient precision. Two floating
-resize calls alone do not establish the reference contract; selective exact
-correction is required. Host coefficient caching is byte-bounded to 16 MiB,
-and GPU source loads for correction are masked without extracting indices on
-the host. FP32 axis buffers, uint8 stages and coefficient transfers are included
-in a 256 MiB hard temporary budget. Oversized frames are tiled along the
-unfiltered axis:
-full-width row tiles for the horizontal pass, full-height column tiles for the
-vertical pass. When a full uint8 intermediate cannot fit, bounded column strips
-are recomputed from full-width horizontal resizes; no filtered-axis extent is
-cropped or rescaled. Two event-reused CPU upload slots backpressure only an
-independent resize-consumer stream, not unrelated model work. Full NCHW output
-storage for every frame is charged separately from bounded temporaries and the
-512 MiB native scratch reservation. Cold native warmup additionally uses about
-2.75 MiB of FP32 tensors before allocating tables, output or upload slots;
-startup warms both single-axis floating and integer-correction variants.
-No wider numerical tolerance is accepted; other callers
-retain their existing defaults. Full installed Cosmos processor parity,
-stream/lifetime validation, actual-weight accuracy/serving and paired performance
-measurements remain required; isolated operator controls are not model results.
+Pixel validation explicitly follows the merged Nemotron criterion: CPU FP32
+bicubic antialias interpolation, rounded and clamped to `uint8` once after the
+complete resize. Maximum absolute error must be at most one level and fewer
+than 0.1% of pixels may differ. Grids, packing, timestamps, source identity and
+normalization remain exact where their operations are exact.
+
+This is not the stock CPU `uint8` pixel contract, which rounds and saturates an
+intermediate axis. An independent CPU comparison across six pinned Cosmos
+processor configurations found 18 of 24 image/video cases outside the new pixel
+criterion, with up to 22 levels of difference and 23.6% differing pixels.
+Those are reference-oracle differences, not measured model-accuracy results.
+Full paired model accuracy remains required before accepting the deployment
+trade-off; neither operator tolerance nor throughput proves accuracy.
+
+The direct adapter bounds tensor temporaries to 384 MiB and native resize
+scratch to 512 MiB by processing complete frame chunks. Two event-reused upload
+slots backpressure an independent resize stream, not unrelated model work.
+Full NCHW output and caller-owned GPU inputs are accounted separately. A frame
+that cannot fit the temporary or native scratch budget is rejected, not resized
+with cropped filtered axes or a correction fallback. Startup warms and charges
+the same direct public operators and tensor allowance.
+
+Genuine NHWC batch-32 operator tests and 32-item processor calls are separate
+from serving concurrency and observed vision-encoder batches. Full installed
+processor suites, stream/lifetime/memory checks, actual-weight accuracy and
+paired serving measurements remain required; isolated operator controls are
+not model TTFT results.
 
 BF16 is the reference precision; official FP8 checkpoints are a deployment
 option. Keep precision identical within baseline/CV-CUDA pairs. No standalone

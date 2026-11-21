@@ -154,11 +154,12 @@ steps:
       transformers_utils/processors/test_cosmos3_cvcuda.py
       transformers_utils/processors/test_cosmos3_edge_cvcuda.py
       transformers_utils/processors/test_cvcuda_resize.py
-      --deselect transformers_utils/processors/test_cvcuda_resize.py::test_gpu_forced_tiling_is_exact_v2_for_cpu_and_cuda_inputs
-      --deselect transformers_utils/processors/test_cosmos3_cvcuda.py::test_gpu_patchify_matches_stock_uint8
+      --deselect transformers_utils/processors/test_cvcuda_resize.py::test_gpu_bounded_chunks_preserve_fp32_oracle_and_lifetime
+      --deselect transformers_utils/processors/test_cvcuda_resize.py::test_gpu_native_batch32_equals_chunked_and_grouped_public_resize
+      --deselect transformers_utils/processors/test_cosmos3_cvcuda.py::test_gpu_patchify_matches_fp32_round_once
       --deselect transformers_utils/processors/test_cosmos3_cvcuda.py::test_native_apply_preserves_raw_videos_and_stock_prompt_contract
       --deselect transformers_utils/processors/test_cosmos3_cvcuda.py::test_gpu_public_resize_preserves_pixels_and_stream_lifetime
-      --deselect transformers_utils/processors/test_cosmos3_edge_cvcuda.py::test_gpu_edge_patchify_matches_stock_uint8
+      --deselect transformers_utils/processors/test_cosmos3_edge_cvcuda.py::test_gpu_edge_patchify_matches_fp32_round_once
       --ignore models/multimodal/processing/test_tensor_schema.py
       --num-shards=$$BUILDKITE_PARALLEL_JOB_COUNT --shard-id=$$BUILDKITE_PARALLEL_JOB
   parallelism: 4
@@ -190,12 +191,13 @@ steps:
         *) echo "Unsupported CUDA major: $$cuda_major"; exit 1 ;;
       esac
       "$$ci_python" -m pytest -v -s \
-      transformers_utils/processors/test_cosmos3_cvcuda.py::test_gpu_patchify_matches_stock_uint8 \
+      transformers_utils/processors/test_cosmos3_cvcuda.py::test_gpu_patchify_matches_fp32_round_once \
       transformers_utils/processors/test_cosmos3_cvcuda.py::test_native_apply_preserves_raw_videos_and_stock_prompt_contract \
       transformers_utils/processors/test_cosmos3_cvcuda.py::test_gpu_public_resize_preserves_pixels_and_stream_lifetime \
-      transformers_utils/processors/test_cosmos3_edge_cvcuda.py::test_gpu_edge_patchify_matches_stock_uint8
+      transformers_utils/processors/test_cosmos3_edge_cvcuda.py::test_gpu_edge_patchify_matches_fp32_round_once
       "$$ci_python" -m pytest -v -s \
-      transformers_utils/processors/test_cvcuda_resize.py::test_gpu_forced_tiling_is_exact_v2_for_cpu_and_cuda_inputs
+      transformers_utils/processors/test_cvcuda_resize.py::test_gpu_bounded_chunks_preserve_fp32_oracle_and_lifetime \
+      transformers_utils/processors/test_cvcuda_resize.py::test_gpu_native_batch32_equals_chunked_and_grouped_public_resize
   mirror:
     amd:
       label: ":amd: (MI355 DPX) Multimodal Processor"

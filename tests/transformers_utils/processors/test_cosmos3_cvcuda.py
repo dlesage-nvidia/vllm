@@ -49,8 +49,9 @@ def processors(request):
 
 @pytest.mark.parametrize("shape", [(64, 96), (193, 319)])
 @pytest.mark.parametrize("is_video", [False, True], ids=["image", "video"])
-def test_gpu_patchify_matches_stock_uint8(processors, shape, is_video):
-    """Compare real CUDA patches with HF bytes without masking resize errors >1."""
+@pytest.mark.parametrize("batch_size", [1, 32])
+def test_gpu_patchify_matches_fp32_round_once(processors, shape, is_video, batch_size):
+    """Keep stock geometry; compare pixels to the merged Nemotron FP32 oracle."""
     stock, adapter = processors
     processor = stock.video_processor if is_video else stock.image_processor
     pixel_key = "pixel_values_videos" if is_video else "pixel_values"
@@ -63,21 +64,23 @@ def test_gpu_patchify_matches_stock_uint8(processors, shape, is_video):
             "<|vision_start|>"
             + ("<|video_pad|>" if is_video else "<|image_pad|>")
             + "<|vision_end|>"
-        ],
+        ]
+        * batch_size,
         return_tensors="pt",
         do_rescale=False,
         do_normalize=False,
     )
     if is_video:
         inputs.update(
-            videos=[pixels],
+            videos=[pixels] * batch_size,
             do_sample_frames=False,
             video_metadata=[
                 VideoMetadata(total_num_frames=3, fps=7, frames_indices=[0, 1, 2])
-            ],
+            ]
+            * batch_size,
         )
     else:
-        inputs["images"] = [pixels[0]]
+        inputs["images"] = [pixels[0]] * batch_size
     expected = stock(**copy.deepcopy(inputs))
     raw = adapter(**copy.deepcopy(inputs))
     torch.testing.assert_close(raw["input_ids"], expected["input_ids"], rtol=0, atol=0)
@@ -94,13 +97,33 @@ def test_gpu_patchify_matches_stock_uint8(processors, shape, is_video):
     assert actual.device == device
     assert actual.dtype == torch.uint8
     assert actual.shape == expected[pixel_key].shape
-    max_uint8_error = int(
-        (actual.cpu().to(torch.int16) - expected[pixel_key].to(torch.int16)).abs().max()
-    )
-    assert max_uint8_error <= 1, (
-        f"{stock.tokenizer.name_or_path}, shape={shape}, is_video={is_video}: "
-        f"max_uint8_error={max_uint8_error} exceeds 1"
-    )
+    reference = []
+    for frames, grid in zip(raw[f"{pixel_key}_raw"], raw[grid_key].tolist()):
+        resized = (
+            torch.nn.functional.interpolate(
+                frames.permute(0, 3, 1, 2).float(),
+                size=(grid[1] * processor.patch_size, grid[2] * processor.patch_size),
+                mode="bicubic",
+                align_corners=False,
+                antialias=True,
+            )
+            .round()
+            .clamp(0, 255)
+            .to(torch.uint8)
+        )
+        reference.append(
+            pack_cosmos3_frames(
+                resized,
+                grid,
+                patch_size=processor.patch_size,
+                temporal_patch_size=processor.temporal_patch_size,
+                merge_size=processor.merge_size,
+                is_video=is_video,
+            )
+        )
+    difference = (actual.cpu().int() - torch.cat(reference).int()).abs()
+    assert difference.max() <= 1
+    assert (difference > 0).float().mean() < 1e-3
 
 
 @pytest.mark.parametrize("shape", [(31, 65), (67, 97), (320, 160)])
@@ -484,7 +507,7 @@ def test_native_resize_rejects_disabled_worker_normalization(processors):
     ],
 )
 def test_public_release_uses_matching_cuda_distribution(cuda_version, distribution):
-    from vllm.transformers_utils.processors.cvcuda_uint8_resize import (
+    from vllm.transformers_utils.processors.cosmos3_cvcuda_resize import (
         _cvcuda_distribution,
     )
 
@@ -493,7 +516,7 @@ def test_public_release_uses_matching_cuda_distribution(cuda_version, distributi
 
 @pytest.mark.parametrize("cuda_version", [None, "11.8", "14.0"])
 def test_public_release_rejects_unsupported_cuda_runtime(cuda_version):
-    from vllm.transformers_utils.processors.cvcuda_uint8_resize import (
+    from vllm.transformers_utils.processors.cosmos3_cvcuda_resize import (
         _cvcuda_distribution,
     )
 
@@ -514,7 +537,7 @@ def test_public_release_rejects_unsupported_cuda_runtime(cuda_version):
     ],
 )
 def test_public_release_rejects_other_dependency_versions(version):
-    from vllm.transformers_utils.processors.cvcuda_uint8_resize import (
+    from vllm.transformers_utils.processors.cosmos3_cvcuda_resize import (
         _validate_cvcuda_release_version,
     )
 
@@ -524,7 +547,7 @@ def test_public_release_rejects_other_dependency_versions(version):
 
 @pytest.mark.parametrize("version", ["0.19.0", "0.20.0"])
 def test_public_release_accepts_exact_dependency_version(version):
-    from vllm.transformers_utils.processors.cvcuda_uint8_resize import (
+    from vllm.transformers_utils.processors.cosmos3_cvcuda_resize import (
         _validate_cvcuda_release_version,
     )
 
@@ -534,7 +557,7 @@ def test_public_release_accepts_exact_dependency_version(version):
 @pytest.mark.parametrize("version", ["0.19.0", "0.20.0"])
 @pytest.mark.parametrize("module_version", [None, "0.21.0"])
 def test_public_release_api_rejects_mismatched_module_version(version, module_version):
-    from vllm.transformers_utils.processors.cvcuda_uint8_resize import (
+    from vllm.transformers_utils.processors.cosmos3_cvcuda_resize import (
         _validate_cvcuda_api,
     )
 
@@ -546,7 +569,7 @@ def test_public_release_api_rejects_mismatched_module_version(version, module_ve
 
 @pytest.mark.parametrize("version", ["0.19.0", "0.20.0"])
 def test_public_release_api_requires_exported_resize(version):
-    from vllm.transformers_utils.processors.cvcuda_uint8_resize import (
+    from vllm.transformers_utils.processors.cosmos3_cvcuda_resize import (
         _validate_cvcuda_api,
     )
 
@@ -567,7 +590,7 @@ def test_public_release_api_requires_exported_resize(version):
     ],
 )
 def test_public_resize_rejects_invalid_inputs_before_cuda(frames, size, budget):
-    from vllm.transformers_utils.processors.cvcuda_uint8_resize import (
+    from vllm.transformers_utils.processors.cosmos3_cvcuda_resize import (
         cvcuda_bicubic_resize,
     )
 
@@ -576,7 +599,7 @@ def test_public_resize_rejects_invalid_inputs_before_cuda(frames, size, budget):
 
 
 def test_public_resize_requires_real_cuda_device():
-    from vllm.transformers_utils.processors.cvcuda_uint8_resize import (
+    from vllm.transformers_utils.processors.cosmos3_cvcuda_resize import (
         cvcuda_bicubic_resize,
     )
 
@@ -600,7 +623,7 @@ def test_public_resize_requires_real_cuda_device():
     ],
 )
 def test_public_workspace_matches_original_release(source, size, frames, expected):
-    from vllm.transformers_utils.processors.cvcuda_uint8_resize import (
+    from vllm.transformers_utils.processors.cosmos3_cvcuda_resize import (
         _cvcuda_workspace_bytes,
     )
 
@@ -609,7 +632,7 @@ def test_public_workspace_matches_original_release(source, size, frames, expecte
 
 @pytest.mark.parametrize("budget", [1024 * 1024, 512 * 1024 * 1024])
 def test_public_warmup_is_maximal_without_exceeding_native_budget(budget):
-    from vllm.transformers_utils.processors.cvcuda_uint8_resize import (
+    from vllm.transformers_utils.processors.cosmos3_cvcuda_resize import (
         _cvcuda_warmup_rows,
         _cvcuda_workspace_bytes,
     )
@@ -633,7 +656,7 @@ def test_public_warmup_is_maximal_without_exceeding_native_budget(budget):
     ],
 )
 def test_public_workspace_rejects_unsupported_native_dimensions(source, size, frames):
-    from vllm.transformers_utils.processors.cvcuda_uint8_resize import (
+    from vllm.transformers_utils.processors.cosmos3_cvcuda_resize import (
         _cvcuda_workspace_bytes,
     )
 
@@ -641,25 +664,21 @@ def test_public_workspace_rejects_unsupported_native_dimensions(source, size, fr
         _cvcuda_workspace_bytes(source, size, frames)
 
 
-def test_public_chunk_plan_charges_float_buffers_and_coefficient_uploads():
-    from vllm.transformers_utils.processors.cvcuda_resize_plan import (
+def test_public_chunk_plan_charges_uint8_uploads_resize_and_native_scratch():
+    from vllm.transformers_utils.processors.cosmos3_cvcuda_resize import (
         ALLOCATION_OVERHEAD_BYTES,
         resize_plan,
     )
 
-    source, size, table_bytes = (193, 319), (160, 224), 16384
-    height, width = source
-    frame_bytes = max(
-        18 * height * width + 15 * height * size[1],
-        6 * height * width + 15 * height * size[1] + 15 * size[0] * size[1],
-    )
-    budget = 2 * frame_bytes + table_bytes + ALLOCATION_OVERHEAD_BYTES
-    plan = resize_plan(source, size, 3, budget, table_bytes)
+    source, size = (193, 319), (160, 224)
+    frame_bytes = 6 * source[0] * source[1] + 3 * size[0] * size[1]
+    budget = 2 * frame_bytes + ALLOCATION_OVERHEAD_BYTES
+    plan = resize_plan(source, size, 3, budget)
     assert plan.frame_step == 2
     assert plan.temporary_bytes == budget
-    tiled = resize_plan(source, size, 3, frame_bytes + table_bytes, table_bytes)
-    assert tiled.mode != "frames"
-    assert tiled.temporary_bytes <= frame_bytes + table_bytes
+    single = resize_plan(source, size, 3, frame_bytes + ALLOCATION_OVERHEAD_BYTES)
+    assert single.frame_step == 1
+    assert single.native_bytes < plan.native_bytes
 
 
 @pytest.mark.parametrize(
@@ -671,11 +690,7 @@ def test_public_chunk_plan_charges_float_buffers_and_coefficient_uploads():
         ((33, 48), 19, 2),
     ],
 )
-def test_cpu_axis_table_matches_real_uint8_resize(source, target, axis):
-    from vllm.transformers_utils.processors.cvcuda_uint8_coefficients import (
-        resize_axis_table,
-    )
-
+def test_cpu_fp32_oracle_rounds_and_clamps_only_after_resize(source, target, axis):
     pixels = torch.randint(
         0,
         256,
@@ -683,48 +698,19 @@ def test_cpu_axis_table_matches_real_uint8_resize(source, target, axis):
         dtype=torch.uint8,
         generator=torch.Generator().manual_seed(1234),
     )
-    table = resize_axis_table(source[axis - 1], target)
-    assert table.coefficients.dtype == np.int16
-    assert table.error_bounds.dtype == np.float32
-    assert all(
-        not value.flags.writeable
-        for value in (
-            table.starts,
-            table.counts,
-            table.coefficients,
-            table.error_bounds,
-        )
-    )
-    output_shape = list(pixels.shape)
-    output_shape[axis] = target
-    exact = np.empty(output_shape, dtype=np.uint8)
-    values = pixels.numpy()
-    for coordinate in range(target):
-        start, count = int(table.starts[coordinate]), int(table.counts[coordinate])
-        samples = np.take(values, range(start, start + count), axis=axis).astype(
-            np.int64
-        )
-        coefficients = table.coefficients[coordinate, :count].astype(np.int64)
-        coefficient_shape = [1] * 4
-        coefficient_shape[axis] = count
-        total = (samples * coefficients.reshape(coefficient_shape)).sum(axis=axis)
-        quantized = np.clip(
-            (total + (1 << (table.precision - 1))) >> table.precision, 0, 255
-        )
-        selection: list[slice | int] = [slice(None)] * 4
-        selection[axis] = coordinate
-        exact[tuple(selection)] = quantized.astype(np.uint8)
-        assert not np.any(table.coefficients[coordinate, count:])
     size = list(source)
     size[axis - 1] = target
-    reference = torch.nn.functional.interpolate(
-        pixels.permute(0, 3, 1, 2).contiguous(memory_format=torch.channels_last),
+    floating = torch.nn.functional.interpolate(
+        pixels.permute(0, 3, 1, 2).float(),
         size=size,
         mode="bicubic",
         align_corners=False,
         antialias=True,
-    ).permute(0, 2, 3, 1)
-    torch.testing.assert_close(torch.from_numpy(exact), reference, rtol=0, atol=0)
+    )
+    oracle = floating.round().clamp(0, 255).to(torch.uint8)
+    assert oracle.dtype == torch.uint8
+    assert tuple(oracle.shape) == (1, 3, *size)
+    assert torch.equal(oracle, torch.clip(torch.round(floating), 0, 255).byte())
 
 
 @pytest.mark.parametrize(
@@ -743,7 +729,7 @@ def test_cpu_axis_table_matches_real_uint8_resize(source, target, axis):
 def test_gpu_public_resize_preserves_pixels_and_stream_lifetime(
     source, size, num_frames, default_stream
 ):
-    from vllm.transformers_utils.processors.cvcuda_uint8_resize import (
+    from vllm.transformers_utils.processors.cosmos3_cvcuda_resize import (
         cvcuda_bicubic_resize,
     )
 
@@ -755,7 +741,7 @@ def test_gpu_public_resize_preserves_pixels_and_stream_lifetime(
         generator=torch.Generator().manual_seed(1234),
     )
     reference = torch.nn.functional.interpolate(
-        frames.permute(0, 3, 1, 2).contiguous(memory_format=torch.channels_last),
+        frames.permute(0, 3, 1, 2).float(),
         size=size,
         mode="bicubic",
         align_corners=False,
@@ -775,4 +761,7 @@ def test_gpu_public_resize_preserves_pixels_and_stream_lifetime(
         completion = torch.cuda.Event()
         completion.record(stream)
     completion.synchronize()
-    torch.testing.assert_close(retained.cpu(), reference, rtol=0, atol=0)
+    reference = reference.round().clamp(0, 255).to(torch.uint8)
+    difference = (retained.cpu().int() - reference.int()).abs()
+    assert difference.max() <= 1
+    assert (difference > 0).float().mean() < 1e-3
