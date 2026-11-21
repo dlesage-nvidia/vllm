@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
+from collections.abc import Mapping
 from importlib import metadata
 
 import torch
@@ -69,20 +70,32 @@ def _cvcuda_distribution(cuda_version: str | None) -> str:
 
 
 def _validate_cvcuda_release_version(version: str) -> None:
-    if version != "0.19.0":
-        raise RuntimeError("CPU uint8 resize requires public CV-CUDA 0.19.0")
+    if version not in ("0.19.0", "0.20.0"):
+        raise RuntimeError("CPU uint8 resize requires CV-CUDA 0.19.0 or 0.20.0")
 
 
-def require_cvcuda_release() -> None:
-    """Require the public release matching Torch's CUDA major, without CUDA calls."""
+def _validate_cvcuda_api(version: str, exports: Mapping[str, object]) -> None:
+    _validate_cvcuda_release_version(version)
+    if exports.get("__version__") != version:
+        raise RuntimeError("CV-CUDA module and distribution versions must match")
+    for name in ("tvresize_into", "reformat_into", "as_tensor", "as_stream"):
+        if not callable(exports.get(name)):
+            raise RuntimeError(f"Required public CV-CUDA API is unavailable: {name}")
+    if getattr(exports.get("Interp"), "CUBIC", None) is None:
+        raise RuntimeError("Public CV-CUDA cubic interpolation is unavailable")
+
+
+def require_cvcuda_release() -> str:
+    """Check the supported version matching Torch's CUDA major without CUDA calls."""
     distribution = _cvcuda_distribution(torch.version.cuda)
     try:
         version = metadata.version(distribution)
     except metadata.PackageNotFoundError as error:
         raise RuntimeError(
-            f"CPU uint8 resize requires {distribution}==0.19.0"
+            f"CPU uint8 resize requires {distribution} at version 0.19.0 or 0.20.0"
         ) from error
     _validate_cvcuda_release_version(version)
+    return version
 
 
 def _cvcuda_workspace_bytes(
@@ -156,12 +169,14 @@ def cvcuda_bicubic_resize(
     if min(frames.shape[:3]) < 1 or len(size) != 2 or max_temporary_bytes < 1:
         raise ValueError("CV-CUDA resize requires nonempty frames and positive budgets")
     source_size = tuple(frames.shape[1:3])
-    size = tuple(size)
+    size = (size[0], size[1])
     _cvcuda_workspace_bytes(source_size, size, 1)
     if device.type != "cuda":
         raise ValueError("CV-CUDA resize requires a CUDA device")
-    require_cvcuda_release()
+    cvcuda_version = require_cvcuda_release()
     import cvcuda
+
+    _validate_cvcuda_api(cvcuda_version, vars(cvcuda))
 
     from vllm.transformers_utils.processors.cvcuda_resize_plan import resize_plan
     from vllm.transformers_utils.processors.cvcuda_uint8_coefficients import (
@@ -173,8 +188,6 @@ def cvcuda_bicubic_resize(
     )
     from vllm.utils.gpu_sync_debug import gpu_sync_allowed
 
-    if not callable(getattr(cvcuda, "tvresize_into", None)):
-        raise RuntimeError("Public CV-CUDA tvresize_into is unavailable")
     torch_stream = torch.cuda.current_stream(device)
     device_index = torch_stream.device_index
     device = torch.device("cuda", device_index)

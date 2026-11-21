@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import dataclasses
+from enum import Enum
 
 import pytest
 import torch
@@ -13,6 +14,109 @@ from vllm.transformers_utils.processors.cvcuda_resize_plan import (
     NATIVE_SCRATCH_BYTES,
     resize_plan,
 )
+
+
+@pytest.mark.parametrize("version", ["0.19.0", "0.20.0"])
+def test_cvcuda_uint8_supported_versions(version):
+    from vllm.transformers_utils.processors.cvcuda_uint8_resize import (
+        _validate_cvcuda_release_version,
+    )
+
+    _validate_cvcuda_release_version(version)
+
+
+@pytest.mark.parametrize(
+    "version",
+    [
+        "0.18.0",
+        "0.19.0b0",
+        "0.19.0+custom",
+        "0.20.0-beta",
+        "0.20.0b0",
+        "0.20.0rc1",
+        "0.20.0.dev1",
+        "0.20.0+custom",
+        "0.20.1",
+        "0.21.0",
+    ],
+)
+def test_cvcuda_uint8_rejects_unreviewed_versions(version):
+    from vllm.transformers_utils.processors.cvcuda_uint8_resize import (
+        _validate_cvcuda_release_version,
+    )
+
+    with pytest.raises(RuntimeError, match="requires CV-CUDA"):
+        _validate_cvcuda_release_version(version)
+
+
+@pytest.fixture
+def cvcuda_api_exports():
+    return {
+        "tvresize_into": len,
+        "reformat_into": len,
+        "as_tensor": len,
+        "as_stream": len,
+        "Interp": Enum("Interpolation", {"CUBIC": 3}),
+    }
+
+
+@pytest.mark.parametrize("version", ["0.19.0", "0.20.0"])
+def test_cvcuda_uint8_public_api_contract(version, cvcuda_api_exports):
+    from vllm.transformers_utils.processors.cvcuda_uint8_resize import (
+        _validate_cvcuda_api,
+    )
+
+    cvcuda_api_exports["__version__"] = version
+    _validate_cvcuda_api(version, cvcuda_api_exports)
+
+
+@pytest.mark.parametrize("version", ["0.19.0", "0.20.0"])
+@pytest.mark.parametrize(
+    "name", ["tvresize_into", "reformat_into", "as_tensor", "as_stream"]
+)
+@pytest.mark.parametrize("present", [False, True])
+def test_cvcuda_uint8_rejects_missing_or_noncallable_api(
+    version, name, present, cvcuda_api_exports
+):
+    from vllm.transformers_utils.processors.cvcuda_uint8_resize import (
+        _validate_cvcuda_api,
+    )
+
+    cvcuda_api_exports["__version__"] = version
+    if present:
+        cvcuda_api_exports[name] = None
+    else:
+        del cvcuda_api_exports[name]
+    with pytest.raises(RuntimeError, match=name):
+        _validate_cvcuda_api(version, cvcuda_api_exports)
+
+
+@pytest.mark.parametrize("native_version", [None, "0.19.0", "0.20.0-beta"])
+def test_cvcuda_uint8_rejects_mismatched_native_version(
+    native_version, cvcuda_api_exports
+):
+    from vllm.transformers_utils.processors.cvcuda_uint8_resize import (
+        _validate_cvcuda_api,
+    )
+
+    cvcuda_api_exports["__version__"] = native_version
+    with pytest.raises(RuntimeError, match="module and distribution"):
+        _validate_cvcuda_api("0.20.0", cvcuda_api_exports)
+
+
+@pytest.mark.parametrize("present", [False, True])
+def test_cvcuda_uint8_rejects_missing_cubic_interpolation(present, cvcuda_api_exports):
+    from vllm.transformers_utils.processors.cvcuda_uint8_resize import (
+        _validate_cvcuda_api,
+    )
+
+    cvcuda_api_exports["__version__"] = "0.20.0"
+    if present:
+        cvcuda_api_exports["Interp"] = Enum("Interpolation", {"LINEAR": 1})
+    else:
+        del cvcuda_api_exports["Interp"]
+    with pytest.raises(RuntimeError, match="cubic interpolation"):
+        _validate_cvcuda_api("0.20.0", cvcuda_api_exports)
 
 
 @pytest.mark.parametrize("cpu_source", [False, True])
@@ -42,7 +146,7 @@ def test_plan_bounds_tiles_without_cropping_filtered_axis(
     else:
         assert plan.upload_capacity == 0
     with pytest.raises(dataclasses.FrozenInstanceError):
-        plan.frame_step = 7
+        plan.__setattr__("frame_step", 7)
 
 
 @pytest.mark.parametrize("cpu_source", [False, True])
