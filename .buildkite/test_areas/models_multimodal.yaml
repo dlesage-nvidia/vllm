@@ -147,8 +147,25 @@ steps:
   - "!vllm/distributed/kv_transfer/"
   - tests/models/multimodal
   - tests/models/registry.py
+  - tests/transformers_utils/processors/test_qwen3_5_cvcuda.py
+  - tests/transformers_utils/processors/test_cvcuda_resize.py
   commands:
     - pytest -v -s models/multimodal/processing/test_tensor_schema.py
+    - >-
+      uv pip install --system --strict
+      "cvcuda-cu$(python -c 'import torch; print(torch.version.cuda.split(".")[0])')==0.19.0"
+    - >-
+      python -c 'import cvcuda, torch; from importlib.metadata import version;
+      assert torch.cuda.is_available();
+      assert version("cvcuda-cu" + torch.version.cuda.split(".")[0]) == "0.19.0"'
+    - export VLLM_GPU_SYNC_CHECK=error
+    - >-
+      pytest -v -s
+      transformers_utils/processors/test_qwen3_5_cvcuda.py
+      transformers_utils/processors/test_cvcuda_resize.py
+      models/multimodal/processing/test_qwen3_vl.py
+      -k cvcuda
+    - pytest -v -s models/multimodal/generation/test_common.py::test_qwen35_cvcuda_matches_default
   mirror:
     amd:
       label: ":amd: (MI355 DPX) Multimodal Processor"

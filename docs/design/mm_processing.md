@@ -126,3 +126,35 @@ vllm serve nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4 \
 ```
 
 The API server then sends the decoded `uint8` pixels at their source resolution. On the GPU, CV-CUDA resizes them (bicubic, antialiased, `uint8` in and out) and reformats them to NCHW; `FusedMMInputNorm` then casts, rescales and normalizes them exactly as it does for the CPU path. This covers dynamic-resolution images and video frames. The pixels are uploaded on a stream of their own, so the upload does not wait for the steps already queued on the model's stream; the resize kernels are queued on the model's stream after it. CV-CUDA's scratch buffer is capped at 512 MiB and reserved during the startup memory profile.
+
+#### Resizing on the Device (Qwen3.5)
+
+Qwen3.5 dense and MoE vision-language models have an opt-in CV-CUDA preprocessing path under development. The first version uses the public CV-CUDA **v0.19.0 release**, with per-axis floating-point resizing and selective exact integer GPU correction rather than an unreleased resize mode. Full processor, model and serving validation remain unfinished; the examples do not establish deployment acceptance. The path is **off by default**:
+
+```bash
+pip install "vllm[cvcuda]"
+vllm serve Qwen/Qwen3.5-4B --mm-processor-kwargs '{"device_resize": true}'
+```
+
+The same option applies to larger checkpoints. For example, on a host with enough GPU memory for the BF16 weights and runtime buffers:
+
+```bash
+vllm serve Qwen/Qwen3.5-122B-A10B --dtype bfloat16 --tensor-parallel-size 4 \
+    --max-model-len 16384 --mm-processor-kwargs '{"device_resize": true}'
+```
+
+This requires CUDA, the optional CV-CUDA dependency, torchvision preprocessing, and `mm_device_do_normalize=True`. It accepts decoded RGB `uint8` images and videos with bicubic antialiased resizing. It cannot be enabled only on an individual request, because the engine must account for its memory at startup. Requests can disable it with `device_resize: false`.
+
+The API server uses the Hugging Face processor's shape logic on metadata-only tensors, preserving its target grids, frame sampling, per-frame pixel caps, timestamps, and prompt expansion without resizing or packing pixels on the CPU. It sends source-resolution pixels to the model, which resizes and packs Qwen's spatial and temporal patches on the GPU. Odd frame counts repeat the final frame, matching the reference processor.
+
+The `cvcuda` extra and Qwen CI pin the public CV-CUDA v0.19.0 wheel matching the CUDA major version. Development wheels, patched operators and rewritten wheel metadata are not prerequisites. Qwen uses the same shared direct resize path as Nemotron: public bicubic antialiased `TvResize`, followed by `Reformat` to NCHW. The resize keeps FP32 intermediates and rounds/clamps to `uint8` once. Qwen does not request per-axis `uint8` quantization and does not build CPU coefficient/error-bound tables or run integer correction. The previous exact CPU-`uint8` implementation and its evidence remain historical; they do not qualify this direct path.
+
+The Qwen-specific compatibility guard also admits version **0.20.0** for a separate snapshot evaluation lane: CV-CUDA `rel/v0.20.x` at `f4cd27d5d4ed73a4a134973d769aac8fd18e77dc`. This snapshot is distinct from the released v0.19.0 dependency; the default extra and CI pin remain unchanged. Both versions require matching module/distribution versions and the public resize, reformat, tensor, stream and cubic-interpolation APIs. RC, development, beta and local-version suffixes are not admitted. An accepted version/API contract does not attest wheel provenance or establish numerical, memory/stream, model or serving correctness. The new direct Qwen path requires fresh GPU qualification for both versions; previous exact-correction results are not evidence for it.
+
+The pixel criterion follows the merged Nemotron integration (upstream PR65941): CPU FP32 bicubic antialiased interpolation with `align_corners=False`, rounded/clamped to `uint8`, versus the public CV-CUDA result. Maximum absolute pixel error must be at most one level and the differing-pixel fraction must be strictly less than `1e-3`. Exceeding either bound fails validation; exact torchvision v2 CPU-`uint8` resize equality is not required by this criterion. Shape/grids, source pixels, identity-resize patch packing, temporal padding, timestamps, normalization settings and chunk-to-chunk/stream lifetime checks remain exact. Actual-weight paired model accuracy, memory/stream correctness and end-to-end serving validation remain required and pending; the pixel criterion is not an accuracy waiver.
+
+The Nemotron shared helper prefers frame chunks of at most 256 MiB of source pixels and limits native resize scratch to 512 MiB. This is a soft frame-chunk limit: an indivisible frame and full output/caller-owned GPU tensors are additional allocations, not an enforced 384 MiB total-temporary cap. Extreme frames that exceed native scratch individually are rejected by that existing helper; the former exact-correction orthogonal tiler is not used. Host frames upload on a dedicated stream with CUDA Array Interface stream ownership; default-stream ordering and lifetime/memory regression tests remain required. Startup reserves a 384 MiB tensor allowance and warms the same public resize/reformat path, including its native scratch. Qwen uses the same direct native resize/reformat algorithm as Nemotron; no coefficient/correction route. Encoder CUDA graphs are disabled for this opt-in mode; language-model CUDA graphs are unaffected.
+
+Consecutive raw images with matching source shape, device, dtype and target grid are resized together, then packed in their original item order. Grouping prefers at most 256 MiB each of source and resized tensor storage; an indivisible image remains admissible subject to the shared helper's existing native scratch limit. Mixed shapes/grids/devices split groups without reordering, while video padding and packing stay per clip. A compatible 32-image processor/model input reaches the shared public resize helper with a real NHWC batch of 32 when these budgets permit; the helper still bounds its native scratch by chunking internally.
+
+Tests cover this actual 32-image processor-to-patchifier route, observe the real shared-helper batch shape without replacing its implementation, and require chunked/full-result equality and the same strict pixel criterion. CPU controls validate grouping, budgets, item order and stock grids. These are not observed serving vision-encoder batch32 acceptance, which still needs encoder input provenance and full model evaluation. Serving concurrency32 alone proves neither image-processor batching nor vision batching.

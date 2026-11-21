@@ -4,6 +4,7 @@
 image, embedding, and video support for different VLMs in vLLM.
 """
 
+import importlib.util
 import math
 from collections import defaultdict
 from pathlib import PosixPath
@@ -17,6 +18,7 @@ from transformers import (
     AutoProcessor,
 )
 
+from vllm.assets.video import VideoAsset
 from vllm.platforms import current_platform
 from vllm.utils.func_utils import identity
 
@@ -29,6 +31,7 @@ from ....conftest import (
     VllmRunner,
 )
 from ....utils import create_new_process_for_each_test, large_gpu_mark, multi_gpu_marks
+from ...utils import check_logprobs_close
 from .vlm_utils import custom_inputs, model_utils, runners
 from .vlm_utils.case_filtering import get_parametrized_options
 from .vlm_utils.types import (
@@ -50,6 +53,59 @@ COMMON_BROADCAST_SETTINGS = {
         "mp",
     ),
 }
+
+
+@pytest.mark.core_model
+@pytest.mark.skipif(
+    not current_platform.is_cuda() or importlib.util.find_spec("cvcuda") is None,
+    reason="Requires CUDA and the optional CV-CUDA dependency",
+)
+@pytest.mark.parametrize("modality", ["image", "video", "mixed"])
+def test_qwen35_cvcuda_matches_default(vllm_runner, image_assets, modality):
+    media_kwargs = {}
+    placeholders = []
+    if modality in ("video", "mixed"):
+        asset = VideoAsset("baby_reading", num_frames=3)
+        media_kwargs["videos"] = [(asset.np_ndarrays, asset.metadata)]
+        placeholders.append("<|video_pad|>")
+    if modality in ("image", "mixed"):
+        media_kwargs["images"] = [image_assets[0].pil_image]
+        placeholders.append("<|image_pad|>")
+    vision_prompt = "".join(
+        f"<|vision_start|>{placeholder}<|vision_end|>" for placeholder in placeholders
+    )
+    prompt = (
+        f"<|im_start|>user\n{vision_prompt}"
+        "Describe what you see briefly.<|im_end|>\n<|im_start|>assistant\n"
+    )
+    outputs = []
+    for device_resize in (False, True):
+        with vllm_runner(
+            "Qwen/Qwen3.5-0.8B",
+            dtype="bfloat16",
+            max_model_len=4096,
+            enable_chunked_prefill=True,
+            mm_processor_cache_gb=0,
+            mm_processor_kwargs={
+                "device_resize": device_resize,
+                "min_pixels": 4 * 32**2,
+                "max_pixels": 128 * 32**2,
+            },
+            limit_mm_per_prompt={"image": 1, "video": 1},
+        ) as runner:
+            outputs.append(
+                runner.generate_greedy_logprobs(
+                    [prompt], max_tokens=16, num_logprobs=5, **media_kwargs
+                )
+            )
+    check_logprobs_close(
+        outputs_0_lst=outputs[0],
+        outputs_1_lst=outputs[1],
+        name_0="CPU resize",
+        name_1="CV-CUDA resize",
+        always_check_logprobs=True,
+    )
+
 
 ### Test configuration for specific models
 # NOTE: The convention of the test settings below is to lead each test key
