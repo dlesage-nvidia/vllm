@@ -131,14 +131,24 @@ The API server then sends the decoded `uint8` pixels at their source resolution.
 
 The native `Cosmos3ForConditionalGeneration` reasoner has an opt-in CV-CUDA
 image/video adapter for `nvidia/Cosmos3-Nano`, `nvidia/Cosmos3-Super`, and their
-official FP8 variants. CPU resizing remains the default. The first implementation
-targets only the public CV-CUDA 0.19.0 release: `cvcuda-cu13==0.19.0`, or
+official FP8 variants. CPU resizing remains the default. The default installation
+selects the public CV-CUDA 0.19.0 release: `cvcuda-cu13==0.19.0`, or
 `cvcuda-cu12==0.19.0` for a vLLM wheel built with CUDA 12. The existing `cvcuda`
 extra selects that exact release through normal dependency installation:
 
 ```bash
 uv pip install 'vllm[cvcuda]'
 ```
+
+The shared resize adapter admits exact CV-CUDA `0.19.0` and `0.20.0` versions
+only. The module and installed distribution versions must match, and public
+`tvresize_into`, `reformat_into`, `as_tensor`, `as_stream`, and `Interp.CUBIC`
+must be available. Private, prerelease, postrelease, and `0.21.0` versions are
+rejected. The selected `0.20.0` comparison source is GitLab `rel/v0.20.x` commit
+`f4cd27d5d4ed73a4a134973d769aac8fd18e77dc`; version/API admission is not runtime,
+numerical, or serving qualification. A separately prepared `0.20.0` runtime must
+use normal full dependency resolution rather than requesting the `0.19.0`-pinned
+extra. The optional dependency and CI defaults remain public `0.19.0`.
 
 The adapter uses only released operators: each axis is resized in FP32 with
 public `TvResize`, then quantized to uint8. An independently generated signed

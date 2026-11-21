@@ -501,22 +501,59 @@ def test_public_release_rejects_unsupported_cuda_runtime(cuda_version):
         _cvcuda_distribution(cuda_version)
 
 
-@pytest.mark.parametrize("version", ["0.18.0", "0.21.0", "99.0.0", "0.19.0+private"])
+@pytest.mark.parametrize(
+    "version",
+    [
+        "0.18.0",
+        "0.21.0",
+        "99.0.0",
+        "0.19.0+private",
+        "0.20.0+private",
+        "0.20.0rc1",
+        "0.20.0.post1",
+    ],
+)
 def test_public_release_rejects_other_dependency_versions(version):
     from vllm.transformers_utils.processors.cvcuda_uint8_resize import (
         _validate_cvcuda_release_version,
     )
 
-    with pytest.raises(RuntimeError, match="public CV-CUDA 0.19.0"):
+    with pytest.raises(RuntimeError, match="CV-CUDA 0.19.0 or 0.20.0"):
         _validate_cvcuda_release_version(version)
 
 
-def test_public_release_accepts_exact_dependency_version():
+@pytest.mark.parametrize("version", ["0.19.0", "0.20.0"])
+def test_public_release_accepts_exact_dependency_version(version):
     from vllm.transformers_utils.processors.cvcuda_uint8_resize import (
         _validate_cvcuda_release_version,
     )
 
-    _validate_cvcuda_release_version("0.19.0")
+    _validate_cvcuda_release_version(version)
+
+
+@pytest.mark.parametrize("version", ["0.19.0", "0.20.0"])
+@pytest.mark.parametrize("module_version", [None, "0.21.0"])
+def test_public_release_api_rejects_mismatched_module_version(version, module_version):
+    from vllm.transformers_utils.processors.cvcuda_uint8_resize import (
+        _validate_cvcuda_api,
+    )
+
+    with pytest.raises(
+        RuntimeError, match="module and distribution versions must match"
+    ):
+        _validate_cvcuda_api(version, {"__version__": module_version})
+
+
+@pytest.mark.parametrize("version", ["0.19.0", "0.20.0"])
+def test_public_release_api_requires_exported_resize(version):
+    from vllm.transformers_utils.processors.cvcuda_uint8_resize import (
+        _validate_cvcuda_api,
+    )
+
+    with pytest.raises(
+        RuntimeError, match="Required public CV-CUDA API.*tvresize_into"
+    ):
+        _validate_cvcuda_api(version, {"__version__": version})
 
 
 @pytest.mark.parametrize(
