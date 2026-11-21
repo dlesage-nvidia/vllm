@@ -29,7 +29,7 @@ from vllm.model_executor.layers.rotary_embedding import get_rope
 from vllm.model_executor.layers.vocab_parallel_embedding import ParallelLMHead
 from vllm.model_executor.models.module_mapping import MultiModelKeys
 from vllm.multimodal import MULTIMODAL_REGISTRY
-from vllm.multimodal.inputs import MultiModalFeatureSpec
+from vllm.multimodal.inputs import MultiModalFeatureSpec, MultiModalFieldConfig
 from vllm.multimodal.parse import ImageSize
 from vllm.sequence import IntermediateTensors
 from vllm.utils.torch_utils import async_tensor_h2d
@@ -296,7 +296,35 @@ class Cosmos3EdgeProcessingInfo(Qwen3VLProcessingInfo):
         return self.ctx.get_hf_config(Cosmos3EdgeConfig)
 
     def get_hf_processor(self, **kwargs: object) -> ProcessorMixin:
-        return self.ctx.get_hf_processor(**kwargs)
+        mm_config = self.ctx.get_mm_config()
+        merged = mm_config.merge_mm_processor_kwargs(kwargs)
+        requested = merged.get("device_resize", False) or any(
+            merged.get(scope, {}).get("device_resize", False)
+            for scope in ("images_kwargs", "videos_kwargs")
+        )
+        if not requested:
+            return self.ctx.get_hf_processor(**kwargs)
+        if not (mm_config.mm_processor_kwargs or {}).get("device_resize"):
+            raise ValueError(
+                "Edge device_resize must be enabled in engine mm_processor_kwargs"
+            )
+        from importlib.util import find_spec
+
+        from vllm.platforms import current_platform
+        from vllm.transformers_utils.processors.cosmos3_edge_cvcuda import (
+            Cosmos3EdgeCVCUDAProcessor,
+        )
+
+        if mm_config.mm_device_do_normalize:
+            raise ValueError("Edge device_resize requires mm_device_do_normalize=False")
+        if not current_platform.is_cuda() or find_spec("cvcuda") is None:
+            raise ValueError("Edge device_resize requires CUDA and vllm[cvcuda]")
+        from vllm.transformers_utils.processors.cvcuda_uint8_resize import (
+            require_cvcuda_release,
+        )
+
+        require_cvcuda_release()
+        return self.ctx.get_hf_processor(Cosmos3EdgeCVCUDAProcessor, **kwargs)
 
     def _get_vision_info(
         self,
@@ -342,6 +370,21 @@ class Cosmos3EdgeProcessingInfo(Qwen3VLProcessingInfo):
 
 
 class Cosmos3EdgeMultiModalProcessor(Qwen3VLMultiModalProcessor):
+    def _get_mm_fields_config(self, hf_inputs, hf_processor_mm_kwargs):
+        fields = {
+            **super()._get_mm_fields_config(hf_inputs, hf_processor_mm_kwargs),
+            "pixel_values_raw": MultiModalFieldConfig.batched(
+                "image", keep_on_cpu=True
+            ),
+            "pixel_values_videos_raw": MultiModalFieldConfig.batched(
+                "video", keep_on_cpu=True
+            ),
+        }
+        for key in ("pixel_values", "pixel_values_videos"):
+            if f"{key}_raw" in hf_inputs:
+                fields.pop(key, None)
+        return fields
+
     @staticmethod
     def _expands_only_video_token(_hf_processor: ProcessorMixin) -> bool:
         # Cosmos renders each video as a full
@@ -652,8 +695,10 @@ class Cosmos3EdgeForConditionalGeneration(
         assert multimodal_config is not None
 
         self.config = config
+        self.model_config = vllm_config.model_config
         self.multimodal_config = multimodal_config
         self.use_data_parallel = multimodal_config.mm_encoder_tp_mode == "data"
+        self._cvcuda_workspace_profiled = False
 
         with self._mark_tower_model(vllm_config, {"image", "video"}):
             self.visual = Cosmos3EdgeVisionModel(
@@ -785,6 +830,49 @@ class Cosmos3EdgeForConditionalGeneration(
         return modalities
 
     def embed_multimodal(self, **kwargs: object) -> MultiModalEmbeddings | None:
+        workspace = None
+        enabled = (self.multimodal_config.mm_processor_kwargs or {}).get(
+            "device_resize"
+        )
+        for pixel_key, grid_key, processor_class in (
+            ("pixel_values", "image_grid_thw", Cosmos3EdgeImageProcessor),
+            ("pixel_values_videos", "video_grid_thw", Cosmos3EdgeVideoProcessor),
+        ):
+            raw = kwargs.pop(f"{pixel_key}_raw", None)
+            if raw is None:
+                continue
+            if not enabled or pixel_key in kwargs:
+                raise ValueError(
+                    "Edge raw pixels require device_resize and no processed pixels"
+                )
+            assert isinstance(raw, list)
+            grid_thw = kwargs[grid_key]
+            assert isinstance(grid_thw, torch.Tensor)
+            from vllm.transformers_utils.processors.cosmos3_edge_cvcuda import (
+                cvcuda_cosmos3_edge_patchify,
+            )
+
+            processor_attr = f"_cvcuda_{pixel_key}_processor"
+            processor = getattr(self, processor_attr, None)
+            if processor is None:
+                processor = processor_class.from_pretrained(
+                    self.model_config.model,
+                    revision=self.model_config.revision,
+                )
+                setattr(self, processor_attr, processor)
+            kwargs[pixel_key] = cvcuda_cosmos3_edge_patchify(
+                raw,
+                grid_thw,
+                next(self.visual.parameters()).device,
+                image_processor=processor,
+            )
+        if enabled and not self._cvcuda_workspace_profiled:
+            from vllm.transformers_utils.processors.cvcuda_uint8_resize import (
+                reserve_cvcuda_workspace,
+            )
+
+            workspace = reserve_cvcuda_workspace(next(self.visual.parameters()).device)
+            self._cvcuda_workspace_profiled = True
         mm_input_by_modality = self._parse_and_validate_multimodal_inputs(**kwargs)
         if not mm_input_by_modality:
             return None
@@ -800,6 +888,7 @@ class Cosmos3EdgeForConditionalGeneration(
                 video_embeddings = self._process_video_input(multimodal_input)
                 multimodal_embeddings += tuple(video_embeddings)
 
+        del workspace
         return multimodal_embeddings
 
     def forward(

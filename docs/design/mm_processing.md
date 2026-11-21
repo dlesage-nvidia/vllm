@@ -126,3 +126,151 @@ vllm serve nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4 \
 ```
 
 The API server then sends the decoded `uint8` pixels at their source resolution. On the GPU, CV-CUDA resizes them (bicubic, antialiased, `uint8` in and out) and reformats them to NCHW; `FusedMMInputNorm` then casts, rescales and normalizes them exactly as it does for the CPU path. This covers dynamic-resolution images and video frames. The pixels are uploaded on a stream of their own, so the upload does not wait for the steps already queued on the model's stream; the resize kernels are queued on the model's stream after it. CV-CUDA's scratch buffer is capped at 512 MiB and reserved during the startup memory profile.
+
+#### Device Resizing (Cosmos3 Nano/Super Reasoner)
+
+The native `Cosmos3ForConditionalGeneration` reasoner has an opt-in CV-CUDA
+image/video adapter for `nvidia/Cosmos3-Nano`, `nvidia/Cosmos3-Super`, and their
+official FP8 variants. CPU resizing remains the default. The first implementation
+targets only the public CV-CUDA 0.19.0 release: `cvcuda-cu13==0.19.0`, or
+`cvcuda-cu12==0.19.0` for a vLLM wheel built with CUDA 12. The existing `cvcuda`
+extra selects that exact release through normal dependency installation:
+
+```bash
+uv pip install 'vllm[cvcuda]'
+```
+
+The adapter uses only released operators: each axis is resized in FP32 with
+public `TvResize`, then quantized to uint8. An independently generated signed
+int16 coefficient table and outward-rounded error bounds identify outputs near
+ambiguous half-integer rounding boundaries. A masked Triton kernel recomputes
+only those outputs with exact integer arithmetic; other pixels use the CV-CUDA
+result directly. The horizontal uint8 result is the vertical pass's input.
+Identity axes are not filtered. There is no private native resize keyword,
+Torch-only resize fallback, or dependency on a newer CV-CUDA build. Nano/Super
+and Edge share the private uint8 resize implementation; the existing default
+Nemotron resize path is unchanged.
+
+The intended device path requires CUDA and `mm_device_do_normalize=True`.
+The API-server transport retains source-resolution CPU RGB `uint8`; the
+stock processor still determines resize dimensions, grids, sampled frames,
+timestamps, padding, and prompt tokens. The model uploads and resizes pixels,
+packs Qwen3-VL spatial/temporal patches, and retains its existing input norm.
+Contiguous interleaved RGB array/tensor inputs retain their original storage
+instead of copying full-resolution pixels through channel-first buffers.
+Raw pixels stay on CPU until upload; encoder CUDA graphs are disabled for this
+opt-in path. Startup profiling charges CV-CUDA scratch and temporary buffers.
+Larger source-resolution IPC/cache payloads and upload costs are trade-offs.
+
+The pinned processor contract oracle is Transformers 5.23.0
+with Torch 2.15.0 and torchvision 0.29.2, loaded from immutable NVIDIA model
+revisions. Its CPU uint8 bicubic-antialias resize uses double-derived,
+axis-dependent signed int16 coefficients and an integer accumulation/rounding
+step, with a rounded and saturated uint8 horizontal intermediate before the
+vertical pass. Released `TvResize` uses floating-point coefficients and scratch;
+released `PillowResize` uses a different coefficient precision. Two floating
+resize calls alone do not establish the reference contract; selective exact
+correction is required. Host coefficient caching is byte-bounded to 16 MiB,
+and GPU source loads for correction are masked without extracting indices on
+the host. FP32 axis buffers, uint8 stages and coefficient transfers are included
+in a 256 MiB hard temporary budget. Oversized frames are tiled along the
+unfiltered axis:
+full-width row tiles for the horizontal pass, full-height column tiles for the
+vertical pass. When a full uint8 intermediate cannot fit, bounded column strips
+are recomputed from full-width horizontal resizes; no filtered-axis extent is
+cropped or rescaled. Two event-reused CPU upload slots backpressure only an
+independent resize-consumer stream, not unrelated model work. Full NCHW output
+storage for every frame is charged separately from bounded temporaries and the
+512 MiB native scratch reservation. Cold native warmup additionally uses about
+2.75 MiB of FP32 tensors before allocating tables, output or upload slots;
+startup warms both single-axis floating and integer-correction variants.
+No wider numerical tolerance is accepted; other callers
+retain their existing defaults. Full installed Cosmos processor parity,
+stream/lifetime validation, actual-weight accuracy/serving and paired performance
+measurements remain required; isolated operator controls are not model results.
+
+BF16 is the reference precision; official FP8 checkpoints are a deployment
+option. Keep precision identical within baseline/CV-CUDA pairs. No standalone
+NVFP4 checkpoint availability is inferred from NIM profiles.
+
+Native vLLM's reasoner discards generation-only weights. Generator/VAE/simulation
+integration requires separate runtime-specific preprocessing and actual model
+evaluations; it is not provided by the reasoner adapters.
+
+##### Super-FP8 Reasoner Evaluation Scope
+
+The official [Cosmos3-Super-FP8 model card](https://huggingface.co/nvidia/Cosmos3-Super-FP8/blob/3f62010edec964e581cd5752c011d4e3b5d2d059/README.md)
+documents a native vLLM reasoner separately from its vLLM-Omni generator.
+The reasoner consumes images or video and produces text; do not pass `--omni`
+or treat generator/VAE results as reasoner validation. As verified on November
+20, 2026, the model revision is `3f62010edec964e581cd5752c011d4e3b5d2d059`.
+The card's nominal **64B** count describes the combined checkpoint, not the
+loaded reasoner. Its text configuration has 64 layers, hidden size 5120 and
+intermediate size 25600, corresponding to a roughly **32B-class text tower**.
+Actual retained tensor bytes, vision weights, quantization buffers, KV cache
+and peak memory must still be measured on the loaded reasoner.
+
+The checkpoint uses ModelOpt FP8 weights and activations in selected linear
+layers, with excluded modules such as the vision encoder and output head.
+The serialized text configuration's BF16 dtype does not mean the FP8 checkpoint
+is a BF16 reference; do not substitute a BF16 checkpoint or add FP8 KV-cache
+quantization without a separate evaluation.
+
+At the pinned revisions, Super-FP8 and Nano's
+`45666784803b3a7ad577e0def405f9afcc3bddb2` image and video processor JSONs
+are byte-identical: Qwen3-VL processing, patch size 16, temporal patch size 2,
+merge size 2, and RGB mean/std `[0.5, 0.5, 0.5]`. This establishes a shared
+serialized preprocessing contract, **not** executed processor parity or model
+accuracy. Tokenization, sampled frames/timestamps, packed tensors, normalization
+and generated output require separate Super checks.
+
+The first Super-FP8 evaluation target is one actual GB300 GPU, TP1, with
+image/video-to-text loaded-model validation followed by concurrency 1/8/32,
+three paired baseline/public-CV-CUDA trials each. Both arms must use the same
+official FP8 checkpoint, effective engine settings, media bytes, sampling and
+KV-cache precision. Record the actual GPU identity/memory, per-request streamed
+TTFT, output tokens and latency, raw logprobs, and paired numerical/semantic
+checks. A Nano run or published vendor performance table is not Super evidence.
+These Super runtime, accuracy and serving checks remain pending; Nano, Edge,
+BF16 and generator/VAE/simulation work remain separate parts of the full scope.
+
+The original Torch 2.15 ARM dependency route is currently blocked before model
+qualification. Its exact `nvidia-cusparselt-cu13==0.8.1` wheel has an aarch64
+filename but an incompatible internal platform tag. As checked on November 20,
+2026, [NVIDIA's Python package index](https://pypi.nvidia.com/nvidia-cusparselt-cu13/)
+references the same original archive as PyPI, not a corrected same-version
+wheel. [NVIDIA documents the upstream internal-tag defect](https://docs.nvidia.com/bionemo/inference-runtime/install/).
+The native SDK redistribution is not a replacement for this Python dependency.
+Do not retag the wheel, substitute `0.8.1.post1` for the exact dependency,
+omit CUDA requirements, or ignore the ordinary UV compatibility failure to
+declare this ARM route qualified. A separate genuine Torch 2.15 CPU-reference
+environment can validate stock processor behavior, but cannot qualify the
+CUDA/ARM runtime or establish Cosmos GPU, model or serving results.
+
+#### Device Resizing (Cosmos3 Edge Reasoner)
+
+`nvidia/Cosmos3-Edge` and its official FP8 variant use a separate adapter for
+their SigLIP2 vision path. The same public CV-CUDA 0.19.0-only FP32-axis plus
+selective integer-correction resize is used, with a rounded and saturated uint8
+horizontal intermediate. Do not substitute a private or newer native operator,
+uncorrected floating resize, or a weaker numerical threshold.
+
+Edge requires CUDA, the matching `vllm[cvcuda]` extra, and
+`mm_device_do_normalize=False`, its native default. Unlike Nano/Super, the
+adapter carries each item's effective rescale and normalization settings to
+the worker. After CV-CUDA resize, the worker uses the stock rescale/normalize
+operation and packs merge-window-major HWC patches. Edge does not replicate
+image frames or pad videos to Nano/Super's temporal patch size.
+
+The stock processor retains control of grids, sampling, timestamps, prompt
+tokens and RGB conversion. Raw RGB and per-item settings stay on CPU until
+worker processing. Contiguous interleaved image/video array/tensor inputs
+retain their source storage; other layouts or color conversions can require
+copies. CPU preprocessing remains the default, and explicit opt-out retains
+the stock dense output. Source-resolution IPC/cache and upload costs, and the
+same bounded CV-CUDA scratch allocation, apply to this path too.
+
+CPU contract tests alone do not establish GPU numerical
+parity, stream safety, actual-weight accuracy or TTFT/throughput improvements.
+Evaluate Edge separately from Nano/Super, using the same model revision,
+precision, inputs and server settings within each baseline/CV-CUDA pair.
