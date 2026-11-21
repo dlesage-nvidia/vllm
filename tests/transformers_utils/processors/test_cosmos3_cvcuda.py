@@ -674,7 +674,7 @@ def test_cpu_axis_table_matches_real_uint8_resize(source, target, axis):
         quantized = np.clip(
             (total + (1 << (table.precision - 1))) >> table.precision, 0, 255
         )
-        selection = [slice(None)] * 4
+        selection: list[slice | int] = [slice(None)] * 4
         selection[axis] = coordinate
         exact[tuple(selection)] = quantized.astype(np.uint8)
         assert not np.any(table.coefficients[coordinate, count:])

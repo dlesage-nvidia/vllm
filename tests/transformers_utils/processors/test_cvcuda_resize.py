@@ -42,7 +42,7 @@ def test_plan_bounds_tiles_without_cropping_filtered_axis(
     else:
         assert plan.upload_capacity == 0
     with pytest.raises(dataclasses.FrozenInstanceError):
-        plan.frame_step = 7
+        plan.__setattr__("frame_step", 7)
 
 
 @pytest.mark.parametrize("cpu_source", [False, True])

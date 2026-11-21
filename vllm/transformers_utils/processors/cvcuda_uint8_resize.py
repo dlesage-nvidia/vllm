@@ -155,8 +155,8 @@ def cvcuda_bicubic_resize(
         raise ValueError("CV-CUDA resize requires NHWC uint8 RGB")
     if min(frames.shape[:3]) < 1 or len(size) != 2 or max_temporary_bytes < 1:
         raise ValueError("CV-CUDA resize requires nonempty frames and positive budgets")
-    source_size = tuple(frames.shape[1:3])
-    size = tuple(size)
+    source_size = (frames.shape[1], frames.shape[2])
+    size = (size[0], size[1])
     _cvcuda_workspace_bytes(source_size, size, 1)
     if device.type != "cuda":
         raise ValueError("CV-CUDA resize requires a CUDA device")
