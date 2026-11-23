@@ -1435,6 +1435,7 @@ class Qwen3VLMultiModalProcessor(BaseMultiModalProcessor[Qwen3VLProcessingInfo])
             self._get_per_video_kwargs(hf_kwargs, len(videos))
             video_grid_thw_lst = []
             pixel_values_videos_lst = []
+            raw_video_pixels = []
             timestamps_per_video = []
 
             for item_idx, item in enumerate(videos):
@@ -1499,11 +1500,16 @@ class Qwen3VLMultiModalProcessor(BaseMultiModalProcessor[Qwen3VLProcessingInfo])
 
                 video_grid_thw_lst.append(video_outputs["video_grid_thw"])
                 pixel_values_videos_lst.append(video_outputs["pixel_values_videos"])
+                raw_video_pixels.extend(
+                    video_outputs.get("pixel_values_videos_raw", ())
+                )
             video_outputs = dict(
                 pixel_values_videos=torch.cat(pixel_values_videos_lst),
                 video_grid_thw=torch.cat(video_grid_thw_lst),
                 timestamps=timestamps_per_video,
             )
+            if raw_video_pixels:
+                video_outputs["pixel_values_videos_raw"] = raw_video_pixels
         else:
             video_outputs = dict()
 
@@ -1533,6 +1539,10 @@ class Qwen3VLMultiModalProcessor(BaseMultiModalProcessor[Qwen3VLProcessingInfo])
             processed_data = BatchFeature()
 
         processed_data.update(video_outputs)
+        if "pixel_values_raw" in processed_data:
+            processed_data.pop("pixel_values", None)
+        if "pixel_values_videos_raw" in processed_data:
+            processed_data.pop("pixel_values_videos", None)
         return self._finalize_hf_mm_data(
             hf_data, hf_kwargs, passthrough_data, processed_data
         )
