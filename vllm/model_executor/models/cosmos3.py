@@ -16,7 +16,10 @@ from vllm.multimodal import MULTIMODAL_REGISTRY
 from vllm.multimodal.inputs import MultiModalFieldConfig
 
 
-class Cosmos3CVCUDAProcessingInfo(Qwen3VLProcessingInfo):
+class Cosmos3ProcessingInfo(Qwen3VLProcessingInfo):
+    def get_hf_config(self) -> Cosmos3OmniConfig:
+        return self.ctx.get_hf_config(Cosmos3OmniConfig)
+
     def get_hf_processor(self, **kwargs):
         mm_config = self.ctx.get_mm_config()
         merged = mm_config.merge_mm_processor_kwargs(kwargs)
@@ -51,11 +54,6 @@ class Cosmos3CVCUDAProcessingInfo(Qwen3VLProcessingInfo):
         return self.ctx.get_hf_processor(Cosmos3CVCUDAProcessor, **kwargs)
 
 
-class Cosmos3ProcessingInfo(Cosmos3CVCUDAProcessingInfo):
-    def get_hf_config(self) -> Cosmos3OmniConfig:
-        return self.ctx.get_hf_config(Cosmos3OmniConfig)
-
-
 class Cosmos3RawMultiModalProcessor(Qwen3VLMultiModalProcessor):
     def _get_mm_fields_config(self, hf_inputs, hf_processor_mm_kwargs):
         return {
@@ -69,7 +67,12 @@ class Cosmos3RawMultiModalProcessor(Qwen3VLMultiModalProcessor):
         }
 
 
-class Cosmos3CVCUDAVisionBase(Qwen3VLForConditionalGeneration):
+@MULTIMODAL_REGISTRY.register_processor(
+    Cosmos3RawMultiModalProcessor,
+    info=Cosmos3ProcessingInfo,
+    dummy_inputs=Qwen3VLDummyInputsBuilder,
+)
+class Cosmos3ForConditionalGeneration(Qwen3VLForConditionalGeneration):
     _cvcuda_workspace_profiled = False
 
     def embed_multimodal(self, **kwargs):
@@ -134,13 +137,6 @@ class Cosmos3CVCUDAVisionBase(Qwen3VLForConditionalGeneration):
         del workspace
         return embeddings
 
-
-@MULTIMODAL_REGISTRY.register_processor(
-    Cosmos3RawMultiModalProcessor,
-    info=Cosmos3ProcessingInfo,
-    dummy_inputs=Qwen3VLDummyInputsBuilder,
-)
-class Cosmos3ForConditionalGeneration(Cosmos3CVCUDAVisionBase):
     def get_encoder_cudagraph_config(self):
         config = super().get_encoder_cudagraph_config()
         if (self.multimodal_config.mm_processor_kwargs or {}).get("device_resize"):

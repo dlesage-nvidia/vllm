@@ -630,20 +630,43 @@ def test_public_workspace_matches_original_release(source, size, frames, expecte
     assert _cvcuda_workspace_bytes(source, size, frames) == expected
 
 
-@pytest.mark.parametrize("budget", [1024 * 1024, 512 * 1024 * 1024])
-def test_public_warmup_is_maximal_without_exceeding_native_budget(budget):
+def test_public_warmup_is_maximal_without_exceeding_native_budget():
     from vllm.transformers_utils.processors.cosmos3_cvcuda_resize import (
-        _cvcuda_warmup_rows,
+        NATIVE_SCRATCH_BYTES,
+        WARMUP_ROWS,
         _cvcuda_workspace_bytes,
     )
 
-    rows = _cvcuda_warmup_rows(budget)
-    assert _cvcuda_workspace_bytes((rows, 16), (16, 4096), 1) <= budget
-    upper = budget // (12 * 4096)
-    assert all(
-        _cvcuda_workspace_bytes((candidate, 16), (16, 4096), 1) > budget
-        for candidate in range(rows + 1, upper + 2)
+    assert _cvcuda_workspace_bytes((WARMUP_ROWS, 16), (16, 4096), 1) <= (
+        NATIVE_SCRATCH_BYTES
     )
+    assert all(
+        _cvcuda_workspace_bytes((candidate, 16), (16, 4096), 1) > NATIVE_SCRATCH_BYTES
+        for candidate in range(WARMUP_ROWS + 1, WARMUP_ROWS + 3)
+    )
+
+
+def test_public_release_is_checked_once_per_process(monkeypatch):
+    from importlib import metadata
+
+    from vllm.transformers_utils.processors import cosmos3_cvcuda_resize as resize
+
+    lookups = []
+
+    def version(distribution):
+        lookups.append(distribution)
+        return "0.20.0"
+
+    monkeypatch.setattr(torch.version, "cuda", "12.8")
+    monkeypatch.setattr(metadata, "version", version)
+    clear_cache = getattr(resize.require_cvcuda_release, "cache_clear", lambda: None)
+    clear_cache()
+    try:
+        assert resize.require_cvcuda_release() == "0.20.0"
+        assert resize.require_cvcuda_release() == "0.20.0"
+    finally:
+        clear_cache()
+    assert lookups == ["cvcuda-cu12"]
 
 
 @pytest.mark.parametrize(

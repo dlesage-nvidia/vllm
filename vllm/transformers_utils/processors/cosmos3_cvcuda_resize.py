@@ -3,6 +3,7 @@
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from functools import cache
 from importlib import metadata
 
 import torch
@@ -10,6 +11,7 @@ import torch
 NATIVE_SCRATCH_BYTES = 512 * 1024**2
 ALLOCATION_OVERHEAD_BYTES = 8192
 DEFAULT_TEMPORARY_BYTES = 384 * 1024**2
+WARMUP_ROWS = NATIVE_SCRATCH_BYTES // (12 * 4096)
 _scratch_reserved: set[int] = set()
 _upload_streams: dict[int, torch.cuda.Stream] = {}
 _resize_streams: dict[int, torch.cuda.Stream] = {}
@@ -37,6 +39,7 @@ def _validate_cvcuda_api(version: str, exports: Mapping[str, object]) -> None:
         raise RuntimeError("Public CV-CUDA cubic interpolation is unavailable")
 
 
+@cache
 def require_cvcuda_release() -> str:
     distribution = _cvcuda_distribution(torch.version.cuda)
     try:
@@ -45,6 +48,14 @@ def require_cvcuda_release() -> str:
         raise RuntimeError(f"Cosmos resize requires {distribution}") from error
     _validate_cvcuda_release_version(version)
     return version
+
+
+@cache
+def _load_cvcuda():
+    import cvcuda
+
+    _validate_cvcuda_api(require_cvcuda_release(), vars(cvcuda))
+    return cvcuda
 
 
 def _cvcuda_workspace_bytes(
@@ -75,16 +86,6 @@ def _cvcuda_workspace_bytes(
     if required > 2**63 - 1:
         raise ValueError("CV-CUDA workspace must fit signed int64")
     return required
-
-
-def _cvcuda_warmup_rows(max_scratch_bytes: int) -> int:
-    upper = min(max_scratch_bytes // (12 * 4096), 2**31 - 1)
-    if upper >= 113:
-        return upper
-    for rows in range(upper, 0, -1):
-        if _cvcuda_workspace_bytes((rows, 16), (16, 4096), 1) <= max_scratch_bytes:
-            return rows
-    raise ValueError("CV-CUDA resize warmup exceeds the scratch budget")
 
 
 @dataclass(frozen=True)
@@ -177,11 +178,9 @@ def _resize_inputs(
     max_temporary_bytes: int,
     preferred_frame_step: int | None,
 ) -> torch.Tensor:
-    import cvcuda
-
     from vllm.utils.gpu_sync_debug import gpu_sync_allowed
 
-    _validate_cvcuda_api(require_cvcuda_release(), vars(cvcuda))
+    cvcuda = _load_cvcuda()
     consumer = torch.cuda.current_stream(device)
     device_index = consumer.device_index
     device = torch.device("cuda", device_index)
@@ -229,10 +228,9 @@ def _resize_inputs(
         preferred_frame_step=preferred_frame_step,
     )
     if device_index not in _scratch_reserved:
-        rows = _cvcuda_warmup_rows(NATIVE_SCRATCH_BYTES)
         tvresize(
             torch.empty((1, 16, 4096, 3), dtype=torch.uint8, device=device),
-            torch.zeros((1, rows, 16, 3), dtype=torch.uint8, device=device),
+            torch.zeros((1, WARMUP_ROWS, 16, 3), dtype=torch.uint8, device=device),
         )
         _scratch_reserved.add(device_index)
     output = torch.empty((frame_count, 3, *size), dtype=torch.uint8, device=device)

@@ -143,8 +143,10 @@ uv pip install 'vllm[cvcuda]'
 The Cosmos resize adapter admits exact CV-CUDA `0.19.0` and `0.20.0` versions
 only. The module and installed distribution versions must match, and public
 `tvresize_into`, `reformat_into`, `as_tensor`, `as_stream`, and `Interp.CUBIC`
-must be available. Private, prerelease, postrelease, and `0.21.0` versions are
-rejected. The selected `0.20.0` comparison source is GitLab `rel/v0.20.x` commit
+must be available. This check runs lazily, once per process, on the first
+resize; importing `cvcuda` is never required by CPU or API-server paths. Private,
+prerelease, postrelease, and `0.21.0` versions are rejected. The selected
+`0.20.0` comparison source is GitLab `rel/v0.20.x` commit
 `f4cd27d5d4ed73a4a134973d769aac8fd18e77dc`; version/API admission is not runtime,
 numerical, or serving qualification. A separately prepared `0.20.0` runtime must
 use normal full dependency resolution rather than requesting the `0.19.0`-pinned
@@ -258,10 +260,11 @@ CUDA/ARM runtime or establish Cosmos GPU, model or serving results.
 #### Device Resizing (Cosmos3 Edge Reasoner)
 
 `nvidia/Cosmos3-Edge` and its official FP8 variant use a separate adapter for
-their SigLIP2 vision path. The same public CV-CUDA 0.19.0-only FP32-axis plus
-selective integer-correction resize is used, with a rounded and saturated uint8
-horizontal intermediate. Do not substitute a private or newer native operator,
-uncorrected floating resize, or a weaker numerical threshold.
+their SigLIP2 vision path. The same direct public CV-CUDA `TvResize`
+bicubic-antialias operator (releases `0.19.0` and `0.20.0`, as above) is used on
+`uint8` frames; there is no axis rounding or integer-correction stage. Do not
+substitute a private native operator or Torch resize, or weaken a numerical
+threshold.
 
 Edge requires CUDA, the matching `vllm[cvcuda]` extra, and
 `mm_device_do_normalize=False`, its native default. Unlike Nano/Super, the
