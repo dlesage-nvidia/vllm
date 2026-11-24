@@ -3123,6 +3123,10 @@ class VllmConfig:
         mm_config = model_config.multimodal_config
         if mm_config is None or not mm_config.use_gpu_image_backend():
             return
+        if model_config.runner_type != "generate":
+            raise ValueError(
+                "The nvimagecodec image backend requires the generation runner."
+            )
         from vllm.platforms import current_platform
 
         if not current_platform.is_cuda():

@@ -5,9 +5,16 @@ import threading
 import weakref
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 import vllm.multimodal.image_decoders.nvimagecodec as nvimagecodec
+from vllm.entrypoints.serve.instrumentator.health import router as health_router
 from vllm.multimodal.image_decoders.nvimagecodec import NvImageCodecInput
+from vllm.multimodal.media.image import (
+    _get_nvimagecodec_decode_service,
+    initialize_nvimagecodec_decode_service,
+)
 
 pytestmark = pytest.mark.cpu_test
 _TIMEOUT = 5
@@ -139,6 +146,37 @@ def test_system_failure_is_sticky_and_releases_budget() -> None:
         service.submit(_input(2))
     service.close()
     assert service._budget._in_use == 0
+
+
+@pytest.mark.parametrize(
+    "failure,expected_status,error_type",
+    [("item", 200, ValueError), ("collect", 503, RuntimeError)],
+)
+def test_health_endpoint_reports_systemic_decoder_failure_only(
+    failure: str, expected_status: int, error_type: type[Exception]
+) -> None:
+    app = FastAPI()
+    app.state.engine_client = None
+    app.include_router(health_router)
+    _FakeDecoder.failure = failure
+    release = initialize_nvimagecodec_decode_service()
+    try:
+        with TestClient(app) as client:
+            assert client.get("/health").status_code == 200
+            service = _get_nvimagecodec_decode_service()
+            future = service.submit(_input(2))
+            assert _FakeDecoder.gate[0].wait(timeout=_TIMEOUT)
+            _FakeDecoder.gate[1].set()
+            with pytest.raises(error_type, match="failed"):
+                future.result(timeout=_TIMEOUT)
+            assert client.get("/health").status_code == expected_status
+            assert client.get("/health").status_code == expected_status
+    finally:
+        _FakeDecoder.gate[1].set()
+        release()
+
+    with TestClient(app) as client:
+        assert client.get("/health").status_code == 200
 
 
 def test_service_waits_until_a_complete_wave_fits() -> None:

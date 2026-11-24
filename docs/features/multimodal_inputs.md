@@ -807,8 +807,29 @@ The official `vllm-openai` CUDA serving image includes the dependency. The
 backend accepts one structurally complete, EXIF-free, 8-bit RGB JPEG wider than
 4 pixels and containing at most 8,294,400 pixels per prompt. It returns a
 channels-first tensor to Qwen3-VL. Unsupported images fail instead of falling
-back to Pillow. The backend is unavailable with headless or render-only
-processes, Ray, and the Rust frontend.
+back to Pillow. The backend requires the generation runner and asynchronous
+serving; pooling/scoring and the synchronous `LLM` API are not supported. It is
+also unavailable with headless or render-only processes, Ray, and the Rust
+frontend.
+
+vLLM automatically reserves GPU memory for the decoder's two device arenas,
+plugin workspace, and CUDA context, reducing the memory available to the KV
+cache. With one API process the reservation is approximately 3.18 GiB; with
+four API processes it is approximately 9.74 GiB in total. These are reservation
+estimates, not measured peak allocations or host-memory limits. Increasing the
+API process count adds per-process workspace and context overhead even though
+the batch capacity per process decreases.
+
+Startup performs a JPEG decode warmup to check that decoding works; it does not
+verify that the hardware JPEG engine was selected. To make that engine available
+in a container, include `video` in `NVIDIA_DRIVER_CAPABILITIES` alongside
+`compute,utility`. Other configured nvImageCodec backends may still decode when
+the hardware route is unavailable.
+
+A systemic decoder failure is fail-closed and makes `/health` return HTTP 503
+even if the language-model engine remains alive. Restart the affected API
+process; the decoder does not attempt to recover a potentially corrupted CUDA
+context. An individual JPEG decode rejection does not make the service unhealthy.
 
 ### Video Inputs
 

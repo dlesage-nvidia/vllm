@@ -91,9 +91,10 @@ def test_exif_and_native_parser_failure_fail(monkeypatch):
         nvcodec.preflight_image_nvimagecodec(_jpeg())
 
 
-def test_exif_signature_outside_app1_is_allowed(monkeypatch):
+@pytest.mark.parametrize("progressive", [False, True])
+def test_exif_signature_outside_app1_is_allowed(monkeypatch, progressive):
     _install_codec(monkeypatch)
-    data = _jpeg()
+    data = _jpeg(progressive=progressive)
     comment = b"not metadata: Exif\x00\x00"
     data = (
         data[:2]
@@ -113,6 +114,39 @@ def test_incomplete_jpeg_fails_before_native_parser(monkeypatch):
         data = _jpeg(progressive=progressive)
         with pytest.raises(ValueError, match="structurally complete"):
             nvcodec.preflight_image_nvimagecodec(data[:-2])
+
+
+@pytest.mark.parametrize(
+    "scan_header",
+    [
+        "00 02",
+        "00 06 00 00 3f 00",
+        "00 08 03 01 00 00 3f 00",
+        "00 0a 01 01 00 00 00 00 3f 00",
+        "00 0e 04 01 00 02 11 03 11 04 11 00 3f 00",
+        "00 0c 03 01 00 01 11 03 11 00 3f 00",
+        "00 0c 03 01 00 02 11 04 11 00 3f 00",
+    ],
+)
+@pytest.mark.asyncio
+async def test_malformed_scan_header_is_rejected_before_native_parser(
+    monkeypatch, scan_header
+):
+    data = _jpeg()
+    malformed = (
+        data[: data.index(b"\xff\xda")]
+        + b"\xff\xda"
+        + bytes.fromhex(scan_header)
+        + b"\xff\xd9"
+    )
+    monkeypatch.setattr(
+        nvcodec, "_load_nvimgcodec", lambda: pytest.fail("native parser reached")
+    )
+    connector = MediaConnector(media_io_kwargs={"image": {"backend": "nvimagecodec"}})
+    url = "data:image/jpeg;base64," + pybase64.b64encode(malformed).decode()
+
+    with pytest.raises(ValueError, match="structurally complete"):
+        await connector.fetch_image_async(url)
 
 
 @pytest.mark.parametrize(

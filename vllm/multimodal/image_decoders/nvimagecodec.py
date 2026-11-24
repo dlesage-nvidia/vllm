@@ -219,13 +219,13 @@ class _NvImageCodecDecoder:
         ]
         self._available = deque(self._arenas)
         try:
-            self._prime_jpeg_hardware_route(nvimgcodec, batch_cap)
+            self._warmup_jpeg_decode(nvimgcodec, batch_cap)
         except BaseException:
             with contextlib.suppress(BaseException):
                 self.close()
             raise
 
-    def _prime_jpeg_hardware_route(self, nvimgcodec: Any, batch_cap: int) -> None:
+    def _warmup_jpeg_decode(self, nvimgcodec: Any, batch_cap: int) -> None:
         buffer = BytesIO()
         with Image.new("RGB", (64, 64), (73, 131, 197)) as image:
             image.save(buffer, "JPEG", quality=90, subsampling=2)
@@ -238,10 +238,10 @@ class _NvImageCodecDecoder:
             )
         self._decode_stream.synchronize()
         if len(outputs) != batch_cap:
-            raise RuntimeError("nvImageCodec returned the wrong JPEG primer width")
+            raise RuntimeError("nvImageCodec returned the wrong JPEG warmup batch size")
         for output in outputs:
             if output is None:
-                raise RuntimeError("nvImageCodec failed the JPEG hardware-route primer")
+                raise RuntimeError("nvImageCodec failed the JPEG decode warmup")
             self._validate_device_output(output, (3, 64, 64))
 
     def submit(
@@ -385,6 +385,10 @@ class _NvImageCodecService:
 
     def wait_until_ready(self) -> None:
         self._ready.result()
+
+    def is_healthy(self) -> bool:
+        with self._condition:
+            return self._ready.done() and self._failure is None and not self._closed
 
     def submit(self, item: NvImageCodecInput) -> Future[NvImageCodecResult]:
         future: Future[NvImageCodecResult] = Future()
@@ -569,6 +573,7 @@ def _inspect_jpeg(data: bytes) -> tuple[bool, bool]:
     saw_sof = False
     saw_scan = False
     has_exif = False
+    frame_components: set[int] = set()
     while position < len(data):
         from_scan = in_scan
         if from_scan:
@@ -605,11 +610,28 @@ def _inspect_jpeg(data: bytes) -> tuple[bool, bool]:
         if marker == 0xE1 and data[position + 2 : position + 8] == _JPEG_EXIF_SIGNATURE:
             has_exif = True
         if marker in _JPEG_SOF_MARKERS:
-            if saw_sof:
+            if saw_sof or segment_length < 8:
+                return False, has_exif
+            num_components = data[position + 7]
+            if num_components == 0 or segment_length != 8 + 3 * num_components:
+                return False, has_exif
+            frame_components = set(data[position + 8 : position + segment_length : 3])
+            if len(frame_components) != num_components:
                 return False, has_exif
             saw_sof = True
         if marker == 0xDA:
-            if not saw_sof:
+            if not saw_sof or segment_length < 6:
+                return False, has_exif
+            num_components = data[position + 2]
+            if not 1 <= num_components <= 4 or segment_length != 6 + 2 * num_components:
+                return False, has_exif
+            scan_components = set(
+                data[position + 3 : position + 3 + 2 * num_components : 2]
+            )
+            if (
+                len(scan_components) != num_components
+                or not scan_components <= frame_components
+            ):
                 return False, has_exif
             saw_scan = True
             in_scan = True

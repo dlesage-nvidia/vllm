@@ -63,6 +63,12 @@ def _get_nvimagecodec_decode_service():
     return state.service
 
 
+def is_nvimagecodec_decode_service_healthy() -> bool:
+    """Check an initialized decoder without starting one for Pillow servers."""
+    state = _nvimagecodec_state
+    return state is None or state.service.is_healthy()
+
+
 def initialize_nvimagecodec_decode_service(
     api_process_count: int = 1,
     device_index: int = 0,

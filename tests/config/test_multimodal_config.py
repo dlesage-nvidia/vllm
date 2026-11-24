@@ -10,6 +10,7 @@ from transformers import PreTrainedConfig
 
 import vllm.envs as envs
 from tests.models.utils import build_model_context
+from vllm.config.device import DeviceConfig
 from vllm.config.ec_transfer import ECRole, ECTransferConfig
 from vllm.config.kv_transfer import KVTransferConfig
 from vllm.config.model import ModelConfig
@@ -811,6 +812,7 @@ def test_nvimagecodec_requires_accounted_python_frontend(
     monkeypatch, is_cuda, model_type, use_ray, ray_dp, rust_frontend, error
 ):
     model_config = MagicMock()
+    model_config.runner_type = "generate"
     model_config.hf_config.model_type = model_type
     model_config.multimodal_config = _nvimagecodec_config()
     vllm_config = MagicMock(spec=VllmConfig)
@@ -826,6 +828,7 @@ def test_nvimagecodec_requires_accounted_python_frontend(
 
 def test_nvimagecodec_requires_one_image_and_channels_first(monkeypatch):
     model_config = MagicMock()
+    model_config.runner_type = "generate"
     model_config.hf_config.model_type = "qwen3_vl"
     model_config.multimodal_config = _nvimagecodec_config(image_count=2)
     vllm_config = MagicMock(spec=VllmConfig)
@@ -839,3 +842,25 @@ def test_nvimagecodec_requires_one_image_and_channels_first(monkeypatch):
         mm_config.merge_mm_processor_kwargs(
             {"images_kwargs": {"input_data_format": "channels_last"}}
         )
+
+
+@pytest.mark.parametrize("runner", ["pooling", "auto"])
+def test_nvimagecodec_rejects_resolved_pooling_runner(runner):
+    with patch(
+        "vllm.multimodal.image_decoders.nvimagecodec.ensure_nvimagecodec_available"
+    ):
+        model_config = ModelConfig(
+            "Qwen/Qwen3-VL-4B-Instruct",
+            runner=runner,
+            convert="embed",
+            seed=0,
+            limit_mm_per_prompt={"image": 1, "video": 0},
+            media_io_kwargs={"image": {"backend": "nvimagecodec"}},
+        )
+    config = VllmConfig(
+        model_config=model_config,
+        device_config=DeviceConfig(device="cpu"),
+    )
+
+    with pytest.raises(ValueError, match="requires the generation runner"):
+        config._validate_nvimagecodec_frontend()

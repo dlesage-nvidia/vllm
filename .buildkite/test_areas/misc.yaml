@@ -794,6 +794,7 @@ steps:
   - vllm/entrypoints/openai/completion/protocol.py
   - vllm/entrypoints/openai/responses/protocol.py
   - vllm/entrypoints/generate/base/protocol.py
+  - vllm/entrypoints/serve/instrumentator/health.py
   - vllm/env_override.py
   - vllm/envs.py
   - vllm/exceptions.py

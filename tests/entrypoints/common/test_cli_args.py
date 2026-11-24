@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 import vllm.entrypoints.common.cli_args as cli_args_module
-from tests.utils import VLLM_PATH
+from tests.utils import VLLM_PATH, RemoteOpenAIServer
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.entrypoints.common.cli_args import (
     make_arg_parser,
@@ -256,6 +256,27 @@ def test_nvimagecodec_requires_gpu_api_process(serve_parser):
         setattr(args, flag, value)
         with pytest.raises(ValueError, match="requires a GPU-capable API process"):
             validate_parsed_serve_args(args)
+
+
+def test_nvimagecodec_pooling_server_rejected_before_model_loading(tmp_path, capfd):
+    with pytest.raises(RuntimeError):
+        RemoteOpenAIServer(
+            str(tmp_path),
+            [
+                "--runner",
+                "pooling",
+                "--convert",
+                "embed",
+                "--limit-mm-per-prompt",
+                '{"image": 1, "video": 0}',
+                "--media-io-kwargs",
+                '{"image": {"backend": "nvimagecodec"}}',
+            ],
+            env_dict={"CUDA_VISIBLE_DEVICES": ""},
+            max_wait_seconds=30,
+        )
+
+    assert "requires the generation runner" in capfd.readouterr().err
 
 
 def test_enable_auto_choice_fails_without_tool_call_parser(serve_parser):

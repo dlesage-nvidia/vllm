@@ -546,6 +546,10 @@ def validate_parsed_serve_args(args: argparse.Namespace):
         return
 
     image_io_kwargs = (getattr(args, "media_io_kwargs", None) or {}).get("image", {})
+    if image_io_kwargs.get("backend") == "nvimagecodec" and args.runner == "pooling":
+        raise ValueError(
+            "The nvimagecodec image backend requires the generation runner."
+        )
     if image_io_kwargs.get("backend") == "nvimagecodec" and (
         getattr(args, "headless", False)
         or getattr(args, "launch_component", None) == "render"

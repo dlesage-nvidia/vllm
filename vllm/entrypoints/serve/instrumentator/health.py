@@ -7,6 +7,7 @@ from fastapi.responses import Response
 
 from vllm.engine.protocol import EngineClient
 from vllm.logger import init_logger
+from vllm.multimodal.media.image import is_nvimagecodec_decode_service_healthy
 from vllm.v1.engine.exceptions import EngineDeadError
 
 logger = init_logger(__name__)
@@ -22,6 +23,8 @@ def engine_client(request: Request) -> EngineClient:
 @router.get("/health", response_class=Response)
 async def health(raw_request: Request) -> Response:
     """Health check."""
+    if not is_nvimagecodec_decode_service_healthy():
+        return Response(status_code=503)
     client = engine_client(raw_request)
     if client is None:
         # Render-only servers have no engine; they are always healthy.
