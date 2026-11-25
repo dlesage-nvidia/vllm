@@ -8,6 +8,7 @@ import multiprocessing as mp
 import os
 import queue
 import shutil
+import signal
 import socket
 import tempfile
 import threading
@@ -977,6 +978,15 @@ def _owner(endpoint, control, slots_per_client, device_index, api_process_count)
             cleanup.callback(stop_accepting)
 
 
+def _owner_process(
+    endpoint, control, slots_per_client, device_index, api_process_count
+):
+    """Keep group-wide shutdown signals from bypassing parent-driven cleanup."""
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    _owner(endpoint, control, slots_per_client, device_index, api_process_count)
+
+
 class SharedNvImageCodecManager:
     def __init__(self, api_process_count: int, batch_cap: int, device_index: int = 0):
         if (
@@ -994,7 +1004,7 @@ class SharedNvImageCodecManager:
         )
         slots = max(1, _DEVICE_ARENAS * batch_cap // api_process_count)
         self.process = context.Process(
-            target=_owner,
+            target=_owner_process,
             name="NvImageCodecOwner",
             args=(endpoint, child, slots, device_index, api_process_count),
         )
@@ -1029,7 +1039,7 @@ class SharedNvImageCodecManager:
                     self.control.send("stop")
                 self.process.join(_CLOSE_TIMEOUT if timeout is None else timeout)
             if self.process.is_alive():
-                self.process.terminate()
+                self.process.kill()
                 self.process.join(5)
             exitcode = self.process.exitcode
         else:

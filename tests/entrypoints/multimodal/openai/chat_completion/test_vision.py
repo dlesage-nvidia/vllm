@@ -2,6 +2,8 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import json
+import os
+import signal
 
 import httpx
 import openai
@@ -26,8 +28,18 @@ MAXIMUM_IMAGES = 2
 @pytest.mark.skipif(
     not current_platform.is_cuda(), reason="nvImageCodec requires NVIDIA CUDA"
 )
-@pytest.mark.parametrize("api_count,batch_cap", [(1, 20), (4, 2)])
-def test_nvimagecodec_startup_batch_cap_rejects_request_override(api_count, batch_cap):
+@pytest.mark.parametrize(
+    "api_count,batch_cap,shutdown_signal",
+    [
+        pytest.param(1, 20, None, id="single-api"),
+        pytest.param(4, 2, None, id="four-api"),
+        pytest.param(4, 2, signal.SIGTERM, id="group-sigterm"),
+        pytest.param(1, 20, signal.SIGINT, id="group-sigint"),
+    ],
+)
+def test_nvimagecodec_startup_batch_cap_rejects_request_override(
+    api_count, batch_cap, shutdown_signal
+):
     """A trusted request cannot enlarge the decoder or its startup reservation."""
     model = "Qwen/Qwen3-VL-2B-Instruct-FP8"
     args = [
@@ -105,6 +117,9 @@ def test_nvimagecodec_startup_batch_cap_rejects_request_override(api_count, batc
                 **request,
                 extra_body={"media_io_kwargs": {"image": {"ownership": "local"}}},
             )
+        if shutdown_signal is not None:
+            os.killpg(server.proc.pid, shutdown_signal)
+            assert server.proc.wait(timeout=60) == 0
     assert server.proc.returncode == 0
 
 

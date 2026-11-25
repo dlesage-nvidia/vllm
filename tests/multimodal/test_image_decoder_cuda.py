@@ -2,11 +2,14 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 
 import multiprocessing as mp
+import os
+import signal
 import socket
 from dataclasses import replace
 from io import BytesIO
 from multiprocessing.connection import Client as IpcClient
 from multiprocessing.connection import Connection
+from multiprocessing.shared_memory import SharedMemory
 
 import numpy as np
 import pytest
@@ -237,7 +240,7 @@ def test_shared_owner_failure_preserves_outputs_and_rejects_new_requests():
     item = preflight_image_nvimagecodec(_jpeg())
     outputs = [client.submit(item).result(timeout=30) for _ in range(2)]
     try:
-        manager.process.terminate()
+        manager.process.kill()
         manager.process.join(10)
         with client.condition:
             assert client.condition.wait_for(
@@ -255,6 +258,47 @@ def test_shared_owner_failure_preserves_outputs_and_rejects_new_requests():
             with pytest.raises(RuntimeError, match="exited with"):
                 manager.close()
     assert len(outputs) == 2
+
+
+@pytest.mark.parametrize("shutdown_signal", [signal.SIGTERM, signal.SIGINT])
+def test_shared_owner_signal_preserves_parent_driven_cleanup(shutdown_signal):
+    pytest.importorskip("nvidia.nvimgcodec")
+    manager = SharedNvImageCodecManager(2, 2)
+    client = SharedNvImageCodecClient(manager.endpoint)
+    output = client.submit(preflight_image_nvimagecodec(_jpeg())).result(timeout=30)
+    snapshot = output.clone()
+    region_name = client.mapping.memory.name
+    owner_pid = manager.process.pid
+    assert owner_pid is not None
+    try:
+        os.kill(owner_pid, shutdown_signal)
+        manager.close()
+        assert manager.process.exitcode == 0
+        assert torch.equal(output, snapshot)
+        with pytest.raises(FileNotFoundError):
+            SharedMemory(name=region_name)
+    finally:
+        client.close()
+        manager.close()
+
+
+def test_shared_owner_shutdown_kills_unresponsive_process():
+    pytest.importorskip("nvidia.nvimgcodec")
+    manager = SharedNvImageCodecManager(2, 2)
+    owner_pid = manager.process.pid
+    assert owner_pid is not None
+    try:
+        os.kill(owner_pid, signal.SIGSTOP)
+        _, status = os.waitpid(owner_pid, os.WUNTRACED)
+        assert os.WIFSTOPPED(status)
+        with pytest.raises(RuntimeError, match="exited with -9"):
+            manager.close(timeout=0)
+        assert manager.process.exitcode == -signal.SIGKILL
+    finally:
+        if manager.process.is_alive():
+            manager.process.kill()
+            manager.process.join(10)
+        manager.close()
 
 
 def test_shared_owner_cleanup_outlives_zero_request_shutdown_timeout():

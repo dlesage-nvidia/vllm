@@ -864,8 +864,11 @@ aliases, synchronizes queued frees, and unregisters host storage before teardown
 Owner failure rejects pending image requests and fails API health/startup;
 nonzero owner exits and cleanup failures are surfaced rather than ignored.
 The shared owner has a separate bounded 30-second resource-cleanup window,
-even when the API request-shutdown timeout is zero; a stuck owner is terminated
-and reported as a cleanup failure.
+even when the API request-shutdown timeout is zero. It ignores group-wide
+`SIGTERM` and `SIGINT`, leaving the serving parent to stop APIs and request
+ordered decoder cleanup over its control pipe. A stuck owner is forcibly killed
+after its cleanup window and reported as a cleanup failure; unexpected owner
+exits are not treated as successful shutdown.
 The effective cap is fixed at startup and cannot be changed by per-request
 media arguments. `ownership` is rejected at startup and per request. The owner
 caps active registrations at the configured API count, bounds authentication
