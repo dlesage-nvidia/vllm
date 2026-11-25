@@ -1550,7 +1550,10 @@ def get_nvimagecodec_requirements() -> list[str]:
     cuda_major = (torch.version.cuda or "").partition(".")[0]
     if not (_is_cuda() and cuda_major in ("12", "13")):
         return []
-    return [f"nvidia-nvimgcodec-cu{cuda_major}[nvjpeg]>=0.9.0.20"]
+    return [
+        f"nvidia-nvimgcodec-cu{cuda_major}[nvjpeg]>=0.9.0.20",
+        f"cuda-bindings>={cuda_major},<{int(cuda_major) + 1}",
+    ]
 
 
 ext_modules = []

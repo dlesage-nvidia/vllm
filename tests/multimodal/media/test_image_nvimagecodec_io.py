@@ -11,9 +11,11 @@ import torch
 
 import vllm.multimodal.media.connector as connector_module
 import vllm.multimodal.media.image as image_module
+from vllm.config.multimodal import MultiModalConfig
 from vllm.multimodal.image_decoders.nvimagecodec import (
     NvImageCodecInput,
     NvImageCodecResult,
+    SharedDecoderEndpoint,
 )
 from vllm.multimodal.media import (
     ImageMediaIO,
@@ -23,6 +25,55 @@ from vllm.multimodal.media import (
 )
 
 pytestmark = pytest.mark.cpu_test
+
+
+@pytest.mark.parametrize("ownership", [None, "local", "shared"])
+def test_image_decoder_ownership_is_not_a_configuration_option(ownership):
+    with pytest.raises(ValueError, match="ownership is not configurable"):
+        MultiModalConfig(
+            media_io_kwargs={
+                "image": {"backend": "nvimagecodec", "ownership": ownership}
+            }
+        )
+    with pytest.raises(ValueError, match="ownership is not configurable"):
+        ImageMediaIO(backend="nvimagecodec", ownership=ownership)
+    with pytest.raises(ValueError, match="ownership is not configurable"):
+        ImageMediaIO.merge_kwargs({"backend": "nvimagecodec"}, {"ownership": ownership})
+
+
+def test_workspace_reservation_is_fixed_at_startup():
+    configured = {"backend": "nvimagecodec", "workspace_reservation_mib": 640}
+    with pytest.raises(ValueError, match="workspace reservation is fixed"):
+        ImageMediaIO.merge_kwargs(configured, {"workspace_reservation_mib": 1280})
+    assert (
+        ImageMediaIO.merge_kwargs(configured, {"workspace_reservation_mib": 640})
+        == configured
+    )
+
+
+@pytest.mark.parametrize(
+    "configured_value,requested_value", [(None, 1664), (1664, None)]
+)
+def test_workspace_reservation_accepts_equivalent_default(
+    configured_value, requested_value
+):
+    configured = {
+        "backend": "nvimagecodec",
+        "workspace_reservation_mib": configured_value,
+    }
+    merged = ImageMediaIO.merge_kwargs(
+        configured, {"workspace_reservation_mib": requested_value}
+    )
+    assert merged["workspace_reservation_mib"] == requested_value
+
+
+def test_batch_cap_is_fixed_before_service_initialization():
+    configured = {"backend": "nvimagecodec", "batch_cap": 1}
+    assert ImageMediaIO.merge_kwargs(configured, {"batch_cap": 1}) == configured
+    with pytest.raises(ValueError, match="batch cap is fixed"):
+        ImageMediaIO.merge_kwargs(configured, {"batch_cap": 2})
+    with pytest.raises(ValueError, match="batch cap is fixed"):
+        ImageMediaIO.merge_kwargs(configured, {"batch_cap": None})
 
 
 def _install_native(monkeypatch, result):
@@ -145,15 +196,17 @@ async def test_pillow_backend_stays_on_pillow(monkeypatch) -> None:
     assert await ImageMediaIO().load_bytes_async(data) is fallback.return_value
 
 
-def test_process_local_service_is_reference_counted(monkeypatch) -> None:
+def test_shared_owner_client_is_reference_counted(monkeypatch) -> None:
     monkeypatch.setattr(image_module, "_nvimagecodec_state", None)
     service = Mock()
     create = Mock(return_value=service)
-    monkeypatch.setattr(image_module, "create_nvimagecodec_decode_service", create)
+    endpoint = SharedDecoderEndpoint("cpu-test-owner", b"test", 20, 0)
+    image_module.set_shared_nvimagecodec_endpoint(endpoint)
+    monkeypatch.setattr(image_module, "SharedNvImageCodecClient", create)
     release_first = image_module.initialize_nvimagecodec_decode_service(4, 2)
     release_second = image_module.initialize_nvimagecodec_decode_service(4, 2)
 
-    create.assert_called_once_with(4, device_index=2)
+    create.assert_called_once_with(endpoint)
     service.wait_until_ready.assert_called_once_with()
     assert image_module._get_nvimagecodec_decode_service() is service
     with pytest.raises(RuntimeError, match="different process topology"):
@@ -164,6 +217,7 @@ def test_process_local_service_is_reference_counted(monkeypatch) -> None:
     service.close.assert_not_called()
     release_second()
     service.close.assert_called_once_with()
+    image_module.set_shared_nvimagecodec_endpoint(None)
 
 
 def test_assigned_gpu_is_mapped_to_visible_decoder_ordinal(monkeypatch) -> None:

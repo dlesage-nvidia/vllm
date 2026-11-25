@@ -555,8 +555,18 @@ class MultiModalConfig:
         if self.use_gpu_image_backend():
             from vllm.multimodal.image_decoders.nvimagecodec import (
                 ensure_nvimagecodec_available,
+                get_nvimagecodec_batch_cap,
+                get_nvimagecodec_workspace_bytes,
             )
 
+            if "ownership" in self.media_io_kwargs.get("image", {}):
+                raise ValueError("Image decoder ownership is not configurable")
+            get_nvimagecodec_batch_cap(
+                batch_cap=self.media_io_kwargs.get("image", {}).get("batch_cap")
+            )
+            get_nvimagecodec_workspace_bytes(
+                self.media_io_kwargs.get("image", {}).get("workspace_reservation_mib")
+            )
             ensure_nvimagecodec_available()
         return self
 

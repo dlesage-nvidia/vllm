@@ -22,7 +22,9 @@ from vllm.multimodal.image_decoders.nvimagecodec import (
     NVIMAGECODEC_IMAGE_BACKEND,
     PILLOW_IMAGE_BACKEND,
     NvImageCodecInput,
-    create_nvimagecodec_decode_service,
+    SharedNvImageCodecClient,
+    SharedNvImageCodecManager,
+    get_nvimagecodec_batch_cap,
     preflight_image_nvimagecodec,
     validate_image_backend,
 )
@@ -45,12 +47,22 @@ LoadedImage: TypeAlias = MediaWithBytes[DecodedImage]
 class _NvImageCodecState:
     api_process_count: int
     device_index: int
+    batch_cap: int
     service: Any
+    manager: Any = None
     users: int = 1
 
 
 _nvimagecodec_state: _NvImageCodecState | None = None
 _nvimagecodec_service_lock = threading.Lock()
+_shared_nvimagecodec_endpoint: Any = None
+
+
+def set_shared_nvimagecodec_endpoint(endpoint: Any) -> None:
+    global _shared_nvimagecodec_endpoint
+    if _nvimagecodec_state is not None:
+        raise RuntimeError("Image decoder ownership is fixed at startup")
+    _shared_nvimagecodec_endpoint = endpoint
 
 
 def _get_nvimagecodec_decode_service():
@@ -72,9 +84,12 @@ def is_nvimagecodec_decode_service_healthy() -> bool:
 def initialize_nvimagecodec_decode_service(
     api_process_count: int = 1,
     device_index: int = 0,
+    *,
+    batch_cap: int | None = None,
 ) -> Callable[[], None]:
-    """Acquire the process-local decoder and return an idempotent release."""
+    """Acquire a client of the supervised GPU owner and its release handle."""
     global _nvimagecodec_state
+    effective_cap = get_nvimagecodec_batch_cap(batch_cap=batch_cap)
 
     with _nvimagecodec_service_lock:
         if _nvimagecodec_state is not None:
@@ -86,19 +101,35 @@ def initialize_nvimagecodec_decode_service(
                     "The nvImageCodec image backend was already initialized "
                     "with different process topology."
                 )
+            if _nvimagecodec_state.batch_cap != effective_cap:
+                raise RuntimeError(
+                    "The nvImageCodec image backend was already initialized "
+                    "with a different batch cap."
+                )
             _nvimagecodec_state.users += 1
         else:
-            service = create_nvimagecodec_decode_service(
-                api_process_count, device_index=device_index
-            )
+            manager = service = None
+            endpoint = _shared_nvimagecodec_endpoint
+            if endpoint is None:
+                if api_process_count != 1:
+                    raise RuntimeError("Shared nvImageCodec owner was not initialized")
+                manager = SharedNvImageCodecManager(1, effective_cap, device_index)
+                endpoint = manager.endpoint
             try:
+                if endpoint.batch_cap != effective_cap:
+                    raise RuntimeError("Shared nvImageCodec owner batch cap differs")
+                service = SharedNvImageCodecClient(endpoint)
                 service.wait_until_ready()
             except BaseException:
-                with contextlib.suppress(BaseException):
-                    service.close()
+                if service is not None:
+                    with contextlib.suppress(BaseException):
+                        service.close()
+                if manager is not None:
+                    with contextlib.suppress(BaseException):
+                        manager.close()
                 raise
             _nvimagecodec_state = _NvImageCodecState(
-                api_process_count, device_index, service
+                api_process_count, device_index, effective_cap, service, manager
             )
         acquired_state = _nvimagecodec_state
 
@@ -118,7 +149,11 @@ def initialize_nvimagecodec_decode_service(
             state.users -= 1
             if state.users == 0:
                 _nvimagecodec_state = None
-                state.service.close()
+                try:
+                    state.service.close()
+                finally:
+                    if state.manager is not None:
+                        state.manager.close()
 
     return release
 
@@ -135,6 +170,7 @@ def initialize_image_decode_backend(
             device_index=_nvimagecodec_device_index(
                 parallel_config.assigned_physical_gpu_ids
             ),
+            batch_cap=mm_config.media_io_kwargs.get("image", {}).get("batch_cap"),
         )
     return None
 
@@ -162,12 +198,16 @@ def _nvimagecodec_device_index(assigned_physical_gpu_ids: list[int] | None) -> i
 
 
 def _reset_nvimagecodec_decode_service_after_fork() -> None:
-    global _nvimagecodec_state, _nvimagecodec_service_lock
+    global \
+        _nvimagecodec_state, \
+        _nvimagecodec_service_lock, \
+        _shared_nvimagecodec_endpoint
 
     # Only the thread that called fork survives in the child. Never inherit a
     # service owner thread or a lock that another parent thread may have held.
     _nvimagecodec_state = None
     _nvimagecodec_service_lock = threading.Lock()
+    _shared_nvimagecodec_endpoint = None
 
 
 os.register_at_fork(after_in_child=_reset_nvimagecodec_decode_service_after_fork)
@@ -185,14 +225,50 @@ class ImageMediaIO(MediaIO[LoadedImage]):
         default_kwargs: dict[str, Any] | None,
         runtime_kwargs: dict[str, Any] | None,
     ) -> dict[str, Any]:
+        configured = (default_kwargs or {}).get("backend", PILLOW_IMAGE_BACKEND)
+        if (
+            configured == NVIMAGECODEC_IMAGE_BACKEND
+            and runtime_kwargs
+            and "ownership" in runtime_kwargs
+        ):
+            raise ValueError("Image decoder ownership is not configurable.")
         if runtime_kwargs and "backend" in runtime_kwargs:
             requested = runtime_kwargs["backend"]
-            configured = (default_kwargs or {}).get("backend", PILLOW_IMAGE_BACKEND)
             if requested != configured:
                 raise ValueError(
                     f"Image backend is fixed at startup as {configured!r}, "
                     f"not {requested!r}."
                 )
+        if (
+            configured == NVIMAGECODEC_IMAGE_BACKEND
+            and runtime_kwargs
+            and "batch_cap" in runtime_kwargs
+        ):
+            requested_cap = get_nvimagecodec_batch_cap(
+                batch_cap=runtime_kwargs["batch_cap"],
+            )
+            configured_cap = get_nvimagecodec_batch_cap(
+                batch_cap=(default_kwargs or {}).get("batch_cap")
+            )
+            if requested_cap != configured_cap:
+                raise ValueError("Image batch cap is fixed at startup.")
+        if (
+            configured == NVIMAGECODEC_IMAGE_BACKEND
+            and runtime_kwargs
+            and "workspace_reservation_mib" in runtime_kwargs
+        ):
+            from vllm.multimodal.image_decoders.nvimagecodec import (
+                get_nvimagecodec_workspace_bytes,
+            )
+
+            configured_bytes = get_nvimagecodec_workspace_bytes(
+                (default_kwargs or {}).get("workspace_reservation_mib")
+            )
+            requested_bytes = get_nvimagecodec_workspace_bytes(
+                runtime_kwargs["workspace_reservation_mib"]
+            )
+            if requested_bytes != configured_bytes:
+                raise ValueError("Image workspace reservation is fixed at startup.")
         return super().merge_kwargs(default_kwargs, runtime_kwargs)
 
     def __init__(
@@ -210,6 +286,8 @@ class ImageMediaIO(MediaIO[LoadedImage]):
         self.image_mode = image_mode
         self.decoded_budget = decoded_budget
         self.backend = validate_image_backend(backend)
+        if self.backend == NVIMAGECODEC_IMAGE_BACKEND and "ownership" in kwargs:
+            raise ValueError("Image decoder ownership is not configurable.")
         self.requires_async_loading = self.backend == NVIMAGECODEC_IMAGE_BACKEND
         # `kwargs` contains custom arguments from
         # --media-io-kwargs for this modality, merged with

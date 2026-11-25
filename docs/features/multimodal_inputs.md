@@ -794,7 +794,8 @@ Full example: [examples/generate/multimodal/openai_chat_completion_client_for_mu
 #### GPU Image Decoding with nvImageCodec
 
 The optional `nvimagecodec` backend uses GPU decoding for simple RGB JPEG
-inputs in Qwen3-VL serving. Install the CUDA-matched extra and select it at startup:
+inputs in Qwen3-VL and Qwen3.5 dense or MoE model serving. Install the CUDA-matched
+extra and select it at startup:
 
 ```bash
 pip install "vllm[nvimagecodec]"
@@ -806,8 +807,9 @@ vllm serve Qwen/Qwen3-VL-2B-Instruct \
 The official `vllm-openai` CUDA serving image includes the dependency. The
 backend accepts one structurally complete, EXIF-free, 8-bit RGB JPEG wider than
 4 pixels and containing at most 8,294,400 pixels per prompt. It returns a
-channels-first tensor to Qwen3-VL. Unsupported images fail instead of falling
-back to Pillow. The backend requires the generation runner and asynchronous
+channels-first tensor to the shared Qwen3-VL/Qwen3.5 image processor. Unsupported
+images fail instead of falling back to Pillow. The backend requires the
+generation runner and asynchronous
 serving; pooling/scoring and the synchronous `LLM` API are not supported. It is
 also unavailable with headless or render-only processes, Ray, and the Rust
 frontend.
@@ -815,21 +817,152 @@ frontend.
 vLLM automatically reserves GPU memory for the decoder's two device arenas,
 plugin workspace, and CUDA context, reducing the memory available to the KV
 cache. With one API process the reservation is approximately 3.18 GiB; with
-four API processes it is approximately 9.74 GiB in total. These are reservation
-estimates, not measured peak allocations or host-memory limits. Increasing the
-API process count adds per-process workspace and context overhead even though
-the batch capacity per process decreases.
+four API processes it remains approximately 3.18 GiB in total. These are
+reservation estimates, not measured peak allocations or host-memory limits.
 
-Startup performs a JPEG decode warmup to check that decoding works; it does not
-verify that the hardware JPEG engine was selected. To make that engine available
+Selecting `nvimagecodec` always starts one supervised GPU decoder owner for
+colocated API processes on Linux, including single-API serving. There is no
+ownership option or per-API decoder alternative. The owner requires
+`data_parallel_size=1`; DP placement/accounting has not been qualified, so DP
+configurations fail explicitly rather than selecting the old architecture.
+Pillow remains available for DP serving. Earlier per-API decoder measurements
+are comparison baselines, not the current serving design.
+
+```bash
+vllm serve Qwen/Qwen3-VL-2B-Instruct --api-server-count 4 \
+  --limit-mm-per-prompt '{"image": 1, "video": 0}' \
+  --media-io-kwargs '{"image": {"backend": "nvimagecodec"}}'
+```
+
+The shared owner decodes into its two reusable GPU arenas, then transfers each
+image once directly into its final CUDA-registered POSIX shared-memory slot.
+API processes receive completion metadata and view the same RGB storage: there
+is no temporary host image or subsequent host-to-host RGB copy. Decoded RGB
+still undergoes one GPU-to-host transfer; this is not GPU-resident CUDA IPC.
+Registration pins host pages in the owner process, not additional decoder VRAM,
+and does not promise that an API process's distinct mapping reports
+`Tensor.is_pinned()` without its own CUDA registration.
+
+The owner defaults to a global batch cap of 20, with one workspace and
+context allowance (approximately 3.18 GiB total at the default cap), independent
+of API count. Its per-API output region contains
+`max(1, 2 * batch_cap // api_process_count)` maximum-size slots. Thus four APIs
+at the default cap have ten slots each, totaling approximately 949 MiB of pinned
+host capacity. Smaller caps may have at least one host slot per API; host RAM
+is not included in the KV-cache deduction. GPU video decoding, when enabled,
+still owns its separate per-API resources and contexts.
+
+Slots are reusable only after the last tensor-storage view releases them.
+Each API admits at most its region's slot count of pending or retained images;
+excess submissions return a retryable HTTP 503 instead of growing an encoded
+request queue. Cancellation holds its admission credit until decode completion
+and slot release. Recoverable JPEG errors release their credit only after the
+API acknowledges the error. Disconnected clients never have
+their old region reused by replacement clients. CPU views remain readable
+after their client closes. The owner drains copies, drops GPU image/DLPack
+aliases, synchronizes queued frees, and unregisters host storage before teardown.
+Owner failure rejects pending image requests and fails API health/startup;
+nonzero owner exits and cleanup failures are surfaced rather than ignored.
+The shared owner has a separate bounded 30-second resource-cleanup window,
+even when the API request-shutdown timeout is zero; a stuck owner is terminated
+and reported as a cleanup failure.
+The effective cap is fixed at startup and cannot be changed by per-request
+media arguments. `ownership` is rejected at startup and per request. The owner
+caps active registrations at the configured API count, bounds authentication
+time, and retires disconnected peers only after cleanup. The local Unix socket
+is authenticated and resides
+in a private directory; this is same-host serving, not a remote decode endpoint.
+
+The optional startup `batch_cap` limits the owner's JPEG decode batches,
+both device arenas, and the per-API admission/retained-output slots. It must
+be a positive integer no larger than 20, regardless of API count. Omitting it
+or using `null` preserves the global default of 20.
+
+```bash
+--media-io-kwargs '{"image": {"backend": "nvimagecodec", "batch_cap": 1}}'
+```
+
+The same effective cap determines the nominal two-arena reservation. Reducing
+it does not reduce workspace or context allowances, change the API process
+count, or impose a hard allocator limit. Per-request `batch_cap` overrides
+must resolve to the startup cap, including equivalent `null` and 20 settings
+before initialization. A smaller cap can reduce throughput.
+
+The default workspace allowance is 1664 MiB for the GPU owner, in addition to
+640 MiB for context/runtime overhead and the nominal two-arena output payload.
+These allowances are reserved once, regardless of API process count.
+Deployments with allocation-trace evidence for their exact GPU, codec runtime,
+input envelope, and process topology can override the workspace allowance:
+
+```bash
+--media-io-kwargs '{"image": {"backend": "nvimagecodec", "workspace_reservation_mib": 640}}'
+```
+
+The value must be a positive integer in MiB; omitting it or using `null` keeps
+the default. It is fixed at startup, like the image backend. This changes the
+KV-cache accounting allowance, **not** the decoder's allocation limit. A value
+that is too small can cause GPU out-of-memory failures. Include transient and
+cached GPU scratch, arena-pool backing beyond nominal payload, and a safety
+margin; do not include pinned host RAM or profiling-tool overhead. Do not deduct
+allocations already charged by engine memory profiling a second time without
+attributing which allocations overlap.
+
+A bounded A100 80 GB calibration measured approximately 430 MiB of peak GPU
+scratch per process and up to 35 MiB of arena-pool slack with high-entropy 4K
+baseline/progressive JPEGs, two arenas, and forced hybrid fallback. A 640 MiB
+workspace allowance retains approximately 175 MiB beyond those measurements;
+the unchanged context/runtime allowance is separate. With that explicit
+override, the total owner reservation is 2.177 GiB, independent of API count.
+These measurements justify an opt-in allowance for the measured
+stack, not a universal reduction of the default or a bound for other inputs,
+GPU/runtime versions, or allocator behavior.
+
+Startup logs JPEG warmup success, the effective batch cap, and configured
+HW/GPU/hybrid backends. HW JPEG availability remains unverified and actual
+backend selection is unobservable through the supported decode API. GPU/hybrid
+fallback is permitted; warmup success does not establish that either hardware
+or fallback was selected. No additional hardware-only decoder or private
+library probe is used. To make the hardware engine available
 in a container, include `video` in `NVIDIA_DRIVER_CAPABILITIES` alongside
 `compute,utility`. Other configured nvImageCodec backends may still decode when
 the hardware route is unavailable.
 
 A systemic decoder failure is fail-closed and makes `/health` return HTTP 503
-even if the language-model engine remains alive. Restart the affected API
-process; the decoder does not attempt to recover a potentially corrupted CUDA
+even if the language-model engine remains alive. Restart the serving group
+and its supervised owner; the decoder does not attempt to recover a corrupted CUDA
 context. An individual JPEG decode rejection does not make the service unhealthy.
+
+A bounded four-API comparison on H100 80 GB used Qwen3-VL-2B-Instruct-FP8
+with BF16 compute, 4K JPEG inputs capped at 589824 processor pixels, 16 output
+tokens, disabled caches, normal compilation/CUDA graphs, and CUDA MPS in both
+lanes. Each lane had the same net 4 GiB KV cache (37440 tokens), four renderer
+workers per API, and four codec threads per decoder. The historical per-API
+decoder baseline used its default cap of four per API; the standard single
+owner used the global default cap of 20.
+
+| Architecture | Request concurrency | TTFT p50 / p95 (ms) | Completed requests/s, median (range) |
+| --- | --- | --- | --- |
+| Historical per-API decoders | 1 | 78.29 / 91.80 | 8.37 (8.35–8.40) |
+| Standard single owner | 1 | 79.73 / 95.26 | 8.23 (8.23–8.26) |
+| Historical per-API decoders | 20 | 273.57 / 333.95 | 49.99 (49.27–53.65) |
+| Standard single owner | 20 | 278.06 / 333.06 | 50.65 (50.25–52.33) |
+
+All APIs were individually warmed before measurement. TTFT percentiles aggregate
+three repeats; each repeat measured 32 requests at concurrency one or 80 at
+concurrency 20. The single owner incurred a small concurrency-one latency cost;
+loaded throughput ranges overlap. This ordered, modest comparison does not
+establish performance equivalence or maximum throughput. Observed single-owner
+decode batches reached eight images, below the configured cap of 20; neither a
+binding-cap benefit nor hardware-engine saturation was established.
+
+Total GPU memory peaks sampled every 100 ms fell from 12.54 to 12.09 GiB at
+concurrency one and from 15.31 to 14.29 GiB at concurrency 20. These physical
+reductions (approximately 0.45 and 1.01 GiB) are distinct from the 6.56 GiB
+decrease in nominal frontend reservation: the latter increases potential
+KV-cache allowance, not measured physical savings. MPS limits per-process
+physical-memory attribution. These results compare nvImageCodec ownership
+architectures, not the default Pillow backend, and are specific to the measured
+GPU, runtime, and workload.
 
 ### Video Inputs
 

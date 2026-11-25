@@ -284,6 +284,36 @@ def test_reserve_mm_ipc_gpu_memory_scales_for_configured_decoder_dimensions(
     )
 
 
+@pytest.mark.cpu_test
+@pytest.mark.parametrize(
+    "api_process_count,workspace,reserved_bytes",
+    [(1, None, 2_465_685_504), (4, 640, 1_391_943_680)],
+)
+def test_nvimagecodec_batch_cap_reservation(
+    monkeypatch: pytest.MonkeyPatch,
+    api_process_count: int,
+    workspace: int | None,
+    reserved_bytes: int,
+):
+    monkeypatch.setattr(nvcodec, "ensure_nvimagecodec_available", lambda: None)
+    monkeypatch.setenv("VLLM_VIDEO_LOADER_BACKEND", "opencv")
+    mm_config = MultiModalConfig(
+        media_io_kwargs={
+            "image": {
+                "backend": "nvimagecodec",
+                "batch_cap": 1,
+                "workspace_reservation_mib": workspace,
+            }
+        }
+    )
+    assert (
+        reserve_mm_ipc_gpu_memory(
+            16 * GiB_bytes, mm_config, api_process_count=api_process_count
+        )
+        == 16 * GiB_bytes - reserved_bytes
+    )
+
+
 def test_nvimagecodec_memory_reservations(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(
         "vllm.multimodal.image_decoders.nvimagecodec.ensure_nvimagecodec_available",
@@ -292,8 +322,8 @@ def test_nvimagecodec_memory_reservations(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("VLLM_VIDEO_LOADER_BACKEND", "opencv")
     available_bytes = 16 * GiB_bytes
     api_process_count = 2
-    reserved = api_process_count * (
-        nvcodec.get_nvimagecodec_non_context_bytes(api_process_count)
+    reserved = (
+        nvcodec.get_nvimagecodec_non_context_bytes()
         + nvcodec.NVIMAGECODEC_CUDA_CONTEXT_BYTES
     )
     mm_config = MultiModalConfig(media_io_kwargs={"image": {"backend": "nvimagecodec"}})
@@ -302,3 +332,51 @@ def test_nvimagecodec_memory_reservations(monkeypatch: pytest.MonkeyPatch):
         mm_config,
         api_process_count=api_process_count,
     ) == (available_bytes - reserved)
+
+
+@pytest.mark.cpu_test
+@pytest.mark.parametrize("with_video", [False, True])
+def test_shared_image_reservation_counts_one_owner(monkeypatch, with_video):
+    monkeypatch.setattr(nvcodec, "ensure_nvimagecodec_available", lambda: None)
+    monkeypatch.setenv("VLLM_VIDEO_LOADER_BACKEND", "opencv")
+    media_kwargs = {"image": {"backend": "nvimagecodec"}}
+    expected = (
+        nvcodec.get_nvimagecodec_non_context_bytes()
+        + nvcodec.NVIMAGECODEC_CUDA_CONTEXT_BYTES
+    )
+    if with_video:
+        media_kwargs["video"] = {"backend": "deepstream"}
+        expected += 4 * (
+            PYNVVIDEOCODEC_DECODER_GPU_MEMORY_BYTES + PYNVVIDEOCODEC_CUDA_CONTEXT_BYTES
+        )
+    config = MultiModalConfig(media_io_kwargs=media_kwargs)
+    assert (
+        reserve_mm_ipc_gpu_memory(16 * GiB_bytes, config, api_process_count=4)
+        == 16 * GiB_bytes - expected
+    )
+
+
+@pytest.mark.cpu_test
+@pytest.mark.parametrize(
+    ("api_process_count", "reserved_bytes"),
+    [(1, 2_337_505_280), (4, 2_337_505_280)],
+)
+def test_nvimagecodec_calibrated_workspace_reservation(
+    monkeypatch: pytest.MonkeyPatch, api_process_count: int, reserved_bytes: int
+):
+    monkeypatch.setattr(
+        "vllm.multimodal.image_decoders.nvimagecodec.ensure_nvimagecodec_available",
+        lambda: None,
+    )
+    monkeypatch.setenv("VLLM_VIDEO_LOADER_BACKEND", "opencv")
+    mm_config = MultiModalConfig(
+        media_io_kwargs={
+            "image": {"backend": "nvimagecodec", "workspace_reservation_mib": 640}
+        }
+    )
+    assert (
+        reserve_mm_ipc_gpu_memory(
+            16 * GiB_bytes, mm_config, api_process_count=api_process_count
+        )
+        == 16 * GiB_bytes - reserved_bytes
+    )

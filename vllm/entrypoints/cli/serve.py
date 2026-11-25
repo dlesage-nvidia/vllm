@@ -370,6 +370,8 @@ def run_multi_api_server(args: argparse.Namespace):
             )
         else:
             # Start API server(s).
+            from vllm.multimodal.media.image import _nvimagecodec_device_index
+
             api_server_manager = APIServerProcessManager(
                 listen_address=listen_address,
                 sock=sock,
@@ -379,6 +381,9 @@ def run_multi_api_server(args: argparse.Namespace):
                 output_listeners=zmq_listeners.outputs,
                 stats_update_address=stats_update_address,
                 tensor_queue=engine_launch.tensor_queue,
+                image_decoder_device_index=_nvimagecodec_device_index(
+                    parallel_config.assigned_physical_gpu_ids
+                ),
             )
 
         # Set frontend processes to watch during engine startup.

@@ -20,6 +20,29 @@ from packaging.version import Version
 ROOT = Path(__file__).resolve().parents[2]
 
 
+@pytest.mark.parametrize("cuda_major", ["12", "13"])
+def test_nvimagecodec_extra_matches_cuda_bindings_major(monkeypatch, cuda_major):
+    import torch
+
+    path = ROOT / "setup.py"
+    function = next(
+        node
+        for node in ast.parse(path.read_text()).body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "get_nvimagecodec_requirements"
+    )
+    monkeypatch.setattr(torch.version, "cuda", f"{cuda_major}.0")
+    namespace = {"torch": torch, "_is_cuda": lambda: True}
+    exec(
+        compile(ast.Module(body=[function], type_ignores=[]), str(path), "exec"),
+        namespace,
+    )
+    assert namespace["get_nvimagecodec_requirements"]() == [
+        f"nvidia-nvimgcodec-cu{cuda_major}[nvjpeg]>=0.9.0.20",
+        f"cuda-bindings>={cuda_major},<{int(cuda_major) + 1}",
+    ]
+
+
 def test_docs_mock_versions_are_valid_with_hashed_requirements():
     """Exercise the docs version loader without importing the CLI generators."""
     path = ROOT / "docs/mkdocs/gen_files/generate_argparse.py"

@@ -15,6 +15,7 @@ from vllm.config.ec_transfer import ECRole, ECTransferConfig
 from vllm.config.kv_transfer import KVTransferConfig
 from vllm.config.model import ModelConfig
 from vllm.config.multimodal import MultiModalConfig
+from vllm.config.parallel import ParallelConfig
 from vllm.config.utils import hash_config
 from vllm.config.vllm import VllmConfig
 from vllm.platforms import current_platform
@@ -102,6 +103,41 @@ def test_nvimagecodec_backend_checks_package_availability():
     assert not MultiModalConfig(
         media_io_kwargs={"image": {"backend": "custom"}}
     ).use_gpu_image_backend()
+
+
+@pytest.mark.cpu_test
+@pytest.mark.parametrize("reservation", [0, -1, True, 1.5, "640"])
+def test_nvimagecodec_rejects_invalid_workspace_reservation(reservation):
+    with (
+        patch(
+            "vllm.multimodal.image_decoders.nvimagecodec.ensure_nvimagecodec_available"
+        ),
+        pytest.raises(ValueError, match="positive integer"),
+    ):
+        MultiModalConfig(
+            media_io_kwargs={
+                "image": {
+                    "backend": "nvimagecodec",
+                    "workspace_reservation_mib": reservation,
+                }
+            }
+        )
+
+
+@pytest.mark.cpu_test
+@pytest.mark.parametrize("batch_cap", [0, -1, True, 1.5, "1", 21])
+def test_nvimagecodec_rejects_invalid_batch_cap(batch_cap):
+    with (
+        patch(
+            "vllm.multimodal.image_decoders.nvimagecodec.ensure_nvimagecodec_available"
+        ),
+        pytest.raises(ValueError, match="batch_cap"),
+    ):
+        MultiModalConfig(
+            media_io_kwargs={
+                "image": {"backend": "nvimagecodec", "batch_cap": batch_cap}
+            }
+        )
 
 
 def test_mm_encoder_fp8_scale_path_requires_fp8():
@@ -864,3 +900,71 @@ def test_nvimagecodec_rejects_resolved_pooling_runner(runner):
 
     with pytest.raises(ValueError, match="requires the generation runner"):
         config._validate_nvimagecodec_frontend()
+
+
+@pytest.mark.parametrize(
+    ("model_id", "model_type", "supported"),
+    [
+        ("Qwen/Qwen3-VL-4B-Instruct", "qwen3_vl", True),
+        ("Qwen/Qwen3.5-27B", "qwen3_5", True),
+        ("Qwen/Qwen3.5-35B-A3B", "qwen3_5_moe", True),
+        ("Qwen/Qwen2.5-VL-3B-Instruct", "qwen2_5_vl", False),
+    ],
+)
+def test_nvimagecodec_qwen_model_allowlist(
+    monkeypatch, model_id, model_type, supported
+):
+    with patch(
+        "vllm.multimodal.image_decoders.nvimagecodec.ensure_nvimagecodec_available"
+    ):
+        model_config = ModelConfig(
+            model_id,
+            runner="generate",
+            dtype="bfloat16",
+            seed=0,
+            limit_mm_per_prompt={"image": 1, "video": 0},
+            media_io_kwargs={"image": {"backend": "nvimagecodec"}},
+        )
+    config = VllmConfig(
+        model_config=model_config,
+        device_config=DeviceConfig(device="cpu"),
+    )
+    monkeypatch.setattr(current_platform, "is_cuda", lambda: True)
+    if supported:
+        config._validate_nvimagecodec_frontend()
+    else:
+        with pytest.raises(ValueError, match="supports only"):
+            config._validate_nvimagecodec_frontend()
+    assert config.model_config.hf_config.model_type == model_type
+    assert config.model_config.multimodal_config is not None
+    assert config.model_config.multimodal_config.use_gpu_image_backend()
+
+
+@pytest.mark.cpu_test
+@pytest.mark.parametrize("batch_cap", [1, 20])
+def test_nvimagecodec_batch_cap_respects_actual_api_topology(monkeypatch, batch_cap):
+    with patch(
+        "vllm.multimodal.image_decoders.nvimagecodec.ensure_nvimagecodec_available"
+    ):
+        model_config = ModelConfig(
+            "Qwen/Qwen3-VL-2B-Instruct-FP8",
+            runner="generate",
+            dtype="bfloat16",
+            seed=0,
+            limit_mm_per_prompt={"image": 1, "video": 0},
+            media_io_kwargs={
+                "image": {"backend": "nvimagecodec", "batch_cap": batch_cap}
+            },
+        )
+    config = VllmConfig(
+        model_config=model_config,
+        parallel_config=ParallelConfig(_api_process_count=4),
+        device_config=DeviceConfig(device="cpu"),
+    )
+    monkeypatch.setattr(current_platform, "is_cuda", lambda: True)
+    config._validate_nvimagecodec_frontend()
+    assert config.model_config.multimodal_config is not None
+    assert (
+        config.model_config.multimodal_config.media_io_kwargs["image"]["batch_cap"]
+        == batch_cap
+    )

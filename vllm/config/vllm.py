@@ -3133,9 +3133,14 @@ class VllmConfig:
             raise ValueError(
                 "The nvimagecodec image backend requires an NVIDIA CUDA platform."
             )
-        if model_config.hf_config.model_type != "qwen3_vl":
+        if model_config.hf_config.model_type not in (
+            "qwen3_vl",
+            "qwen3_5",
+            "qwen3_5_moe",
+        ):
             raise ValueError(
-                "The nvimagecodec image backend currently supports only Qwen3-VL."
+                "The nvimagecodec image backend currently supports only "
+                "Qwen3-VL and Qwen3.5 dense or MoE models."
             )
         if (
             mm_config.get_limit_per_prompt("image") != 1
@@ -3164,6 +3169,19 @@ class VllmConfig:
                 "The nvimagecodec image backend does not support the Rust "
                 "frontend, which has a separate image-loading path."
             )
+        from vllm.multimodal.image_decoders.nvimagecodec import (
+            get_nvimagecodec_batch_cap,
+        )
+
+        get_nvimagecodec_batch_cap(
+            batch_cap=mm_config.media_io_kwargs.get("image", {}).get("batch_cap"),
+        )
+        if self.parallel_config.data_parallel_size != 1:
+            raise ValueError("The nvImageCodec GPU owner requires data_parallel_size=1")
+        import sys
+
+        if sys.platform != "linux":
+            raise ValueError("The nvImageCodec GPU owner requires Linux shared memory")
 
     def _get_model_runner_unsupported_features(self) -> list[str]:
         """Collect features the GPU model runner does not support."""

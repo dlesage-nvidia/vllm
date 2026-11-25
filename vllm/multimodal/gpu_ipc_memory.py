@@ -167,9 +167,9 @@ def reserve_mm_ipc_gpu_memory(
       reservation scales with its configured `hw_decoders` value, and the
       entire decoder reservation scales with `api_process_count` because
       these resources are not shared between processes.
-    * For the nvImageCodec image backend, each API process's fixed two-wave
-      device arenas, retained plugin workspace, and CUDA context. Its batch cap
-      is derived from `api_process_count`; it does not consume the optional
+    * For the nvImageCodec image backend, the single GPU owner's two-wave
+      device arenas, retained plugin workspace, and CUDA context. Its global
+      batch cap is independent of API count; it does not consume the optional
       raw-frame semaphore budget.
 
     Args:
@@ -239,19 +239,25 @@ def reserve_mm_ipc_gpu_memory(
     per_server_video_decoder_bytes = (
         decoder_bytes * hw_decoders if uses_gpu_video else 0
     )
-    per_server_image_decoder_bytes = (
-        get_nvimagecodec_non_context_bytes(num_api_servers) if uses_gpu_image else 0
+    image_owner_decoder_bytes = (
+        get_nvimagecodec_non_context_bytes(
+            batch_cap=mm_config.media_io_kwargs.get("image", {}).get("batch_cap"),
+            workspace_reservation_mib=mm_config.media_io_kwargs.get("image", {}).get(
+                "workspace_reservation_mib"
+            ),
+        )
+        if uses_gpu_image
+        else 0
     )
-    per_server_context_bytes = max(
-        PYNVVIDEOCODEC_CUDA_CONTEXT_BYTES if uses_gpu_video else 0,
-        NVIMAGECODEC_CUDA_CONTEXT_BYTES if uses_gpu_image else 0,
+    per_server_context_bytes = (
+        PYNVVIDEOCODEC_CUDA_CONTEXT_BYTES if uses_gpu_video else 0
     )
-    per_server_decoder_bytes = (
-        per_server_video_decoder_bytes
-        + per_server_image_decoder_bytes
-        + per_server_context_bytes
-    )
+    per_server_decoder_bytes = per_server_video_decoder_bytes + per_server_context_bytes
     decoder_reserved_bytes = num_api_servers * per_server_decoder_bytes
+    if uses_gpu_image:
+        decoder_reserved_bytes += (
+            image_owner_decoder_bytes + NVIMAGECODEC_CUDA_CONTEXT_BYTES
+        )
     reserved_bytes = raw_frame_reserved_bytes + decoder_reserved_bytes
     if reserved_bytes <= 0:
         return available_kv_cache_memory_bytes
@@ -270,12 +276,16 @@ def reserve_mm_ipc_gpu_memory(
         )
     logger.info_once(
         "Reserving %s GiB of GPU memory for frontend multimodal decoding "
-        "(%s GiB raw-frame semaphore budget, %s GiB decoder+CUDA-context "
-        "across %d API server(s) @ %s GiB/server); "
+        "(%s GiB raw-frame semaphore budget, %s GiB single image owner, "
+        "%d API server(s) @ %s GiB/server for video decoding+CUDA-context); "
         "KV cache memory reduced to %s GiB.",
         format_gib(reserved_bytes),
         format_gib(raw_frame_reserved_bytes),
-        format_gib(decoder_reserved_bytes),
+        format_gib(
+            image_owner_decoder_bytes + NVIMAGECODEC_CUDA_CONTEXT_BYTES
+            if uses_gpu_image
+            else 0
+        ),
         num_api_servers,
         format_gib(per_server_decoder_bytes),
         format_gib(remaining),

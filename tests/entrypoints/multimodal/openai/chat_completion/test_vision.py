@@ -23,6 +23,91 @@ MODEL_NAME = "microsoft/Phi-3.5-vision-instruct"
 MAXIMUM_IMAGES = 2
 
 
+@pytest.mark.skipif(
+    not current_platform.is_cuda(), reason="nvImageCodec requires NVIDIA CUDA"
+)
+@pytest.mark.parametrize("api_count,batch_cap", [(1, 20), (4, 2)])
+def test_nvimagecodec_startup_batch_cap_rejects_request_override(api_count, batch_cap):
+    """A trusted request cannot enlarge the decoder or its startup reservation."""
+    model = "Qwen/Qwen3-VL-2B-Instruct-FP8"
+    args = [
+        "--revision",
+        "46485250d8854c0a9be4f1adbc67ca47e5bb6fa5",
+        "--api-server-count",
+        str(api_count),
+        "--renderer-num-workers",
+        "4",
+        "--dtype",
+        "bfloat16",
+        "--max-model-len",
+        "4096",
+        "--max-num-seqs",
+        "1",
+        "--max-num-batched-tokens",
+        "4096",
+        "--kv-cache-memory-bytes",
+        str(16 * 1024**3),
+        "--limit-mm-per-prompt",
+        '{"image": 1, "video": 0}',
+        "--media-io-kwargs",
+        json.dumps(
+            {
+                "image": {
+                    "backend": "nvimagecodec",
+                    "batch_cap": batch_cap,
+                }
+            }
+        ),
+        "--mm-processor-cache-gb",
+        "0",
+        "--no-enable-prefix-caching",
+        "--trust-request-mm-kwargs",
+        "--enforce-eager",
+    ]
+    image_url = encode_image_url(Image.new("RGB", (193, 97), "red"), format="JPEG")
+    with RemoteOpenAIServer(model, args) as server, server.get_client() as client:
+        request = {
+            "model": model,
+            "temperature": 0,
+            "max_tokens": 8,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Describe the image."},
+                        {"type": "image_url", "image_url": {"url": image_url}},
+                    ],
+                }
+            ],
+        }
+        baseline = client.chat.completions.create(**request)
+        assert baseline.usage.prompt_tokens > 0
+        assert baseline.usage.completion_tokens > 0
+        incompatible_caps = (19,) if batch_cap == 20 else (batch_cap + 1, None)
+        for cap in incompatible_caps:
+            with pytest.raises(openai.BadRequestError, match="batch cap is fixed"):
+                client.chat.completions.create(
+                    **request,
+                    extra_body={"media_io_kwargs": {"image": {"batch_cap": cap}}},
+                )
+        equivalent_caps = (20, None) if batch_cap == 20 else (batch_cap,)
+        for cap in equivalent_caps:
+            equivalent = client.chat.completions.create(
+                **request,
+                extra_body={"media_io_kwargs": {"image": {"batch_cap": cap}}},
+            )
+            assert equivalent.usage.prompt_tokens == baseline.usage.prompt_tokens
+            assert equivalent.usage.completion_tokens > 0
+        with pytest.raises(
+            openai.BadRequestError, match="ownership is not configurable"
+        ):
+            client.chat.completions.create(
+                **request,
+                extra_body={"media_io_kwargs": {"image": {"ownership": "local"}}},
+            )
+    assert server.proc.returncode == 0
+
+
 def test_processor_only_cache_eviction_preserves_chat_logprobs():
     """A later image hit must survive inserts on the same API worker."""
     model = "llava-hf/llava-1.5-7b-hf"

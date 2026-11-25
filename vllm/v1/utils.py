@@ -180,6 +180,7 @@ class APIServerProcessManager:
         target_server_fn: Callable | None = None,
         stats_update_address: str | None = None,
         tensor_queue: Queue | None = None,
+        image_decoder_device_index: int = 0,
     ):
         """Initialize and start API server worker processes.
 
@@ -193,11 +194,13 @@ class APIServerProcessManager:
             output_listeners: Output listeners for each API server
             stats_update_address: Optional stats update address
             tensor_queue: Optional tensor IPC queue for sharing MM tensors
+            image_decoder_device_index: Visible GPU for the shared image owner
 
         """
         self.listen_address = listen_address
         self.sock = sock
         self.args = args
+        self._image_decoder_manager = None
 
         spawn_context = multiprocessing.get_context("spawn")
         self.processes: list[BaseProcess] = []
@@ -222,6 +225,22 @@ class APIServerProcessManager:
         listeners = [*input_listeners, *output_listeners]
         self._listeners = listeners
         try:
+            image_kwargs = (getattr(args, "media_io_kwargs", None) or {}).get(
+                "image", {}
+            )
+            if image_kwargs.get("backend") == "nvimagecodec":
+                from vllm.multimodal.image_decoders.nvimagecodec import (
+                    SharedNvImageCodecManager,
+                    get_nvimagecodec_batch_cap,
+                )
+
+                self._image_decoder_manager = SharedNvImageCodecManager(
+                    num_servers,
+                    get_nvimagecodec_batch_cap(
+                        batch_cap=image_kwargs.get("batch_cap"),
+                    ),
+                    device_index=image_decoder_device_index,
+                )
             listener_pairs = zip(
                 range(num_servers), input_listeners, output_listeners, strict=True
             )
@@ -242,6 +261,10 @@ class APIServerProcessManager:
                     client_config["stats_update_address"] = stats_update_address
                 if tensor_queue is not None:
                     client_config["tensor_queue"] = tensor_queue
+                if self._image_decoder_manager is not None:
+                    client_config["shared_image_decoder"] = (
+                        self._image_decoder_manager.endpoint
+                    )
 
                 proc = spawn_context.Process(
                     target=target_server_fn or run_api_server_worker_proc,
@@ -253,7 +276,11 @@ class APIServerProcessManager:
                 input_listener.close()
                 output_listener.close()
         except BaseException:
-            _shutdown_processes_and_cleanup_listeners(self.processes, listeners)
+            _shutdown_processes_and_cleanup_listeners(
+                self.processes,
+                listeners,
+                image_decoder_manager=self._image_decoder_manager,
+            )
             raise
 
         logger.info("Started %d API server processes", len(self.processes))
@@ -265,13 +292,20 @@ class APIServerProcessManager:
             _shutdown_processes_and_cleanup_listeners,
             self.processes,
             listeners,
+            image_decoder_manager=self._image_decoder_manager,
         )
+        self._api_processes = list(self.processes)
+        if self._image_decoder_manager is not None:
+            self.processes = self._api_processes + [self._image_decoder_manager.process]
 
     def shutdown(self, timeout: float | None = None) -> None:
         """Shutdown API server processes with configurable timeout"""
         if self._finalizer.detach() is not None:
             _shutdown_processes_and_cleanup_listeners(
-                self.processes, self._listeners, timeout=timeout
+                self._api_processes,
+                self._listeners,
+                timeout=timeout,
+                image_decoder_manager=self._image_decoder_manager,
             )
 
 
@@ -685,12 +719,17 @@ def _shutdown_processes_and_cleanup_listeners(
     procs: list[BaseProcess],
     listeners: list[ZmqListener],
     timeout: float | None = None,
+    *,
+    image_decoder_manager=None,
 ) -> None:
     try:
         shutdown(procs, timeout=timeout)
     finally:
-        for listener in listeners:
-            listener.cleanup()
+        with contextlib.ExitStack() as cleanup:
+            if image_decoder_manager is not None:
+                cleanup.callback(image_decoder_manager.close)
+            for listener in listeners:
+                cleanup.callback(listener.cleanup)
 
 
 def report_usage_stats(

@@ -54,6 +54,11 @@ async def build_async_engine_client(
 
     propagate_flash_late_interaction(args, engine_args)
     if client_config:
+        shared_image_decoder = client_config.pop("shared_image_decoder", None)
+        if shared_image_decoder is not None:
+            from vllm.multimodal.media.image import set_shared_nvimagecodec_endpoint
+
+            set_shared_nvimagecodec_endpoint(shared_image_decoder)
         engine_args._api_process_count = client_config.get("client_count", 1)
         engine_args._api_process_rank = client_config.get("client_index", 0)
 

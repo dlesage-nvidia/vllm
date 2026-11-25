@@ -252,9 +252,11 @@ steps:
   - vllm/
   - "!vllm/distributed/kv_transfer/"
   - tests/entrypoints/multimodal
+  - tests/multimodal/test_image_decoder_cuda.py
   commands:
   - export VLLM_WORKER_MULTIPROC_METHOD=spawn
   - pytest -v -s entrypoints/multimodal
+  - pytest -v -s multimodal/test_image_decoder_cuda.py
   mirror:
     amd:
       label: ":amd: (MI355 DPX) Entrypoints Integration (Multimodal)"
