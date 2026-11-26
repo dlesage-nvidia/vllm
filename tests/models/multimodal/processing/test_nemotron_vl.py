@@ -4,17 +4,125 @@
 
 from collections.abc import Mapping
 
+import numpy as np
 import pytest
 import torch
 from PIL import Image
 from transformers import PreTrainedConfig
 
+from vllm.config import ModelConfig
 from vllm.multimodal import MULTIMODAL_REGISTRY
+from vllm.multimodal.cache import MultiModalProcessorOnlyCache
 from vllm.multimodal.image import rescale_image_size
+from vllm.multimodal.media import MediaWithBytes
 from vllm.multimodal.processing import BaseMultiModalProcessor
+from vllm.transformers_utils.processors.nano_nemotron_vl import dynamic_preprocess
 
 from ....conftest import ImageTestAssets
 from ...utils import build_model_context
+
+
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-BF16",
+        "nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16",
+    ],
+)
+@pytest.mark.parametrize("cache_enabled", [False, True])
+@pytest.mark.parametrize("device_normalization", [False, True])
+@pytest.mark.parametrize(
+    "interleaved_storage", [False, True], ids=["planar", "interleaved"]
+)
+def test_nemotron_tensor_processor_matches_pillow(
+    model_id: str,
+    cache_enabled: bool,
+    device_normalization: bool,
+    interleaved_storage: bool,
+) -> None:
+    model_config = ModelConfig(
+        model_id,
+        trust_remote_code=True,
+        dtype="bfloat16",
+        seed=0,
+        max_model_len=4096,
+        limit_mm_per_prompt={"image": 1, "video": 0},
+        mm_processor_cache_gb=int(cache_enabled),
+        mm_device_do_normalize=device_normalization,
+    )
+    processor = MULTIMODAL_REGISTRY.create_processor(model_config)
+    cache = MultiModalProcessorOnlyCache(model_config) if cache_enabled else None
+    pixels = (np.arange(64 * 200 * 3).reshape(64, 200, 3) % 251).astype(np.uint8)
+    tensor = torch.from_numpy(np.ascontiguousarray(pixels.transpose(2, 0, 1)))
+    if interleaved_storage:
+        tensor = torch.from_numpy(pixels).permute(2, 0, 1)
+    snapshot = tensor.clone()
+    image = MediaWithBytes(tensor, b"same RGB image", {"backend": "nvimagecodec"})
+
+    def process(item):
+        items = processor.info.parse_mm_data({"image": [item]})
+        return processor("<image>Describe the image.", mm_items=items, cache=cache)
+
+    reference = process(Image.fromarray(pixels))
+    results = [process(image), process(image)]
+    for result in results:
+        for key in ("mm_kwargs", "prompt_token_ids", "mm_placeholders"):
+            assert result[key] == reference[key]
+    if cache is not None:
+        assert cache.make_stats().hits == 1
+    assert torch.equal(tensor, snapshot)
+
+
+@pytest.mark.parametrize("use_thumbnail", [False, True])
+@pytest.mark.parametrize("do_cpu_normalize", [False, True])
+def test_nemotron_tensor_tiles_match_pillow(
+    use_thumbnail: bool, do_cpu_normalize: bool
+) -> None:
+    pixels = (np.arange(48 * 128 * 3).reshape(48, 128, 3) % 251).astype(np.uint8)
+    tensor = torch.from_numpy(np.ascontiguousarray(pixels.transpose(2, 0, 1)))
+    kwargs = dict(
+        image_size=32,
+        max_num_tiles=6,
+        use_thumbnail=use_thumbnail,
+        do_cpu_normalize=do_cpu_normalize,
+    )
+    reference = dynamic_preprocess(Image.fromarray(pixels), **kwargs)
+    result = dynamic_preprocess(tensor, **kwargs)
+    assert torch.equal(result, reference)
+
+
+@pytest.mark.parametrize("interleaved_storage", [False, True])
+def test_nemotron_chw_view_preserves_shared_storage(
+    interleaved_storage: bool,
+) -> None:
+    from vllm.transformers_utils.processors.nano_nemotron_vl import (
+        _image_to_nhwc_tensor,
+    )
+
+    image = torch.arange(3 * 8 * 12, dtype=torch.uint8).reshape(3, 8, 12)
+    if interleaved_storage:
+        image = image.permute(1, 2, 0).contiguous().permute(2, 0, 1)
+    result = _image_to_nhwc_tensor(image)
+    assert result.shape == (1, 8, 12, 3)
+    assert result.untyped_storage().data_ptr() == image.untyped_storage().data_ptr()
+    assert torch.equal(result.permute(0, 3, 1, 2)[0], image)
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        torch.zeros(3, 8, 12, dtype=torch.float32),
+        torch.zeros(8, 12, 3, dtype=torch.uint8),
+        torch.zeros(3, 8, 12, dtype=torch.uint8).transpose(1, 2),
+    ],
+)
+def test_nemotron_rejects_invalid_tensor_image(image: torch.Tensor) -> None:
+    from vllm.transformers_utils.processors.nano_nemotron_vl import (
+        _image_to_nhwc_tensor,
+    )
+
+    with pytest.raises(ValueError, match="dense CPU uint8 CHW RGB"):
+        _image_to_nhwc_tensor(image)
 
 
 def _get_expected_num_patches(

@@ -66,15 +66,31 @@ def test_service_rejects_missing_final_destination_without_poisoning_decoder():
         service.close()
 
 
-def test_shared_output_slot_lives_until_the_last_tensor_view():
+@pytest.mark.parametrize("interleaved_output", [False, True])
+def test_shared_output_slot_lives_until_the_last_tensor_view(interleaved_output):
+    import torch
+
     from vllm.multimodal.image_decoders.nvimagecodec import _MappedOutputs
 
     memory = SharedMemory(create=True, size=12)
-    mapping = _MappedOutputs(memory)
+    buffer = memory.buf
+    assert buffer is not None
+    buffer[:] = bytes(range(12))
+    mapping = _MappedOutputs(memory, interleaved_output)
     released = threading.Event()
     try:
         tensor = mapping.tensor(0, 2, 2, released.set)
-        alias = tensor.view(-1)
+        expected = torch.arange(12, dtype=torch.uint8)
+        if interleaved_output:
+            expected = expected.reshape(2, 2, 3).permute(2, 0, 1)
+            alias = tensor.permute(1, 2, 0).view(-1)
+        else:
+            expected = expected.reshape(3, 2, 2)
+            alias = tensor.view(-1)
+        assert torch.equal(tensor, expected)
+        assert alias.untyped_storage().data_ptr() == tensor.untyped_storage().data_ptr()
+        alias[0] = 99
+        assert buffer[0] == 99
         del tensor
         assert not released.is_set()
         assert mapping.views == 1
@@ -101,7 +117,9 @@ class _FakeDecoder:
     transport = False
     gate = [threading.Event(), threading.Event()]
 
-    def __init__(self, _batch_cap: int, _device_index: int) -> None:
+    def __init__(
+        self, _batch_cap: int, _device_index: int, _interleaved_output: bool = False
+    ) -> None:
         self.widths: list[int] = []
         type(self).instance = self
         if self.behavior == "block_init":
@@ -192,10 +210,15 @@ def cpu_owner(monkeypatch, tmp_path, request):
     monkeypatch.setattr(runtime, "cudaHostUnregister", unregister, raising=False)
     monkeypatch.setattr(nvimagecodec, "_CLOSE_TIMEOUT", 1)
     parent, child = mp.Pipe()
-    api_count, batch_cap = getattr(request, "param", (1, 1))
+    api_count, batch_cap, *layout = getattr(request, "param", (1, 1))
+    interleaved_output = layout[0] if layout else False
     slots = max(1, 2 * batch_cap // api_count)
     endpoint = nvimagecodec.SharedDecoderEndpoint(
-        str(tmp_path / "owner.sock"), os.urandom(32), batch_cap, os.getpid()
+        str(tmp_path / "owner.sock"),
+        os.urandom(32),
+        batch_cap,
+        os.getpid(),
+        interleaved_output,
     )
     errors = []
 
@@ -230,6 +253,7 @@ def _transport_input():
         return nvimagecodec.preflight_image_nvimagecodec(buffer.getvalue())
 
 
+@pytest.mark.parametrize("cpu_owner", [(1, 1, False), (1, 1, True)], indirect=True)
 def test_disconnect_during_running_copy_releases_owner_views(cpu_owner):
     endpoint, unregistered, errors = cpu_owner
     client = nvimagecodec.SharedNvImageCodecClient(endpoint)
@@ -508,6 +532,8 @@ def test_startup_batch_cap_reinitialization_and_runtime_overrides(cpu_owner) -> 
         release_equivalent = initialize_nvimagecodec_decode_service(4, batch_cap=20)
         with pytest.raises(RuntimeError, match="batch cap"):
             initialize_nvimagecodec_decode_service(4, batch_cap=1)
+        with pytest.raises(RuntimeError, match="RGB output layout"):
+            initialize_nvimagecodec_decode_service(4, interleaved_output=True)
         configured = {"backend": "nvimagecodec"}
         assert (
             ImageMediaIO.merge_kwargs(configured, {"batch_cap": 20})["batch_cap"] == 20

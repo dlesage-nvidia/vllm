@@ -181,6 +181,7 @@ class APIServerProcessManager:
         stats_update_address: str | None = None,
         tensor_queue: Queue | None = None,
         image_decoder_device_index: int = 0,
+        image_decoder_interleaved_output: bool = False,
     ):
         """Initialize and start API server worker processes.
 
@@ -195,6 +196,7 @@ class APIServerProcessManager:
             stats_update_address: Optional stats update address
             tensor_queue: Optional tensor IPC queue for sharing MM tensors
             image_decoder_device_index: Visible GPU for the shared image owner
+            image_decoder_interleaved_output: Decode into interleaved RGB storage
 
         """
         self.listen_address = listen_address
@@ -240,6 +242,7 @@ class APIServerProcessManager:
                         batch_cap=image_kwargs.get("batch_cap"),
                     ),
                     device_index=image_decoder_device_index,
+                    interleaved_output=image_decoder_interleaved_output,
                 )
             listener_pairs = zip(
                 range(num_servers), input_listeners, output_listeners, strict=True

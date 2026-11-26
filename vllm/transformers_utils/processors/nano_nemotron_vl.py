@@ -12,7 +12,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Any, TypeVar
+from typing import Any, TypeAlias, TypeVar
 
 import einops
 import numpy as np
@@ -32,6 +32,7 @@ from vllm.tokenizers.hf import HfTokenizer
 from .internvl import calculate_internvl_targets, get_internvl_target_ratios
 
 _T = TypeVar("_T")
+ImageInput: TypeAlias = Image.Image | torch.Tensor
 
 
 IMG_START = "<img>"
@@ -92,8 +93,32 @@ def _bicubic_resize_and_normalize(
     return tensor.to(dtype=dtype).contiguous()
 
 
-def _pil_to_nhwc_tensor(image: Image.Image) -> torch.Tensor:
-    """Convert a PIL image to a 4-D NHWC tensor suitable for compiled ops."""
+def _get_image_size(image: ImageInput) -> tuple[int, int]:
+    if isinstance(image, Image.Image):
+        return image.size
+    if (
+        not isinstance(image, torch.Tensor)
+        or image.device.type != "cpu"
+        or image.dtype != torch.uint8
+        or image.ndim != 3
+        or image.shape[0] != 3
+        or not (
+            image.is_contiguous()
+            or image.unsqueeze(0).is_contiguous(memory_format=torch.channels_last)
+        )
+    ):
+        raise ValueError(
+            "Nemotron tensor images require dense CPU uint8 CHW RGB "
+            "with planar or interleaved storage."
+        )
+    return image.shape[2], image.shape[1]
+
+
+def _image_to_nhwc_tensor(image: ImageInput) -> torch.Tensor:
+    """Expose a raw NHWC view without copying decoded CHW image storage."""
+    if isinstance(image, torch.Tensor):
+        _get_image_size(image)
+        return image.permute(1, 2, 0).unsqueeze(0)
     array = np.asarray(
         image.convert("RGB") if image.mode != "RGB" else image, dtype=np.uint8
     )
@@ -101,7 +126,7 @@ def _pil_to_nhwc_tensor(image: Image.Image) -> torch.Tensor:
 
 
 def dynamic_preprocess(
-    image: Image.Image,
+    image: ImageInput,
     *,
     image_size: int = 512,
     max_num_tiles: int = 12,
@@ -111,7 +136,7 @@ def dynamic_preprocess(
     do_cpu_normalize: bool = True,
     dtype: torch.dtype = torch.float32,
 ) -> torch.Tensor:
-    orig_width, orig_height = image.size
+    orig_width, orig_height = _get_image_size(image)
 
     target_ratios = get_internvl_target_ratios(1, max_num_tiles)
 
@@ -123,7 +148,7 @@ def dynamic_preprocess(
         use_thumbnail=False,
     )
 
-    tensor = _pil_to_nhwc_tensor(image)
+    tensor = _image_to_nhwc_tensor(image)
 
     resized_img = _bicubic_resize_and_normalize(
         tensor,
@@ -355,7 +380,7 @@ class DynamicResolutionImageTiler:
     def _images_to_pixel_values_lst(
         self,
         text_prompt_length: int,
-        images: list[Image.Image],
+        images: list[ImageInput],
         dtype: torch.dtype = torch.float32,
     ) -> tuple[list[torch.Tensor], list[int]]:
         num_tokens_available = self.max_num_tokens_available(text_prompt_length)
@@ -372,7 +397,7 @@ class DynamicResolutionImageTiler:
 
     @dataclass
     class DynamicResolutionParams:
-        media: Image.Image
+        media: ImageInput
         num_tiles: int
         num_embeddings: int
         patch_size: tuple[int, int]
@@ -386,7 +411,7 @@ class DynamicResolutionImageTiler:
             params.patch_size[1] * self._patch_size,
             params.patch_size[0] * self._patch_size,
         )
-        tensor = _pil_to_nhwc_tensor(params.media)
+        tensor = _image_to_nhwc_tensor(params.media)
         resized_img = _bicubic_resize_and_normalize(
             tensor,
             size=target_size,
@@ -399,7 +424,7 @@ class DynamicResolutionImageTiler:
 
     def process_media(
         self,
-        media: Image.Image,
+        media: ImageInput,
         num_tokens_available: int,
     ) -> tuple[DynamicResolutionParams, int]:
         """Process a single media item and return its parameters.
@@ -412,10 +437,7 @@ class DynamicResolutionImageTiler:
 
         """
         current_num_tokens_available = num_tokens_available
-        assert isinstance(media, Image.Image), (
-            "Dynamic resolution is only supported for image media"
-        )
-        orig_width, orig_height = media.width, media.height
+        orig_width, orig_height = _get_image_size(media)
         closest_patch_height = round(orig_height / self._patch_size + 0.5)
         closest_patch_width = round(orig_width / self._patch_size + 0.5)
         patches = closest_patch_height * closest_patch_width
@@ -487,7 +509,7 @@ class DynamicResolutionImageTiler:
 
     def compute_params(
         self,
-        media_list: list[Image.Image],
+        media_list: list[ImageInput],
         num_tokens_available: int,
     ) -> list[DynamicResolutionParams]:
         """Compute parameters for all media with iterative token budgeting.
@@ -686,7 +708,7 @@ class BaseNanoNemotronVLProcessor(ABC):
 
     def _images_to_pixel_values_lst(
         self,
-        images: list[Image.Image],
+        images: list[ImageInput],
         max_num_tiles: int,
     ) -> list[torch.Tensor]:
         return [
@@ -706,7 +728,7 @@ class BaseNanoNemotronVLProcessor(ABC):
     def _preprocess_image(
         self,
         text: list[str],
-        images: list[Image.Image],
+        images: list[ImageInput],
         max_num_tiles: int,
     ) -> tuple[list[str], dict[str, Any]]:
         if len(images) == 0:
@@ -781,7 +803,7 @@ class BaseNanoNemotronVLProcessor(ABC):
     def __call__(
         self,
         text: str | list[str] | None = None,
-        images: Image.Image | list[Image.Image] | None = None,
+        images: ImageInput | list[ImageInput] | None = None,
         *,
         return_tensors: str | TensorType | None = None,
         max_num_tiles: int | None = None,
@@ -1057,7 +1079,7 @@ class NanoNemotronVLProcessor(BaseNanoNemotronVLProcessor):
     def __call__(
         self,
         text: str | list[str] | None = None,
-        images: Image.Image | list[Image.Image] | None = None,
+        images: ImageInput | list[ImageInput] | None = None,
         videos: tuple[npt.NDArray, dict[str, Any]]
         | list[tuple[npt.NDArray, dict[str, Any]]]
         | None = None,

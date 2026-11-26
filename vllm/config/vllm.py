@@ -3137,10 +3137,15 @@ class VllmConfig:
             "qwen3_vl",
             "qwen3_5",
             "qwen3_5_moe",
+            "NemotronH_Nano_Omni_Reasoning_V3",
+            "nemotron_h_omni",
+            "cosmos3_omni",
+            "cosmos3_edge",
         ):
             raise ValueError(
                 "The nvimagecodec image backend currently supports only "
-                "Qwen3-VL and Qwen3.5 dense or MoE models."
+                "Qwen3-VL, Qwen3.5 dense or MoE, Nemotron 3 Nano Omni, "
+                "Nemotron 3.5 Super VL, and Cosmos 3 Nano, Super or Edge models."
             )
         if (
             mm_config.get_limit_per_prompt("image") != 1

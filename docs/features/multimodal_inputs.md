@@ -794,7 +794,9 @@ Full example: [examples/generate/multimodal/openai_chat_completion_client_for_mu
 #### GPU Image Decoding with nvImageCodec
 
 The optional `nvimagecodec` backend uses GPU decoding for simple RGB JPEG
-inputs in Qwen3-VL and Qwen3.5 dense or MoE model serving. Install the CUDA-matched
+inputs in Qwen3-VL, Qwen3.5 dense or MoE, Nemotron 3 Nano Omni,
+Nemotron 3.5 Super VL, and Cosmos 3 Nano, Super or Edge model serving.
+Install the CUDA-matched
 extra and select it at startup:
 
 ```bash
@@ -807,8 +809,20 @@ vllm serve Qwen/Qwen3-VL-2B-Instruct \
 The official `vllm-openai` CUDA serving image includes the dependency. The
 backend accepts one structurally complete, EXIF-free, 8-bit RGB JPEG wider than
 4 pixels and containing at most 8,294,400 pixels per prompt. It returns a
-channels-first tensor to the shared Qwen3-VL/Qwen3.5 image processor. Unsupported
-images fail instead of falling back to Pillow. The backend requires the
+channels-first tensor directly to the model's image processor.
+Nemotron support covers `nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-BF16`
+and `nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16`, including dynamic
+resolution and CPU- or device-side normalization. Their processors consume
+the shared RGB tensor directly without an intermediate Pillow image or extra
+raw-RGB copy. For these Nemotron processors, the GPU decoder writes interleaved
+RGB into the final pinned shared storage with a single device-to-host transfer;
+the processor receives a zero-copy channels-first view. This avoids slower
+planar uint8 CPU resizing without increasing the output slots or GPU reservation.
+Other Nemotron model types are not enabled.
+Cosmos support covers `nvidia/Cosmos3-Nano`, `nvidia/Cosmos3-Super` and
+`nvidia/Cosmos3-Edge` using their existing understanding processors; it does not
+enable world generation, video, audio or action modalities. Unsupported images
+fail instead of falling back to Pillow. The backend requires the
 generation runner and asynchronous
 serving; pooling/scoring and the synchronous `LLM` API are not supported. It is
 also unavailable with headless or render-only processes, Ray, and the Rust

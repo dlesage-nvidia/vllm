@@ -25,6 +25,7 @@ from vllm.multimodal.image_decoders.nvimagecodec import (
     SharedNvImageCodecClient,
     SharedNvImageCodecManager,
     get_nvimagecodec_batch_cap,
+    get_nvimagecodec_interleaved_output,
     preflight_image_nvimagecodec,
     validate_image_backend,
 )
@@ -48,6 +49,7 @@ class _NvImageCodecState:
     api_process_count: int
     device_index: int
     batch_cap: int
+    interleaved_output: bool
     service: Any
     manager: Any = None
     users: int = 1
@@ -86,6 +88,7 @@ def initialize_nvimagecodec_decode_service(
     device_index: int = 0,
     *,
     batch_cap: int | None = None,
+    interleaved_output: bool = False,
 ) -> Callable[[], None]:
     """Acquire a client of the supervised GPU owner and its release handle."""
     global _nvimagecodec_state
@@ -106,6 +109,8 @@ def initialize_nvimagecodec_decode_service(
                     "The nvImageCodec image backend was already initialized "
                     "with a different batch cap."
                 )
+            if _nvimagecodec_state.interleaved_output != interleaved_output:
+                raise RuntimeError("The nvImageCodec RGB output layout differs.")
             _nvimagecodec_state.users += 1
         else:
             manager = service = None
@@ -113,11 +118,15 @@ def initialize_nvimagecodec_decode_service(
             if endpoint is None:
                 if api_process_count != 1:
                     raise RuntimeError("Shared nvImageCodec owner was not initialized")
-                manager = SharedNvImageCodecManager(1, effective_cap, device_index)
+                manager = SharedNvImageCodecManager(
+                    1, effective_cap, device_index, interleaved_output
+                )
                 endpoint = manager.endpoint
             try:
                 if endpoint.batch_cap != effective_cap:
                     raise RuntimeError("Shared nvImageCodec owner batch cap differs")
+                if endpoint.interleaved_output != interleaved_output:
+                    raise RuntimeError("Shared nvImageCodec owner RGB layout differs")
                 service = SharedNvImageCodecClient(endpoint)
                 service.wait_until_ready()
             except BaseException:
@@ -129,7 +138,12 @@ def initialize_nvimagecodec_decode_service(
                         manager.close()
                 raise
             _nvimagecodec_state = _NvImageCodecState(
-                api_process_count, device_index, effective_cap, service, manager
+                api_process_count,
+                device_index,
+                effective_cap,
+                interleaved_output,
+                service,
+                manager,
             )
         acquired_state = _nvimagecodec_state
 
@@ -171,6 +185,9 @@ def initialize_image_decode_backend(
                 parallel_config.assigned_physical_gpu_ids
             ),
             batch_cap=mm_config.media_io_kwargs.get("image", {}).get("batch_cap"),
+            interleaved_output=get_nvimagecodec_interleaved_output(
+                vllm_config.model_config.hf_config.model_type
+            ),
         )
     return None
 

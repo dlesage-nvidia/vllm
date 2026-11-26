@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""Regression tests for Qwen3-VL and Qwen3.5 multimodal processing."""
+"""Regression tests for Qwen3-VL, Qwen3.5 and Cosmos 3 multimodal processing."""
 
 from copy import deepcopy
 from types import SimpleNamespace
@@ -54,7 +54,15 @@ def test_qwen3_video_routing_schema_adds_vllm_compatibility_kwargs(
 
 @pytest.mark.parametrize("cache_enabled", [False, True])
 @pytest.mark.parametrize(
-    "model_id", [MODEL_ID, "Qwen/Qwen3.5-27B", "Qwen/Qwen3.5-35B-A3B"]
+    "model_id",
+    [
+        MODEL_ID,
+        "Qwen/Qwen3.5-27B",
+        "Qwen/Qwen3.5-35B-A3B",
+        "nvidia/Cosmos3-Nano",
+        "nvidia/Cosmos3-Super",
+        "nvidia/Cosmos3-Edge",
+    ],
 )
 def test_native_chw_processor_matches_pillow(
     cache_enabled: bool, model_id: str

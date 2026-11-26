@@ -370,6 +370,9 @@ def run_multi_api_server(args: argparse.Namespace):
             )
         else:
             # Start API server(s).
+            from vllm.multimodal.image_decoders.nvimagecodec import (
+                get_nvimagecodec_interleaved_output,
+            )
             from vllm.multimodal.media.image import _nvimagecodec_device_index
 
             api_server_manager = APIServerProcessManager(
@@ -383,6 +386,9 @@ def run_multi_api_server(args: argparse.Namespace):
                 tensor_queue=engine_launch.tensor_queue,
                 image_decoder_device_index=_nvimagecodec_device_index(
                     parallel_config.assigned_physical_gpu_ids
+                ),
+                image_decoder_interleaved_output=get_nvimagecodec_interleaved_output(
+                    vllm_config.model_config.hf_config.model_type
                 ),
             )
 

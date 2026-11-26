@@ -57,6 +57,11 @@ PILLOW_IMAGE_BACKEND = "pillow"
 NVIMAGECODEC_IMAGE_BACKEND = "nvimagecodec"
 
 
+def get_nvimagecodec_interleaved_output(model_type: str) -> bool:
+    """Select the image processor's RGB storage layout at startup."""
+    return model_type in {"NemotronH_Nano_Omni_Reasoning_V3", "nemotron_h_omni"}
+
+
 def get_nvimagecodec_batch_cap(
     *,
     batch_cap: int | None = None,
@@ -165,7 +170,10 @@ class _NvImageCodecDecoder:
     """One owner-thread decoder with two reusable device arenas."""
 
     def __init__(
-        self, batch_cap: int = _SINGLE_PROCESS_BATCH_CAP, device_index: int = 0
+        self,
+        batch_cap: int = _SINGLE_PROCESS_BATCH_CAP,
+        device_index: int = 0,
+        interleaved_output: bool = False,
     ) -> None:
         import torch
 
@@ -173,6 +181,7 @@ class _NvImageCodecDecoder:
         self._closed = False
         self._torch = torch
         self._device_index = device_index
+        self._interleaved_output = interleaved_output
         nvimgcodec = _load_nvimgcodec()
         torch.accelerator.set_device_index(device_index)
         device = torch.device("cuda", device_index)
@@ -182,7 +191,11 @@ class _NvImageCodecDecoder:
             allow_any_depth=False,
             apply_exif_orientation=False,
             color_spec=nvimgcodec.ColorSpec.SRGB,
-            sample_format=nvimgcodec.SampleFormat.P_RGB,
+            sample_format=(
+                nvimgcodec.SampleFormat.I_RGB
+                if interleaved_output
+                else nvimgcodec.SampleFormat.P_RGB
+            ),
         )
         self._decoder = nvimgcodec.Decoder(
             device_id=device_index,
@@ -225,7 +238,9 @@ class _NvImageCodecDecoder:
         for output in outputs:
             if output is None:
                 raise RuntimeError("nvImageCodec failed the JPEG decode warmup")
-            self._validate_device_output(output, (3, 64, 64))
+            self._validate_device_output(
+                output, (64, 64, 3) if self._interleaved_output else (3, 64, 64)
+            )
 
     def submit(
         self,
@@ -311,23 +326,33 @@ class _NvImageCodecDecoder:
         for index, (item, output) in enumerate(zip(items, outputs, strict=True)):
             if output is None:
                 continue
-            self._validate_device_output(output, (3, item.height, item.width))
+            self._validate_device_output(
+                output,
+                (item.height, item.width, 3)
+                if self._interleaved_output
+                else (3, item.height, item.width),
+            )
             arena.images[index] = output
             view = self._torch.from_dlpack(output)
             host = item.destination
+            destination = host.permute(1, 2, 0) if self._interleaved_output else host
             if (
                 host.device.type != "cpu"
                 or not host.is_pinned()
-                or not host.is_contiguous()
+                or not destination.is_contiguous()
                 or host.dtype != view.dtype
-                or tuple(host.shape) != tuple(view.shape)
+                or tuple(host.shape) != (3, item.height, item.width)
+                or tuple(destination.shape) != tuple(view.shape)
             ):
                 raise RuntimeError("Invalid final pinned RGB destination")
             arena.copies.append((index, view, host))
         with self._copy_stream:
             self._copy_stream.wait_event(arena.decode_done)
             for _, view, host in arena.copies:
-                host.copy_(view, non_blocking=True)
+                destination = (
+                    host.permute(1, 2, 0) if self._interleaved_output else host
+                )
+                destination.copy_(view, non_blocking=True)
             arena.copy_done.record(self._copy_stream)
 
     def _validate_device_output(
@@ -340,7 +365,7 @@ class _NvImageCodecDecoder:
             or str(output.dtype) != "uint8"
             or output.device_id != self._device_index
         ):
-            raise RuntimeError("nvImageCodec violated the RGB/CHW device contract")
+            raise RuntimeError("nvImageCodec violated the RGB device layout contract")
 
     def _check_owner(self) -> None:
         if threading.get_ident() != self._owner_thread_id:
@@ -350,9 +375,12 @@ class _NvImageCodecDecoder:
 class _NvImageCodecService:
     """Batch scalar decode jobs on one process-local decoder."""
 
-    def __init__(self, batch_cap: int, device_index: int = 0) -> None:
+    def __init__(
+        self, batch_cap: int, device_index: int = 0, interleaved_output: bool = False
+    ) -> None:
         self._batch_cap = batch_cap
         self._device_index = device_index
+        self._interleaved_output = interleaved_output
         self._jobs: deque[_DecodeJob] = deque()
         self._condition = threading.Condition()
         self._closed = False
@@ -409,7 +437,9 @@ class _NvImageCodecService:
     def _owner(self) -> None:
         decoder = None
         try:
-            decoder = _NvImageCodecDecoder(self._batch_cap, self._device_index)
+            decoder = _NvImageCodecDecoder(
+                self._batch_cap, self._device_index, self._interleaved_output
+            )
             logger.info(
                 "nvImageCodec JPEG warmup succeeded (batch cap %d). "
                 "Configured HW_GPU_ONLY, GPU_ONLY, HYBRID_CPU_GPU backends; "
@@ -663,8 +693,9 @@ def _join_thread(thread: threading.Thread) -> None:
 
 
 class _MappedOutputs:
-    def __init__(self, memory: SharedMemory) -> None:
+    def __init__(self, memory: SharedMemory, interleaved_output: bool = False) -> None:
         self.memory = memory
+        self.interleaved_output = interleaved_output
         self.condition = threading.Condition()
         self.views = 0
 
@@ -684,7 +715,10 @@ class _MappedOutputs:
         with self.condition:
             self.views += 1
         weakref.finalize(buffer, self._release, release)
-        return torch.frombuffer(buffer, dtype=torch.uint8).reshape(3, height, width)
+        tensor = torch.frombuffer(buffer, dtype=torch.uint8)
+        if self.interleaved_output:
+            return tensor.reshape(height, width, 3).permute(2, 0, 1)
+        return tensor.reshape(3, height, width)
 
     def _release(self, callback) -> None:
         with self.condition:
@@ -701,13 +735,15 @@ class _MappedOutputs:
 
 
 class _PinnedOutputs(_MappedOutputs):
-    def __init__(self, slots: int, device_index: int) -> None:
+    def __init__(
+        self, slots: int, device_index: int, interleaved_output: bool = False
+    ) -> None:
         import torch
         from cuda.bindings import runtime
 
         torch.accelerator.set_device_index(device_index)
         memory = SharedMemory(create=True, size=slots * _SLOT_BYTES)
-        super().__init__(memory)
+        super().__init__(memory, interleaved_output)
         self.runtime = runtime
         self.pointer_view: ctypes.Array[ctypes.c_ubyte] | None = (
             ctypes.c_ubyte * memory.size
@@ -740,12 +776,13 @@ class SharedDecoderEndpoint:
     authkey: bytes
     batch_cap: int
     owner_pid: int
+    interleaved_output: bool = False
 
 
 class _Peer:
-    def __init__(self, connection, service, slots, device_index):
+    def __init__(self, connection, service, slots, device_index, interleaved_output):
         self.connection, self.service = connection, service
-        self.outputs = _PinnedOutputs(slots, device_index)
+        self.outputs = _PinnedOutputs(slots, device_index, interleaved_output)
         self.condition = threading.Condition(threading.RLock())
         self.free = deque(range(slots))
         self.pending: deque[tuple[int, bytes]] = deque()
@@ -895,7 +932,13 @@ def _owner(endpoint, control, slots_per_client, device_index, api_process_count)
                 return
             finally:
                 authentication_timeout.cancel()
-            peer = _Peer(connection, service, slots_per_client, device_index)
+            peer = _Peer(
+                connection,
+                service,
+                slots_per_client,
+                device_index,
+                endpoint.interleaved_output,
+            )
             peer.run()
         except BaseException as error:
             error.__traceback__ = None
@@ -953,7 +996,9 @@ def _owner(endpoint, control, slots_per_client, device_index, api_process_count)
 
     try:
         listener = Listener(endpoint.address, family="AF_UNIX")
-        service = _NvImageCodecService(endpoint.batch_cap, device_index)
+        service = _NvImageCodecService(
+            endpoint.batch_cap, device_index, endpoint.interleaved_output
+        )
         service.wait_until_ready()
         control.send(("ready", os.getpid()))
         acceptor = threading.Thread(target=accept, daemon=True)
@@ -988,7 +1033,13 @@ def _owner_process(
 
 
 class SharedNvImageCodecManager:
-    def __init__(self, api_process_count: int, batch_cap: int, device_index: int = 0):
+    def __init__(
+        self,
+        api_process_count: int,
+        batch_cap: int,
+        device_index: int = 0,
+        interleaved_output: bool = False,
+    ):
         if (
             isinstance(api_process_count, bool)
             or not isinstance(api_process_count, int)
@@ -1000,7 +1051,11 @@ class SharedNvImageCodecManager:
         context = mp.get_context("spawn")
         self.control, child = context.Pipe()
         endpoint = SharedDecoderEndpoint(
-            str(Path(self.directory) / "owner.sock"), os.urandom(32), batch_cap, 0
+            str(Path(self.directory) / "owner.sock"),
+            os.urandom(32),
+            batch_cap,
+            0,
+            interleaved_output,
         )
         slots = max(1, _DEVICE_ARENAS * batch_cap // api_process_count)
         self.process = context.Process(
@@ -1064,7 +1119,9 @@ class SharedNvImageCodecClient:
         if kind != "ready":
             self.connection.close()
             raise RuntimeError("Shared decoder did not register its final outputs")
-        self.mapping = _MappedOutputs(SharedMemory(name=name))
+        self.mapping = _MappedOutputs(
+            SharedMemory(name=name), endpoint.interleaved_output
+        )
         if self.mapping.memory.size != size:
             self.connection.close()
             self.mapping.close()

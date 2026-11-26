@@ -16,10 +16,13 @@ import pytest
 import torch
 from PIL import Image
 
+from vllm.config import ModelConfig
+from vllm.multimodal import MULTIMODAL_REGISTRY
 from vllm.multimodal.image_decoders.nvimagecodec import (
     SharedNvImageCodecClient,
     SharedNvImageCodecManager,
     _NvImageCodecDecoder,
+    get_nvimagecodec_interleaved_output,
     preflight_image_nvimagecodec,
 )
 from vllm.multimodal.media import ImageMediaIO
@@ -38,11 +41,16 @@ def _jpeg(width: int = 193, height: int = 97, offset: int = 0) -> bytes:
         return buffer.getvalue()
 
 
-def _decode_input(data):
+def _decode_input(data, interleaved_output=False):
     item = preflight_image_nvimagecodec(data)
-    destination = torch.empty(
-        (3, item.height, item.width), dtype=torch.uint8, pin_memory=True
-    )
+    if interleaved_output:
+        destination = torch.empty(
+            (item.height, item.width, 3), dtype=torch.uint8, pin_memory=True
+        ).permute(2, 0, 1)
+    else:
+        destination = torch.empty(
+            (3, item.height, item.width), dtype=torch.uint8, pin_memory=True
+        )
     return replace(item, destination=destination)
 
 
@@ -66,6 +74,65 @@ async def test_selected_backend_starts_one_owner_and_returns_shared_chw() -> Non
         assert torch.equal(host, snapshot)
     finally:
         release()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("width", "height"), [(193, 97), (3840, 2160)])
+@pytest.mark.parametrize(
+    "model_id",
+    [
+        "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-BF16",
+        "nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16",
+        "nvidia/Cosmos3-Nano",
+        "nvidia/Cosmos3-Super",
+        "nvidia/Cosmos3-Edge",
+    ],
+)
+async def test_shared_jpeg_processor_matches_same_rgb_pillow(
+    model_id: str,
+    width: int,
+    height: int,
+) -> None:
+    pytest.importorskip("nvidia.nvimgcodec")
+    model_config = ModelConfig(
+        model_id,
+        trust_remote_code=True,
+        dtype="bfloat16",
+        seed=0,
+        max_model_len=4096,
+        limit_mm_per_prompt={"image": 1, "video": 0},
+        media_io_kwargs={"image": {"backend": "nvimagecodec"}},
+    )
+    processor = MULTIMODAL_REGISTRY.create_processor(model_config)
+    interleaved_output = get_nvimagecodec_interleaved_output(
+        model_config.hf_config.model_type
+    )
+    release = initialize_nvimagecodec_decode_service(
+        interleaved_output=interleaved_output
+    )
+    try:
+        image = await ImageMediaIO(backend="nvimagecodec").load_bytes_async(
+            _jpeg(width, height)
+        )
+        snapshot = image.media.clone()
+        reference = Image.fromarray(image.media.permute(1, 2, 0).numpy())
+        placeholder = (
+            "<|vision_start|><|image_pad|><|vision_end|>"
+            if model_id.startswith("nvidia/Cosmos3-")
+            else "<image>"
+        )
+
+        def process(item):
+            items = processor.info.parse_mm_data({"image": [item]})
+            return processor(f"{placeholder}Describe the image.", mm_items=items)
+
+        actual = process(image)
+        expected = process(reference)
+        for key in ("mm_kwargs", "prompt_token_ids", "mm_placeholders"):
+            assert actual[key] == expected[key]
+    finally:
+        release()
+    assert torch.equal(image.media, snapshot)
 
 
 def test_device_images_resize_without_invalidating_owned_outputs() -> None:
@@ -314,7 +381,10 @@ def test_shared_owner_cleanup_outlives_zero_request_shutdown_timeout():
 
 
 @pytest.mark.parametrize("batch_cap", [4, 20])
-def test_mixed_shape_waves_preserve_retained_outputs(batch_cap: int) -> None:
+@pytest.mark.parametrize("interleaved_output", [False, True])
+def test_mixed_shape_waves_preserve_retained_outputs(
+    batch_cap: int, interleaved_output: bool
+) -> None:
     pytest.importorskip("nvidia.nvimgcodec")
     shapes = ((193, 97), (385, 193), (97, 49), (513, 257), (1920, 1080), (3840, 2160))
     encoded = [
@@ -325,7 +395,9 @@ def test_mixed_shape_waves_preserve_retained_outputs(batch_cap: int) -> None:
         for data in encoded
     ]
     widths = (batch_cap, batch_cap, batch_cap // 2, batch_cap - 1, batch_cap, batch_cap)
-    decoder = _NvImageCodecDecoder(batch_cap=batch_cap)
+    decoder = _NvImageCodecDecoder(
+        batch_cap=batch_cap, interleaved_output=interleaved_output
+    )
     retained = []
     try:
         for first_wave in range(0, len(widths), 2):
@@ -334,7 +406,10 @@ def test_mixed_shape_waves_preserve_retained_outputs(batch_cap: int) -> None:
                 indices = [
                     (wave + index) % len(shapes) for index in range(widths[wave])
                 ]
-                items = tuple(_decode_input(encoded[index]) for index in indices)
+                items = tuple(
+                    _decode_input(encoded[index], interleaved_output)
+                    for index in indices
+                )
                 pending.append((decoder.submit(items), indices))
             for arena, indices in pending:
                 for host, index in zip(decoder.collect(arena), indices, strict=True):

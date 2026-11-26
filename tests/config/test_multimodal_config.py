@@ -908,18 +908,30 @@ def test_nvimagecodec_rejects_resolved_pooling_runner(runner):
         ("Qwen/Qwen3-VL-4B-Instruct", "qwen3_vl", True),
         ("Qwen/Qwen3.5-27B", "qwen3_5", True),
         ("Qwen/Qwen3.5-35B-A3B", "qwen3_5_moe", True),
+        (
+            "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-BF16",
+            "NemotronH_Nano_Omni_Reasoning_V3",
+            True,
+        ),
+        (
+            "nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16",
+            "nemotron_h_omni",
+            True,
+        ),
+        ("nvidia/Cosmos3-Nano", "cosmos3_omni", True),
+        ("nvidia/Cosmos3-Super", "cosmos3_omni", True),
+        ("nvidia/Cosmos3-Edge", "cosmos3_edge", True),
         ("Qwen/Qwen2.5-VL-3B-Instruct", "qwen2_5_vl", False),
     ],
 )
-def test_nvimagecodec_qwen_model_allowlist(
-    monkeypatch, model_id, model_type, supported
-):
+def test_nvimagecodec_model_allowlist(monkeypatch, model_id, model_type, supported):
     with patch(
         "vllm.multimodal.image_decoders.nvimagecodec.ensure_nvimagecodec_available"
     ):
         model_config = ModelConfig(
             model_id,
             runner="generate",
+            trust_remote_code=True,
             dtype="bfloat16",
             seed=0,
             limit_mm_per_prompt={"image": 1, "video": 0},
