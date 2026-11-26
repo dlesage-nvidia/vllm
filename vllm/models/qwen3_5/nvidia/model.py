@@ -91,8 +91,11 @@ from vllm.model_executor.models.interfaces import (
     _require_is_multimodal,
 )
 from vllm.model_executor.models.qwen3_5 import (
+    Qwen3_5DummyInputsBuilder,
     Qwen3_5MoeProcessingInfo,
+    Qwen3_5MultiModalProcessor,
     Qwen3_5ProcessingInfo,
+    Qwen3_5VisionPreprocessingBase,
 )
 from vllm.model_executor.models.qwen3_moe import Qwen3MoeMLP as Qwen3NextMLP
 from vllm.model_executor.models.qwen3_next import (
@@ -104,9 +107,7 @@ from vllm.model_executor.models.qwen3_next import (
 )
 from vllm.model_executor.models.qwen3_vl import (
     Qwen3_VisionTransformer,
-    Qwen3VLDummyInputsBuilder,
     Qwen3VLForConditionalGeneration,
-    Qwen3VLMultiModalProcessor,
     mrope_positions_factor,
 )
 from vllm.model_executor.models.utils import (
@@ -820,11 +821,11 @@ class Qwen3_5MoeForCausalLM(Qwen3_5ForCausalLMBase, QwenNextMixtureOfExperts):
 
 
 @MULTIMODAL_REGISTRY.register_processor(
-    Qwen3VLMultiModalProcessor,
+    Qwen3_5MultiModalProcessor,
     info=Qwen3_5ProcessingInfo,
-    dummy_inputs=Qwen3VLDummyInputsBuilder,
+    dummy_inputs=Qwen3_5DummyInputsBuilder,
 )
-class Qwen3_5ForConditionalGeneration(Qwen3VLForConditionalGeneration, IsHybrid):
+class Qwen3_5ForConditionalGeneration(Qwen3_5VisionPreprocessingBase, IsHybrid):
     supports_multimodal_pruning = True
 
     hf_to_vllm_mapper = (
@@ -849,11 +850,9 @@ class Qwen3_5ForConditionalGeneration(Qwen3VLForConditionalGeneration, IsHybrid)
         self.config = config
         self.model_config = vllm_config.model_config
         self.multimodal_config = multimodal_config
+        self._cvcuda_workspace_profiled = False
         self.use_data_parallel = multimodal_config.mm_encoder_tp_mode == "data"
-        self.is_multimodal_pruning_enabled = (
-            multimodal_config.is_multimodal_pruning_enabled()
-        )
-        self.video_pruning_rate = self.multimodal_config.video_pruning_rate
+        self._init_video_pruning(multimodal_config)
         self._tokenizer = cached_tokenizer_from_config(vllm_config.model_config)
 
         # attributes needed by EVS-related functions inherited from Qwen3-VL
@@ -1033,9 +1032,9 @@ class Qwen3_5_MoeMixtureOfExperts(MixtureOfExperts):
 
 
 @MULTIMODAL_REGISTRY.register_processor(
-    Qwen3VLMultiModalProcessor,
+    Qwen3_5MultiModalProcessor,
     info=Qwen3_5MoeProcessingInfo,
-    dummy_inputs=Qwen3VLDummyInputsBuilder,
+    dummy_inputs=Qwen3_5DummyInputsBuilder,
 )
 class Qwen3_5MoeForConditionalGeneration(
     Qwen3_5ForConditionalGeneration, Qwen3_5_MoeMixtureOfExperts
@@ -1055,11 +1054,9 @@ class Qwen3_5MoeForConditionalGeneration(
         self.config = config
         self.model_config = vllm_config.model_config
         self.multimodal_config = multimodal_config
+        self._cvcuda_workspace_profiled = False
         self.use_data_parallel = multimodal_config.mm_encoder_tp_mode == "data"
-        self.is_multimodal_pruning_enabled = (
-            multimodal_config.is_multimodal_pruning_enabled()
-        )
-        self.video_pruning_rate = self.multimodal_config.video_pruning_rate
+        self._init_video_pruning(multimodal_config)
         self._tokenizer = cached_tokenizer_from_config(vllm_config.model_config)
 
         # attributes needed by EVS-related functions inherited from Qwen3-VL

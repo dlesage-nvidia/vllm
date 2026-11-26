@@ -1529,7 +1529,7 @@ def get_requirements() -> list[str]:
 
 
 def get_cvcuda_requirements() -> list[str]:
-    """CV-CUDA for Nemotron VL `device_resize`, built for this wheel's CUDA."""
+    """CV-CUDA for multimodal `device_resize`, built for this wheel's CUDA."""
     if not _is_cuda():
         return []
     if torch.version.cuda.startswith("12."):

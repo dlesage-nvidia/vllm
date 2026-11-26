@@ -25,7 +25,7 @@
 """Inference-only Qwen3.5 Series compatible with HuggingFace weights."""
 
 from collections.abc import Iterable
-from typing import ClassVar
+from typing import Any, ClassVar, cast
 
 import torch
 from torch import nn
@@ -106,18 +106,89 @@ from .utils import (
 logger = init_logger(__name__)
 
 
-class Qwen3_5ProcessingInfo(Qwen3VLProcessingInfo):
+class Qwen3_5CVCUDAProcessingInfo(Qwen3VLProcessingInfo):
+    def get_hf_processor(self, **kwargs):
+        mm_config = self.ctx.get_mm_config()
+        merged_kwargs = mm_config.merge_mm_processor_kwargs(kwargs)
+        device_resize = merged_kwargs.get("device_resize", False) or any(
+            merged_kwargs.get(scope, {}).get("device_resize", False)
+            for scope in ("images_kwargs", "videos_kwargs")
+        )
+        if not device_resize:
+            return super().get_hf_processor(**kwargs)
+        if not (mm_config.mm_processor_kwargs or {}).get("device_resize", False):
+            raise ValueError(
+                "device_resize must be enabled in the engine mm_processor_kwargs"
+            )
+        from importlib.util import find_spec
+
+        from vllm.platforms import current_platform
+        from vllm.transformers_utils.processors.qwen3_5_cvcuda import (
+            Qwen3_5CVCUDAProcessor,
+        )
+
+        if not mm_config.mm_device_do_normalize:
+            raise ValueError("device_resize requires mm_device_do_normalize=True")
+        if not current_platform.is_cuda() or find_spec("cvcuda") is None:
+            raise ValueError("device_resize requires CUDA and vllm[cvcuda]")
+        return self.ctx.get_hf_processor(Qwen3_5CVCUDAProcessor, **kwargs)
+
+
+class Qwen3_5ProcessingInfo(Qwen3_5CVCUDAProcessingInfo):
     def get_hf_config(self):
         return self.ctx.get_hf_config(Qwen3_5Config)
 
 
-class Qwen3_5MoeProcessingInfo(Qwen3VLProcessingInfo):
+class Qwen3_5MoeProcessingInfo(Qwen3_5CVCUDAProcessingInfo):
     def get_hf_config(self):
         # transformers 5.x renames the top-level Qwen3.5-MoE config class to
         # Qwen3_5MoeTextConfig for text-only models, while transformers ≤4.x
         # returns Qwen3_5MoeConfig (the multimodal wrapper).  Accept both so
         # that vLLM works regardless of which transformers version is installed.
         return self.ctx.get_hf_config((Qwen3_5MoeConfig, Qwen3_5MoeTextConfig))
+
+
+class Qwen3_5MultiModalProcessor(Qwen3VLMultiModalProcessor):
+    def _get_mm_fields_config(self, hf_inputs, hf_processor_mm_kwargs):
+        from vllm.multimodal.inputs import MultiModalFieldConfig
+
+        return {
+            **super()._get_mm_fields_config(hf_inputs, hf_processor_mm_kwargs),
+            "pixel_values_raw": MultiModalFieldConfig.batched(
+                "image", keep_on_cpu=True
+            ),
+            "pixel_values_videos_raw": MultiModalFieldConfig.batched(
+                "video", keep_on_cpu=True
+            ),
+        }
+
+
+class Qwen3_5DummyInputsBuilder(Qwen3VLDummyInputsBuilder):
+    def get_dummy_mm_data(self, seq_len, mm_counts, mm_options):
+        data = dict(super().get_dummy_mm_data(seq_len, mm_counts, mm_options))
+        if (self.info.ctx.get_mm_config().mm_processor_kwargs or {}).get(
+            "device_resize"
+        ):
+            import numpy as np
+            from PIL import Image
+
+            data["image"] = [
+                Image.new("RGB", (image.width + 1, image.height + 1))
+                for image in cast(list[Image.Image], data["image"])
+            ]
+            data["video"] = [
+                (
+                    np.zeros(
+                        (frames.shape[0], frames.shape[1] + 1, frames.shape[2] + 1, 3),
+                        dtype=np.uint8,
+                    ),
+                    metadata,
+                )
+                for frames, metadata in cast(
+                    list[tuple[np.ndarray, Any]], data["video"]
+                )
+            ]
+        return data
 
 
 class Qwen3_5DecoderLayer(Qwen3NextDecoderLayer):
@@ -461,12 +532,68 @@ class Qwen3_5MoeForCausalLM(Qwen3_5ForCausalLMBase, QwenNextMixtureOfExperts):
 ########################################################
 
 
+class Qwen3_5VisionPreprocessingBase(Qwen3VLForConditionalGeneration):
+    _cvcuda_workspace_profiled: bool
+
+    def embed_multimodal(self, **kwargs):
+        workspace = None
+        if (self.multimodal_config.mm_processor_kwargs or {}).get(
+            "device_resize"
+        ) and not self._cvcuda_workspace_profiled:
+            from vllm.transformers_utils.processors.qwen3_5_cvcuda import (
+                reserve_qwen3_5_cvcuda_workspace,
+            )
+
+            workspace = reserve_qwen3_5_cvcuda_workspace(self.visual.device)
+            self._cvcuda_workspace_profiled = True
+        if not kwargs.keys() & {"pixel_values_raw", "pixel_values_videos_raw"}:
+            embeddings = super().embed_multimodal(**kwargs)
+            del workspace
+            return embeddings
+        from vllm.transformers_utils.processors.qwen3_5_cvcuda import (
+            cvcuda_qwen3_5_patchify,
+        )
+
+        processed_kwargs = {}
+        for raw_key, frames in kwargs.items():
+            if raw_key not in ("pixel_values_raw", "pixel_values_videos_raw"):
+                processed_kwargs[raw_key] = frames
+                continue
+            pixel_key = raw_key.removesuffix("_raw")
+            if pixel_key in kwargs:
+                raise ValueError("Cannot provide both raw and preprocessed pixels")
+            is_video = pixel_key == "pixel_values_videos"
+            grid_key = "video_grid_thw" if is_video else "image_grid_thw"
+            if isinstance(frames, torch.Tensor):
+                frames = list(frames.unbind(0))
+            if not self.multimodal_config.mm_device_do_normalize:
+                raise ValueError("device_resize requires mm_device_do_normalize=True")
+            processed_kwargs[pixel_key] = cvcuda_qwen3_5_patchify(
+                frames,
+                kwargs[grid_key],
+                self.visual.device,
+                patch_size=self.config.vision_config.patch_size,
+                temporal_patch_size=self.config.vision_config.temporal_patch_size,
+                merge_size=self.config.vision_config.spatial_merge_size,
+                is_video=is_video,
+            )
+        embeddings = super().embed_multimodal(**processed_kwargs)
+        del workspace
+        return embeddings
+
+    def get_encoder_cudagraph_config(self):
+        config = super().get_encoder_cudagraph_config()
+        if (self.multimodal_config.mm_processor_kwargs or {}).get("device_resize"):
+            config.modalities = []
+        return config
+
+
 @MULTIMODAL_REGISTRY.register_processor(
-    Qwen3VLMultiModalProcessor,
+    Qwen3_5MultiModalProcessor,
     info=Qwen3_5ProcessingInfo,
-    dummy_inputs=Qwen3VLDummyInputsBuilder,
+    dummy_inputs=Qwen3_5DummyInputsBuilder,
 )
-class Qwen3_5ForConditionalGeneration(Qwen3VLForConditionalGeneration, IsHybrid):
+class Qwen3_5ForConditionalGeneration(Qwen3_5VisionPreprocessingBase, IsHybrid):
     supports_multimodal_pruning = True
 
     hf_to_vllm_mapper = (
@@ -489,11 +616,9 @@ class Qwen3_5ForConditionalGeneration(Qwen3VLForConditionalGeneration, IsHybrid)
         self.config = config
         self.model_config = vllm_config.model_config
         self.multimodal_config = multimodal_config
+        self._cvcuda_workspace_profiled = False
         self.use_data_parallel = multimodal_config.mm_encoder_tp_mode == "data"
-        self.is_multimodal_pruning_enabled = (
-            multimodal_config.is_multimodal_pruning_enabled()
-        )
-        self.video_pruning_rate = self.multimodal_config.video_pruning_rate
+        self._init_video_pruning(multimodal_config)
         self._tokenizer = cached_tokenizer_from_config(vllm_config.model_config)
 
         # attributes needed by EVS-related functions inherited from Qwen3-VL
@@ -692,9 +817,9 @@ class Qwen3_5_MoeMixtureOfExperts(MixtureOfExperts):
 
 
 @MULTIMODAL_REGISTRY.register_processor(
-    Qwen3VLMultiModalProcessor,
+    Qwen3_5MultiModalProcessor,
     info=Qwen3_5MoeProcessingInfo,
-    dummy_inputs=Qwen3VLDummyInputsBuilder,
+    dummy_inputs=Qwen3_5DummyInputsBuilder,
 )
 class Qwen3_5MoeForConditionalGeneration(
     Qwen3_5ForConditionalGeneration, Qwen3_5_MoeMixtureOfExperts
@@ -712,11 +837,9 @@ class Qwen3_5MoeForConditionalGeneration(
         self.config = config
         self.model_config = vllm_config.model_config
         self.multimodal_config = multimodal_config
+        self._cvcuda_workspace_profiled = False
         self.use_data_parallel = multimodal_config.mm_encoder_tp_mode == "data"
-        self.is_multimodal_pruning_enabled = (
-            multimodal_config.is_multimodal_pruning_enabled()
-        )
-        self.video_pruning_rate = self.multimodal_config.video_pruning_rate
+        self._init_video_pruning(multimodal_config)
         self._tokenizer = cached_tokenizer_from_config(vllm_config.model_config)
 
         # attributes needed by EVS-related functions inherited from Qwen3-VL

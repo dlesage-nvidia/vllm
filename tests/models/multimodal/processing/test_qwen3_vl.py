@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Regression tests for Qwen3-VL multimodal processing."""
 
+import importlib.util
 from copy import deepcopy
 from types import SimpleNamespace
 from typing import Any
@@ -17,11 +18,17 @@ from vllm.model_executor.models.qwen3_vl import Qwen3VLProcessingInfo
 from vllm.multimodal import MULTIMODAL_REGISTRY
 from vllm.multimodal.cache import MultiModalProcessorOnlyCache
 from vllm.multimodal.processing.context import BaseProcessingInfo
+from vllm.platforms import current_platform
 
 from ...registry import HF_EXAMPLE_MODELS
 from ...utils import build_model_context
 
 MODEL_ID = "Qwen/Qwen3-VL-4B-Instruct"
+
+requires_cvcuda = pytest.mark.skipif(
+    not current_platform.is_cuda() or importlib.util.find_spec("cvcuda") is None,
+    reason="Requires CUDA and the optional CV-CUDA dependency",
+)
 
 
 def test_qwen3_video_routing_schema_adds_vllm_compatibility_kwargs(
@@ -48,6 +55,99 @@ def test_qwen3_video_routing_schema_adds_vllm_compatibility_kwargs(
 
     assert {"min_pixels", "max_pixels"} <= supported["videos_kwargs"]
     assert parent_supported["videos_kwargs"] == native_video_kwargs
+
+
+@requires_cvcuda
+@pytest.mark.parametrize(
+    "model_id",
+    ["Qwen/Qwen3.5-0.8B", "Qwen/Qwen3.5-35B-A3B", "Qwen/Qwen3.5-122B-A10B"],
+)
+def test_qwen35_cvcuda_preserves_prompt_grids_and_timestamps(model_id):
+    processors = []
+    for device_resize in (False, True):
+        ctx = build_model_context(
+            model_id,
+            mm_processor_kwargs={
+                "device_resize": device_resize,
+                "min_pixels": 4 * 32**2,
+                "max_pixels": 128 * 32**2,
+            },
+            limit_mm_per_prompt={"image": 2, "video": 2},
+        )
+        processors.append(MULTIMODAL_REGISTRY.create_processor(ctx.model_config))
+    mm_data = {
+        "image": [
+            np.zeros((161, 225, 3), dtype=np.uint8),
+            np.full((321, 97, 3), 255, dtype=np.uint8),
+        ],
+        "video": _build_video_mm_data(3, width=225, height=161)["video"]
+        + _build_video_mm_data(5, width=97, height=321)["video"],
+    }
+    outputs = [
+        processor(
+            processor.dummy_inputs.get_dummy_text({"image": 2, "video": 2}),
+            mm_items=processor.info.parse_mm_data(mm_data),
+            hf_processor_mm_kwargs={},
+        )
+        for processor in processors
+    ]
+    expected, actual = outputs
+    assert actual["prompt_token_ids"] == expected["prompt_token_ids"]
+    assert actual["mm_placeholders"] == expected["mm_placeholders"]
+    expected_data = expected["mm_kwargs"].get_data()
+    actual_data = actual["mm_kwargs"].get_data()
+    for key in ("image_grid_thw", "video_grid_thw", "timestamps"):
+        torch.testing.assert_close(actual_data[key], expected_data[key], rtol=0, atol=0)
+    assert "pixel_values" not in actual_data
+    assert "pixel_values_videos" not in actual_data
+    assert "pixel_values_raw" in actual_data
+    assert "pixel_values_videos_raw" in actual_data
+
+
+@requires_cvcuda
+def test_qwen35_cvcuda_requires_device_normalization():
+    ctx = build_model_context(
+        "Qwen/Qwen3.5-0.8B",
+        mm_processor_kwargs={"device_resize": True},
+        model_config_kwargs={"mm_device_do_normalize": False},
+    )
+    processor = MULTIMODAL_REGISTRY.create_processor(ctx.model_config)
+    with pytest.raises(ValueError, match="mm_device_do_normalize"):
+        processor.info.get_hf_processor()
+
+
+@requires_cvcuda
+def test_qwen35_cvcuda_request_enable_requires_startup_opt_in():
+    ctx = build_model_context("Qwen/Qwen3.5-0.8B")
+    processor = MULTIMODAL_REGISTRY.create_processor(ctx.model_config)
+    with pytest.raises(ValueError, match="engine mm_processor_kwargs"):
+        processor.info.get_hf_processor(device_resize=True)
+
+
+@requires_cvcuda
+def test_qwen35_cvcuda_dummy_inputs_exercise_real_resize():
+    ctx = build_model_context(
+        "Qwen/Qwen3.5-0.8B",
+        mm_processor_kwargs={
+            "device_resize": True,
+            "min_pixels": 4 * 32**2,
+            "max_pixels": 128 * 32**2,
+        },
+        limit_mm_per_prompt={"image": 1, "video": 1},
+    )
+    processor = MULTIMODAL_REGISTRY.create_processor(ctx.model_config)
+    mm_data = processor.dummy_inputs.get_dummy_mm_data(
+        1024, {"image": 1, "video": 1}, MultiModalDummyOptions()
+    )
+    inputs = processor._apply_hf_processor_main(
+        processor.info.parse_mm_data(mm_data), {}
+    )
+    for raw_key, grid_key in (
+        ("pixel_values_raw", "image_grid_thw"),
+        ("pixel_values_videos_raw", "video_grid_thw"),
+    ):
+        for frames, grid in zip(inputs[raw_key], inputs[grid_key]):
+            assert tuple(frames.shape[1:3]) != tuple((grid[1:] * 16).tolist())
 
 
 def _build_video_mm_data(
