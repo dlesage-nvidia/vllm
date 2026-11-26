@@ -61,7 +61,10 @@ COMMON_BROADCAST_SETTINGS = {
     reason="Requires CUDA and the optional CV-CUDA dependency",
 )
 @pytest.mark.parametrize("modality", ["image", "video", "mixed"])
-def test_qwen35_cvcuda_matches_default(vllm_runner, image_assets, modality):
+@pytest.mark.parametrize("video_pruning_rate", [None, 0.5])
+def test_qwen35_cvcuda_matches_default(
+    vllm_runner, image_assets, modality, video_pruning_rate
+):
     media_kwargs = {}
     placeholders = []
     if modality in ("video", "mixed"):
@@ -86,6 +89,7 @@ def test_qwen35_cvcuda_matches_default(vllm_runner, image_assets, modality):
             max_model_len=4096,
             enable_chunked_prefill=True,
             mm_processor_cache_gb=0,
+            video_pruning_rate=video_pruning_rate,
             mm_processor_kwargs={
                 "device_resize": device_resize,
                 "min_pixels": 4 * 32**2,
